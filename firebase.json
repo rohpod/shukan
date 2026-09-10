@@ -1,1 +1,17 @@
-{"flutter":{"platforms":{"dart":{"lib/firebase_options.dart":{"projectId":"shukan-loop","configurations":{"web":"1:152024050552:web:a857138c118ced8189768d"}}}}}}
+{
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "flutter": {
+    "platforms": {
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "shukan-loop",
+          "configurations": {
+            "web": "1:152024050552:web:a857138c118ced8189768d"
+          }
+        }
+      }
+    }
+  }
+}
