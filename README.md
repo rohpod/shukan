@@ -36,7 +36,7 @@ layering habit-tracking and anime-philosophy theming on top.
 ### Setup
 
 ```bash
-git clone https://github.com/<org>/shukan.git
+git clone https://github.com/rohpod/shukan.git
 cd shukan
 flutter pub get
 flutter run
