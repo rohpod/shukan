@@ -17,6 +17,8 @@ class TaskListScreen extends ConsumerStatefulWidget {
 }
 
 class _TaskListScreenState extends ConsumerState<TaskListScreen> {
+  final Set<String> _expandedTaskIds = <String>{};
+
   Future<void> _showTaskDialog(
     BuildContext context,
     String uid,
@@ -88,82 +90,123 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
             separatorBuilder: (context, index) => const Divider(height: 1),
             itemBuilder: (context, index) {
               final task = tasks[index];
-              return ListTile(
-                key: Key('taskItem_${task.taskId}'),
-                leading: Checkbox(
-                  key: Key('taskCompleteCheckbox_${task.taskId}'),
-                  value: task.isCompleted,
-                  onChanged: (val) async {
-                    await ref
-                        .read(taskRepositoryProvider)
-                        .toggleTaskCompleted(
-                          task.taskId,
-                          isCompleted: val ?? false,
-                        );
-                  },
-                ),
-                title: Text(
-                  task.title,
-                  key: Key('taskTitle_${task.taskId}'),
-                  style: TextStyle(
-                    decoration: task.isCompleted
-                        ? TextDecoration.lineThrough
-                        : null,
-                    color: task.isCompleted ? Colors.grey : null,
-                  ),
-                ),
-                subtitle: (task.notes.isNotEmpty || task.url.isNotEmpty)
-                    ? Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (task.notes.isNotEmpty)
-                            Text(
-                              task.notes,
-                              key: Key('taskNotes_${task.taskId}'),
-                              style: TextStyle(
-                                color: task.isCompleted
-                                    ? Colors.grey
-                                    : Colors.grey[700],
-                              ),
-                            ),
-                          if (task.url.isNotEmpty)
-                            Text(
-                              task.url,
-                              key: Key('taskUrl_${task.taskId}'),
-                              style: const TextStyle(
-                                color: Colors.blue,
-                                decoration: TextDecoration.underline,
-                              ),
-                            ),
-                        ],
-                      )
-                    : null,
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      key: Key('editTaskButton_${task.taskId}'),
-                      icon: const Icon(Icons.edit_outlined, size: 20),
-                      tooltip: 'Edit',
-                      onPressed: () =>
-                          _showTaskDialog(context, uid, listId, task: task),
-                    ),
-                    IconButton(
-                      key: Key('deleteTaskButton_${task.taskId}'),
-                      icon: const Icon(
-                        Icons.delete_outline,
-                        size: 20,
-                        color: Colors.redAccent,
-                      ),
-                      tooltip: 'Delete',
-                      onPressed: () async {
+              final isExpanded = _expandedTaskIds.contains(task.taskId);
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ListTile(
+                    key: Key('taskItem_${task.taskId}'),
+                    onTap: () =>
+                        _showTaskDialog(context, uid, listId, task: task),
+                    leading: Checkbox(
+                      key: Key('taskCompleteCheckbox_${task.taskId}'),
+                      value: task.isCompleted,
+                      onChanged: (val) async {
                         await ref
                             .read(taskRepositoryProvider)
-                            .softDeleteTask(task.taskId);
+                            .toggleTaskCompleted(
+                              task.taskId,
+                              isCompleted: val ?? false,
+                            );
                       },
                     ),
-                  ],
-                ),
+                    title: Text(
+                      task.title,
+                      key: Key('taskTitle_${task.taskId}'),
+                      style: TextStyle(
+                        decoration: task.isCompleted
+                            ? TextDecoration.lineThrough
+                            : null,
+                        color: task.isCompleted ? Colors.grey : null,
+                      ),
+                    ),
+                    subtitle: (task.notes.isNotEmpty || task.url.isNotEmpty)
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (task.notes.isNotEmpty)
+                                Text(
+                                  task.notes,
+                                  key: Key('taskNotes_${task.taskId}'),
+                                  style: TextStyle(
+                                    color: task.isCompleted
+                                        ? Colors.grey
+                                        : Colors.grey[700],
+                                  ),
+                                ),
+                              if (task.url.isNotEmpty)
+                                Text(
+                                  task.url,
+                                  key: Key('taskUrl_${task.taskId}'),
+                                  style: const TextStyle(
+                                    color: Colors.blue,
+                                    decoration: TextDecoration.underline,
+                                  ),
+                                ),
+                            ],
+                          )
+                        : null,
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (task.subtasks.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 2),
+                            child: Text(
+                              '${task.subtasks.where((s) => s['completed'] == true).length}/${task.subtasks.length}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        IconButton(
+                          key: Key('toggleSubtasksButton_${task.taskId}'),
+                          icon: Icon(
+                            isExpanded ? Icons.expand_less : Icons.expand_more,
+                            size: 20,
+                          ),
+                          tooltip: isExpanded
+                              ? 'Hide subtasks'
+                              : 'Show subtasks',
+                          onPressed: () {
+                            setState(() {
+                              if (isExpanded) {
+                                _expandedTaskIds.remove(task.taskId);
+                              } else {
+                                _expandedTaskIds.add(task.taskId);
+                              }
+                            });
+                          },
+                        ),
+                        IconButton(
+                          key: Key('editTaskButton_${task.taskId}'),
+                          icon: const Icon(Icons.edit_outlined, size: 20),
+                          tooltip: 'Edit',
+                          onPressed: () =>
+                              _showTaskDialog(context, uid, listId, task: task),
+                        ),
+                        IconButton(
+                          key: Key('deleteTaskButton_${task.taskId}'),
+                          icon: const Icon(
+                            Icons.delete_outline,
+                            size: 20,
+                            color: Colors.redAccent,
+                          ),
+                          tooltip: 'Delete',
+                          onPressed: () async {
+                            await ref
+                                .read(taskRepositoryProvider)
+                                .softDeleteTask(task.taskId);
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (isExpanded) _buildIndentedSubtasks(context, task),
+                ],
               );
             },
           );
@@ -174,6 +217,215 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
         ),
         error: (e, _) => Center(child: Text('Error loading tasks: $e')),
       ),
+    );
+  }
+
+  Widget _buildIndentedSubtasks(BuildContext context, Task task) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 48, right: 12, bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (task.subtasks.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+              child: Text(
+                'No subtasks yet',
+                key: Key('noSubtasksText_${task.taskId}'),
+                style: TextStyle(
+                  color: Colors.grey[600],
+                  fontSize: 13,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+          if (task.subtasks.isNotEmpty)
+            ReorderableListView.builder(
+              key: Key('subtasksList_${task.taskId}'),
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              buildDefaultDragHandles: false,
+              itemCount: task.subtasks.length,
+              itemBuilder: (context, index) {
+                final subtask = task.subtasks[index];
+                final subtaskId = subtask['id'] as String? ?? '';
+                final isCompleted = subtask['completed'] as bool? ?? false;
+                final title = subtask['title'] as String? ?? '';
+
+                return Container(
+                  key: Key('subtaskRow_$subtaskId'),
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Row(
+                    children: [
+                      ReorderableDragStartListener(
+                        index: index,
+                        child: const Padding(
+                          padding: EdgeInsets.only(right: 4),
+                          child: Icon(
+                            Icons.drag_handle,
+                            size: 18,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ),
+                      SizedBox(
+                        width: 28,
+                        height: 28,
+                        child: Checkbox(
+                          key: Key('subtaskCheckbox_$subtaskId'),
+                          value: isCompleted,
+                          visualDensity: VisualDensity.compact,
+                          onChanged: (val) async {
+                            await ref
+                                .read(taskRepositoryProvider)
+                                .toggleSubtask(
+                                  task.taskId,
+                                  subtaskId,
+                                  completed: val ?? false,
+                                );
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          title,
+                          key: Key('subtaskTitle_$subtaskId'),
+                          style: TextStyle(
+                            fontSize: 14,
+                            decoration: isCompleted
+                                ? TextDecoration.lineThrough
+                                : null,
+                            color: isCompleted ? Colors.grey : null,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        key: Key('deleteSubtaskButton_$subtaskId'),
+                        icon: const Icon(
+                          Icons.close,
+                          size: 16,
+                          color: Colors.grey,
+                        ),
+                        tooltip: 'Delete subtask',
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: () async {
+                          await ref
+                              .read(taskRepositoryProvider)
+                              .removeSubtask(task.taskId, subtaskId);
+                        },
+                      ),
+                    ],
+                  ),
+                );
+              },
+              onReorderItem: (oldIndex, newIndex) async {
+                final items = List<Map<String, dynamic>>.from(task.subtasks);
+                final item = items.removeAt(oldIndex);
+                items.insert(newIndex, item);
+                final orderedIds = items.map((e) => e['id'] as String).toList();
+                await ref
+                    .read(taskRepositoryProvider)
+                    .reorderSubtasks(task.taskId, orderedIds);
+              },
+            ),
+          const SizedBox(height: 6),
+          _AddSubtaskInputRow(taskId: task.taskId),
+        ],
+      ),
+    );
+  }
+}
+
+class _AddSubtaskInputRow extends ConsumerStatefulWidget {
+  final String taskId;
+
+  const _AddSubtaskInputRow({required this.taskId});
+
+  @override
+  ConsumerState<_AddSubtaskInputRow> createState() =>
+      _AddSubtaskInputRowState();
+}
+
+class _AddSubtaskInputRowState extends ConsumerState<_AddSubtaskInputRow> {
+  late final TextEditingController _controller;
+  bool _isAdding = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final text = _controller.text.trim();
+    if (text.isEmpty) return;
+
+    setState(() => _isAdding = true);
+    try {
+      await ref.read(taskRepositoryProvider).addSubtask(widget.taskId, text);
+      _controller.clear();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Failed to add subtask: $e')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isAdding = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        const Icon(
+          Icons.subdirectory_arrow_right,
+          size: 16,
+          color: Colors.grey,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: TextField(
+            key: Key('addSubtaskInput_${widget.taskId}'),
+            controller: _controller,
+            style: const TextStyle(fontSize: 13),
+            decoration: const InputDecoration(
+              hintText: 'Add subtask...',
+              isDense: true,
+              contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              border: UnderlineInputBorder(),
+            ),
+            onSubmitted: (_) => _submit(),
+          ),
+        ),
+        const SizedBox(width: 4),
+        IconButton(
+          key: Key('addSubtaskButton_${widget.taskId}'),
+          icon: _isAdding
+              ? const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.add, size: 18),
+          tooltip: 'Add subtask',
+          visualDensity: VisualDensity.compact,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
+          onPressed: _isAdding ? null : _submit,
+        ),
+      ],
     );
   }
 }

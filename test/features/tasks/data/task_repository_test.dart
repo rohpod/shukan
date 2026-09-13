@@ -413,5 +413,251 @@ void main() {
       final tasksSnapshot = await fakeFirestore.collection('tasks').get();
       expect(tasksSnapshot.docs.isEmpty, isTrue);
     });
+
+    group('Subtasks', () {
+      test('addSubtask appends new subtask with uuid, trimmed title, and false completed', () async {
+        final task = await repository.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Parent Task',
+        );
+
+        await repository.addSubtask(task.taskId, '  First subtask  ');
+
+        final doc = await fakeFirestore
+            .collection('tasks')
+            .doc(task.taskId)
+            .get();
+        final subtasks = (doc.data()!['subtasks'] as List<dynamic>)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+
+        expect(subtasks.length, equals(1));
+        expect(subtasks[0]['id'], isNotEmpty);
+        expect(subtasks[0]['title'], equals('First subtask'));
+        expect(subtasks[0]['completed'], isFalse);
+
+        // Add second subtask
+        await repository.addSubtask(task.taskId, 'Second subtask');
+        final doc2 = await fakeFirestore
+            .collection('tasks')
+            .doc(task.taskId)
+            .get();
+        final subtasks2 = (doc2.data()!['subtasks'] as List<dynamic>)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+
+        expect(subtasks2.length, equals(2));
+        expect(subtasks2[0]['title'], equals('First subtask'));
+        expect(subtasks2[1]['title'], equals('Second subtask'));
+        expect(subtasks2[1]['id'], isNot(equals(subtasks2[0]['id'])));
+      });
+
+      test(
+        'addSubtask throws ArgumentError on empty title or non-existent task',
+        () async {
+          final task = await repository.createTask(
+            uid: 'user-123',
+            listId: 'inbox-456',
+            title: 'Parent Task',
+          );
+
+          await expectLater(
+            repository.addSubtask(task.taskId, '   '),
+            throwsA(isA<ArgumentError>()),
+          );
+
+          await expectLater(
+            repository.addSubtask('non-existent-task', 'Subtask'),
+            throwsA(isA<ArgumentError>()),
+          );
+        },
+      );
+
+      test('toggleSubtask updates target subtask completed flag, leaves others intact', () async {
+        final task = await repository.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Parent Task',
+        );
+
+        await repository.addSubtask(task.taskId, 'Subtask 1');
+        await repository.addSubtask(task.taskId, 'Subtask 2');
+
+        final initialDoc = await fakeFirestore
+            .collection('tasks')
+            .doc(task.taskId)
+            .get();
+        final subtasks = (initialDoc.data()!['subtasks'] as List<dynamic>)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+        final sub1Id = subtasks[0]['id'] as String;
+
+        // Toggle subtask 1 to completed
+        await repository.toggleSubtask(task.taskId, sub1Id, completed: true);
+
+        var doc = await fakeFirestore
+            .collection('tasks')
+            .doc(task.taskId)
+            .get();
+        var currentSubtasks = (doc.data()!['subtasks'] as List<dynamic>)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+
+        expect(currentSubtasks[0]['completed'], isTrue);
+        expect(currentSubtasks[1]['completed'], isFalse);
+
+        // Toggle subtask 1 back to incomplete
+        await repository.toggleSubtask(task.taskId, sub1Id, completed: false);
+        doc = await fakeFirestore.collection('tasks').doc(task.taskId).get();
+        currentSubtasks = (doc.data()!['subtasks'] as List<dynamic>)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+
+        expect(currentSubtasks[0]['completed'], isFalse);
+
+        // Throws if subtaskId not found
+        await expectLater(
+          repository.toggleSubtask(
+            task.taskId,
+            'unknown-subtask-id',
+            completed: true,
+          ),
+          throwsA(isA<ArgumentError>()),
+        );
+      });
+
+      test(
+        'removeSubtask deletes target subtask and preserves order of remaining',
+        () async {
+          final task = await repository.createTask(
+            uid: 'user-123',
+            listId: 'inbox-456',
+            title: 'Parent Task',
+          );
+
+          await repository.addSubtask(task.taskId, 'Subtask 1');
+          await repository.addSubtask(task.taskId, 'Subtask 2');
+          await repository.addSubtask(task.taskId, 'Subtask 3');
+
+          final initialDoc = await fakeFirestore
+              .collection('tasks')
+              .doc(task.taskId)
+              .get();
+          final subtasks = (initialDoc.data()!['subtasks'] as List<dynamic>)
+              .map((e) => Map<String, dynamic>.from(e as Map))
+              .toList();
+          final sub2Id = subtasks[1]['id'] as String;
+
+          await repository.removeSubtask(task.taskId, sub2Id);
+
+          final doc = await fakeFirestore
+              .collection('tasks')
+              .doc(task.taskId)
+              .get();
+          final remaining = (doc.data()!['subtasks'] as List<dynamic>)
+              .map((e) => Map<String, dynamic>.from(e as Map))
+              .toList();
+
+          expect(remaining.length, equals(2));
+          expect(remaining[0]['title'], equals('Subtask 1'));
+          expect(remaining[1]['title'], equals('Subtask 3'));
+        },
+      );
+
+      test('reorderSubtasks reorders correctly and throws ArgumentError on mismatched IDs', () async {
+        final task = await repository.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Parent Task',
+        );
+
+        await repository.addSubtask(task.taskId, 'A');
+        await repository.addSubtask(task.taskId, 'B');
+        await repository.addSubtask(task.taskId, 'C');
+
+        final initialDoc = await fakeFirestore
+            .collection('tasks')
+            .doc(task.taskId)
+            .get();
+        final subtasks = (initialDoc.data()!['subtasks'] as List<dynamic>)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+        final aId = subtasks[0]['id'] as String;
+        final bId = subtasks[1]['id'] as String;
+        final cId = subtasks[2]['id'] as String;
+
+        // Reorder: C, A, B
+        await repository.reorderSubtasks(task.taskId, [cId, aId, bId]);
+
+        var doc = await fakeFirestore
+            .collection('tasks')
+            .doc(task.taskId)
+            .get();
+        var reordered = (doc.data()!['subtasks'] as List<dynamic>)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+
+        expect(reordered[0]['title'], equals('C'));
+        expect(reordered[1]['title'], equals('A'));
+        expect(reordered[2]['title'], equals('B'));
+
+        // Throws on partial list (missing one)
+        await expectLater(
+          repository.reorderSubtasks(task.taskId, [cId, aId]),
+          throwsA(isA<ArgumentError>()),
+        );
+
+        // Throws on duplicates
+        await expectLater(
+          repository.reorderSubtasks(task.taskId, [cId, aId, aId]),
+          throwsA(isA<ArgumentError>()),
+        );
+
+        // Throws on unknown ID
+        await expectLater(
+          repository.reorderSubtasks(task.taskId, [cId, aId, 'ghost-id']),
+          throwsA(isA<ArgumentError>()),
+        );
+      });
+    });
+
+    group('streamTask', () {
+      test('emits Task entity and updates when doc changes', () async {
+        final task = await repository.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Streamed Task',
+        );
+
+        final emissions = <Task?>[];
+        final subscription = repository
+            .streamTask(task.taskId)
+            .listen(emissions.add);
+
+        await pumpEventQueue();
+        expect(emissions.last?.title, equals('Streamed Task'));
+
+        await repository.addSubtask(task.taskId, 'New Subtask');
+        await pumpEventQueue();
+
+        expect(emissions.last?.subtasks.length, equals(1));
+        expect(emissions.last?.subtasks[0]['title'], equals('New Subtask'));
+
+        await subscription.cancel();
+      });
+
+      test('emits null when task document does not exist', () async {
+        final emissions = <Task?>[];
+        final subscription = repository
+            .streamTask('non-existent-task')
+            .listen(emissions.add);
+
+        await pumpEventQueue();
+        expect(emissions.last, isNull);
+
+        await subscription.cancel();
+      });
+    });
   });
 }
