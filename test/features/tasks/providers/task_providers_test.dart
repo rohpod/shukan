@@ -85,6 +85,12 @@ void main() {
 
     // Create a task
     final repo = container.read(taskRepositoryProvider);
+    await fakeFirestore.collection('lists').doc(listId).set({
+      'listId': listId,
+      'uid': uid,
+      'name': 'Inbox',
+      'isDefault': true,
+    });
     await repo.createTask(
       uid: uid,
       listId: listId,

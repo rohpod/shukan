@@ -2,8 +2,11 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /lists/{listId} {
-      allow read, write: if request.auth != null && request.auth.uid == resource.data.uid;
+      allow read: if request.auth != null && request.auth.uid == resource.data.uid;
       allow create: if request.auth != null && request.auth.uid == request.resource.data.uid;
+      allow update: if request.auth != null && request.auth.uid == resource.data.uid;
+      allow delete: if request.auth != null && request.auth.uid == resource.data.uid
+                    && resource.data.isDefault == false;
     }
     match /tasks/{taskId} {
       allow read, write: if request.auth != null && request.auth.uid == resource.data.uid;
