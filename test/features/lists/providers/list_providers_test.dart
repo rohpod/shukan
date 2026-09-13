@@ -35,14 +35,6 @@ void main() {
     expect(repo, isNotNull);
   });
 
-  test('selectedListIdProvider defaults to null and allows state mutation', () {
-    final container = createContainer();
-    expect(container.read(selectedListIdProvider), isNull);
-
-    container.read(selectedListIdProvider.notifier).state = 'custom-list-id';
-    expect(container.read(selectedListIdProvider), equals('custom-list-id'));
-  });
-
   test('listsForUserProvider streams lists for authenticated user', () async {
     const uid = 'test-uid';
     const listId = 'list-123';

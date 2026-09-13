@@ -19,20 +19,3 @@ final listsForUserProvider = StreamProvider<List<ListModel>>((ref) {
   final repository = ref.watch(listRepositoryProvider);
   return repository.streamListsForUser(uid);
 });
-
-/// Notifier managing the currently selected list ID in local UI state.
-/// When `null`, the UI falls back to the user's default list.
-class SelectedListIdNotifier extends Notifier<String?> {
-  @override
-  String? build() => null;
-
-  void select(String? listId) {
-    state = listId;
-  }
-
-  @override
-  set state(String? value) => super.state = value;
-}
-
-final selectedListIdProvider =
-    NotifierProvider<SelectedListIdNotifier, String?>(SelectedListIdNotifier.new);

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shukan/core/firebase/firebase_providers.dart';
 import 'package:shukan/features/auth/presentation/home_screen.dart';
+import 'package:shukan/features/lists/presentation/list_detail_screen.dart';
 
 void main() {
   late MockFirebaseAuth mockAuth;
@@ -70,27 +71,23 @@ void main() {
     );
   }
 
-  group('ListsDrawer and List Switching Widget Tests', () {
+  group('HomeScreen Lists Grid Tests', () {
     testWidgets(
-        'opens drawer, shows lists, ensures default list has no delete button and custom list has delete button',
+        'shows lists in grid, ensures default list has no delete button and custom list has delete button',
         (tester) async {
       await tester.pumpWidget(createWidgetUnderTest());
       await tester.pumpAndSettle();
 
-      // Open drawer using the scaffold drawer icon / gesture
-      final scaffoldFinder = find.byType(Scaffold);
-      expect(scaffoldFinder, findsOneWidget);
-      final scaffoldState = tester.state<ScaffoldState>(scaffoldFinder);
-      scaffoldState.openDrawer();
-      await tester.pumpAndSettle();
+      expect(find.text('shukan'), findsOneWidget);
+      expect(find.byKey(const Key('logoutButton')), findsOneWidget);
+      expect(find.byKey(const Key('addListButton')), findsOneWidget);
 
-      // Verify lists drawer is shown
-      expect(find.byKey(const Key('listsDrawer')), findsOneWidget);
+      // Verify lists are rendered
       expect(find.byKey(Key('listName_$defaultListId')), findsOneWidget);
       expect(find.byKey(Key('listName_$customListId')), findsOneWidget);
       expect(find.text('DEFAULT'), findsOneWidget);
 
-      // Layer 3 Defence-in-depth: Default list has NO delete button
+      // Default list has NO delete button
       expect(
         find.byKey(Key('deleteListButton_$defaultListId')),
         findsNothing,
@@ -107,11 +104,6 @@ void main() {
         'delete list shows confirmation dialog with active task count warning and deletes list on confirm',
         (tester) async {
       await tester.pumpWidget(createWidgetUnderTest());
-      await tester.pumpAndSettle();
-
-      // Open drawer
-      final scaffoldState = tester.state<ScaffoldState>(find.byType(Scaffold));
-      scaffoldState.openDrawer();
       await tester.pumpAndSettle();
 
       // Tap delete on custom list
@@ -138,23 +130,16 @@ void main() {
       final t1 = await fakeFirestore.collection('tasks').doc('t1').get();
       expect(t1.data()!['deletedAt'], isNotNull);
 
-      // Re-open drawer to check it disappeared
-      scaffoldState.openDrawer();
-      await tester.pumpAndSettle();
-      expect(find.text('Work'), findsNothing);
+      // List should disappear from home screen
+      expect(find.byKey(Key('listName_$customListId')), findsNothing);
     });
 
-    testWidgets('create list dialog creates new list and selects it',
+    testWidgets('create list dialog creates new list and shows it in grid',
         (tester) async {
       await tester.pumpWidget(createWidgetUnderTest());
       await tester.pumpAndSettle();
 
-      // Open drawer
-      final scaffoldState = tester.state<ScaffoldState>(find.byType(Scaffold));
-      scaffoldState.openDrawer();
-      await tester.pumpAndSettle();
-
-      // Tap add list button
+      // Tap FAB
       await tester.tap(find.byKey(const Key('addListButton')));
       await tester.pumpAndSettle();
 
@@ -176,17 +161,12 @@ void main() {
       expect(lists.docs.length, equals(1));
       expect(lists.docs.first.data()['isDefault'], isFalse);
 
-      // AppBar active list name should now reflect 'Groceries'
-      expect(find.text('Groceries'), findsWidgets);
+      // Home screen grid should now display 'Groceries'
+      expect(find.text('Groceries'), findsOneWidget);
     });
 
     testWidgets('rename list dialog updates list name', (tester) async {
       await tester.pumpWidget(createWidgetUnderTest());
-      await tester.pumpAndSettle();
-
-      // Open drawer
-      final scaffoldState = tester.state<ScaffoldState>(find.byType(Scaffold));
-      scaffoldState.openDrawer();
       await tester.pumpAndSettle();
 
       // Tap rename on default list
@@ -208,28 +188,42 @@ void main() {
           await fakeFirestore.collection('lists').doc(defaultListId).get();
       expect(listDoc.data()!['name'], equals('Primary Inbox'));
       expect(listDoc.data()!['isDefault'], isTrue);
+
+      expect(find.text('Primary Inbox'), findsOneWidget);
     });
 
-    testWidgets('tapping a list switches active list and shows its tasks',
+    testWidgets('tapping a list navigates to ListDetailScreen and back',
         (tester) async {
       await tester.pumpWidget(createWidgetUnderTest());
       await tester.pumpAndSettle();
 
-      // Initially on default list (no tasks)
-      expect(find.byKey(const Key('noTasksText')), findsOneWidget);
-
-      // Open drawer and tap 'Work' list
-      final scaffoldState = tester.state<ScaffoldState>(find.byType(Scaffold));
-      scaffoldState.openDrawer();
+      // Tap on the 'Work' list card
+      await tester.tap(find.byKey(Key('listCard_$customListId')));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(Key('listTile_$customListId')));
-      await tester.pumpAndSettle();
-
-      // Drawer closed, TaskListScreen now displays 'Work' list tasks
+      // Should now be on ListDetailScreen
+      expect(find.byType(ListDetailScreen), findsOneWidget);
+      expect(find.byKey(const Key('listDetailTitle')), findsOneWidget);
       expect(find.text('Task 1'), findsOneWidget);
       expect(find.text('Task 2'), findsOneWidget);
-      expect(find.byKey(const Key('noTasksText')), findsNothing);
+
+      // Tap back button
+      await tester.tap(find.byTooltip('Back'));
+      await tester.pumpAndSettle();
+
+      // Back on HomeScreen
+      expect(find.byType(ListDetailScreen), findsNothing);
+      expect(find.byType(HomeScreen), findsOneWidget);
+    });
+
+    testWidgets('logout button signs user out', (tester) async {
+      await tester.pumpWidget(createWidgetUnderTest());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('logoutButton')));
+      await tester.pumpAndSettle();
+
+      expect(mockAuth.currentUser, isNull);
     });
   });
 }
