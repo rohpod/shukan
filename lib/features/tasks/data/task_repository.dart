@@ -84,17 +84,59 @@ class TaskRepository {
         .map((snapshot) => snapshot.docs.map(Task.fromFirestore).toList());
   }
 
-  /// Performs a partial update on the task, restricted to [title], [notes], and [url].
+  static const Object _sentinel = Object();
+
+  /// Performs a partial update on the task attributes.
   Future<void> updateTask(
     String taskId, {
     String? title,
     String? notes,
     String? url,
+    String? priority,
+    List<String>? tagIds,
+    Object? dueDate = _sentinel,
+    Object? dueTime = _sentinel,
+    int? earlyReminderMinutes,
+    String? repeatRule,
+    bool clearDueDate = false,
+    bool clearDueTime = false,
   }) async {
     final updates = <String, dynamic>{};
     if (title != null) updates['title'] = title.trim();
     if (notes != null) updates['notes'] = notes.trim();
     if (url != null) updates['url'] = url.trim();
+    if (priority != null) updates['priority'] = priority;
+    if (tagIds != null) updates['tagIds'] = tagIds;
+    if (earlyReminderMinutes != null) {
+      updates['earlyReminderMinutes'] = earlyReminderMinutes;
+    }
+    if (repeatRule != null) updates['repeatRule'] = repeatRule;
+
+    if (clearDueDate) {
+      updates['dueDate'] = null;
+      if (identical(dueTime, _sentinel)) {
+        updates['dueTime'] = null;
+      }
+    } else if (!identical(dueDate, _sentinel)) {
+      if (dueDate is DateTime) {
+        updates['dueDate'] = Timestamp.fromDate(dueDate);
+      } else if (dueDate == null) {
+        updates['dueDate'] = null;
+        if (identical(dueTime, _sentinel)) {
+          updates['dueTime'] = null;
+        }
+      }
+    }
+
+    if (clearDueTime) {
+      updates['dueTime'] = null;
+    } else if (!identical(dueTime, _sentinel)) {
+      if (dueTime is String) {
+        updates['dueTime'] = dueTime.trim();
+      } else if (dueTime == null) {
+        updates['dueTime'] = null;
+      }
+    }
 
     if (updates.isNotEmpty) {
       await _tasksCollection.doc(taskId).update(updates);
