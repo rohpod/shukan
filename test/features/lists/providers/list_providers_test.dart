@@ -51,13 +51,12 @@ void main() {
     );
 
     final emitted = <List<ListModel>>[];
-    container.listen<AsyncValue<List<ListModel>>>(
-      listsForUserProvider,
-      (_, next) {
-        if (next.hasValue) emitted.add(next.value!);
-      },
-      fireImmediately: true,
-    );
+    container.listen<AsyncValue<List<ListModel>>>(listsForUserProvider, (
+      _,
+      next,
+    ) {
+      if (next.hasValue) emitted.add(next.value!);
+    }, fireImmediately: true);
 
     await pumpEventQueue();
 
@@ -78,13 +77,12 @@ void main() {
     final container = createContainer();
 
     final emitted = <List<ListModel>>[];
-    container.listen<AsyncValue<List<ListModel>>>(
-      listsForUserProvider,
-      (_, next) {
-        if (next.hasValue) emitted.add(next.value!);
-      },
-      fireImmediately: true,
-    );
+    container.listen<AsyncValue<List<ListModel>>>(listsForUserProvider, (
+      _,
+      next,
+    ) {
+      if (next.hasValue) emitted.add(next.value!);
+    }, fireImmediately: true);
 
     await pumpEventQueue();
 

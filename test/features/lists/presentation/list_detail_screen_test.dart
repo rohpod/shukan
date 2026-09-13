@@ -38,8 +38,91 @@ void main() {
     });
   });
 
-  testWidgets('ListDetailScreen renders AppBar with list title and embeds TaskListScreen',
-      (tester) async {
+  testWidgets(
+    'ListDetailScreen renders AppBar with list title and embeds TaskListScreen',
+    (tester) async {
+      final list = ListModel(
+        listId: listId,
+        uid: uid,
+        name: 'Work Projects',
+        isDefault: false,
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            firebaseAuthProvider.overrideWithValue(mockAuth),
+            firestoreProvider.overrideWithValue(fakeFirestore),
+          ],
+          child: MaterialApp(home: ListDetailScreen(list: list)),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Verify AppBar title
+      expect(find.byKey(const Key('listDetailTitle')), findsOneWidget);
+      expect(find.text('Work Projects'), findsOneWidget);
+
+      // Verify TaskListScreen is mounted with task content
+      expect(find.byType(TaskListScreen), findsOneWidget);
+      expect(find.text('Deploy project'), findsOneWidget);
+      expect(find.byKey(const Key('taskTitleInput')), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'tapping export button triggers download and shows success snackbar',
+    (tester) async {
+      final list = ListModel(
+        listId: listId,
+        uid: uid,
+        name: 'Work Projects',
+        isDefault: false,
+      );
+
+      String? exportedContent;
+      String? exportedFilename;
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            firebaseAuthProvider.overrideWithValue(mockAuth),
+            firestoreProvider.overrideWithValue(fakeFirestore),
+          ],
+          child: MaterialApp(
+            home: ListDetailScreen(
+              list: list,
+              downloadTrigger: (content, filename) {
+                exportedContent = content;
+                exportedFilename = filename;
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Verify export button exists
+      final exportButton = find.byKey(const Key('exportListButton'));
+      expect(exportButton, findsOneWidget);
+
+      // Tap export button
+      await tester.tap(exportButton);
+      await tester.pumpAndSettle();
+
+      // Verify download trigger was called
+      expect(exportedFilename, contains('work-projects'));
+      expect(exportedContent, contains('# Work Projects'));
+      expect(exportedContent, contains('- [ ] Deploy project'));
+
+      // Verify success snackbar is displayed
+      expect(find.text('Exported "Work Projects" to markdown'), findsOneWidget);
+    },
+  );
+
+  testWidgets('shows failure snackbar if export throws an error', (
+    tester,
+  ) async {
     final list = ListModel(
       listId: listId,
       uid: uid,
@@ -54,19 +137,27 @@ void main() {
           firestoreProvider.overrideWithValue(fakeFirestore),
         ],
         child: MaterialApp(
-          home: ListDetailScreen(list: list),
+          home: ListDetailScreen(
+            list: list,
+            downloadTrigger: (content, filename) {
+              throw Exception('Disk full or download blocked');
+            },
+          ),
         ),
       ),
     );
     await tester.pumpAndSettle();
 
-    // Verify AppBar title
-    expect(find.byKey(const Key('listDetailTitle')), findsOneWidget);
-    expect(find.text('Work Projects'), findsOneWidget);
+    final exportButton = find.byKey(const Key('exportListButton'));
+    await tester.tap(exportButton);
+    await tester.pumpAndSettle();
 
-    // Verify TaskListScreen is mounted with task content
-    expect(find.byType(TaskListScreen), findsOneWidget);
-    expect(find.text('Deploy project'), findsOneWidget);
-    expect(find.byKey(const Key('taskTitleInput')), findsOneWidget);
+    // Verify error snackbar is displayed
+    expect(
+      find.textContaining(
+        'Failed to export list: Exception: Disk full or download blocked',
+      ),
+      findsOneWidget,
+    );
   });
 }

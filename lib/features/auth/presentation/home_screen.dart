@@ -10,7 +10,10 @@ class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
   Future<void> _showCreateDialog(
-      BuildContext context, WidgetRef ref, String uid) async {
+    BuildContext context,
+    WidgetRef ref,
+    String uid,
+  ) async {
     final controller = TextEditingController();
     final formKey = GlobalKey<FormState>();
 
@@ -61,7 +64,10 @@ class HomeScreen extends ConsumerWidget {
   }
 
   Future<void> _showRenameDialog(
-      BuildContext context, WidgetRef ref, ListModel list) async {
+    BuildContext context,
+    WidgetRef ref,
+    ListModel list,
+  ) async {
     final controller = TextEditingController(text: list.name);
     final formKey = GlobalKey<FormState>();
 
@@ -108,7 +114,11 @@ class HomeScreen extends ConsumerWidget {
   }
 
   Future<void> _showDeleteDialog(
-      BuildContext context, WidgetRef ref, ListModel list, String uid) async {
+    BuildContext context,
+    WidgetRef ref,
+    ListModel list,
+    String uid,
+  ) async {
     final taskCount = await ref
         .read(listRepositoryProvider)
         .getActiveTaskCountForList(uid: uid, listId: list.listId);
@@ -228,14 +238,16 @@ class HomeScreen extends ConsumerWidget {
                                 color: list.isDefault
                                     ? Theme.of(context).colorScheme.primary
                                     : Theme.of(context)
-                                        .colorScheme
-                                        .onSurfaceVariant,
+                                          .colorScheme
+                                          .onSurfaceVariant,
                               ),
                               const Spacer(),
                               if (list.isDefault)
                                 Container(
                                   padding: const EdgeInsets.symmetric(
-                                      horizontal: 6, vertical: 2),
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: Theme.of(context)
                                         .colorScheme
@@ -270,8 +282,7 @@ class HomeScreen extends ConsumerWidget {
                             children: [
                               IconButton(
                                 key: Key('renameListButton_${list.listId}'),
-                                icon:
-                                    const Icon(Icons.edit_outlined, size: 18),
+                                icon: const Icon(Icons.edit_outlined, size: 18),
                                 tooltip: 'Rename List',
                                 padding: EdgeInsets.zero,
                                 constraints: const BoxConstraints(),
@@ -291,7 +302,11 @@ class HomeScreen extends ConsumerWidget {
                                   padding: EdgeInsets.zero,
                                   constraints: const BoxConstraints(),
                                   onPressed: () => _showDeleteDialog(
-                                      context, ref, list, uid),
+                                    context,
+                                    ref,
+                                    list,
+                                    uid,
+                                  ),
                                 ),
                               ],
                             ],
@@ -308,9 +323,7 @@ class HomeScreen extends ConsumerWidget {
             key: Key('listsLoadingIndicator'),
             child: CircularProgressIndicator(),
           ),
-          error: (e, _) => Center(
-            child: Text('Error loading lists: $e'),
-          ),
+          error: (e, _) => Center(child: Text('Error loading lists: $e')),
         ),
       ),
     );

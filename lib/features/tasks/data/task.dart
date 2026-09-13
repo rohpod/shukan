@@ -64,20 +64,22 @@ class Task {
       notes: data['notes'] as String? ?? '',
       url: data['url'] as String? ?? '',
       priority: data['priority'] as String? ?? 'none',
-      tagIds: (data['tagIds'] as List<dynamic>?)
+      tagIds:
+          (data['tagIds'] as List<dynamic>?)
               ?.map((e) => e.toString())
               .toList() ??
           const [],
       dueDate: _parseDateTime(data['dueDate']),
       dueTime: data['dueTime'] as String?,
-      earlyReminderMinutes:
-          ((data['earlyReminderMinutes'] as num?) ?? 0).toInt(),
+      earlyReminderMinutes: ((data['earlyReminderMinutes'] as num?) ?? 0)
+          .toInt(),
       repeatRule: data['repeatRule'] as String? ?? 'none',
       repeatCustomConfig: data['repeatCustomConfig'] != null
           ? Map<String, dynamic>.from(data['repeatCustomConfig'] as Map)
           : null,
       order: ((data['order'] as num?) ?? 0).toInt(),
-      subtasks: (data['subtasks'] as List<dynamic>?)
+      subtasks:
+          (data['subtasks'] as List<dynamic>?)
               ?.map((e) => Map<String, dynamic>.from(e as Map))
               .toList() ??
           const [],
@@ -109,8 +111,9 @@ class Task {
       'order': order,
       'subtasks': subtasks,
       if (createdAt != null) 'createdAt': Timestamp.fromDate(createdAt!),
-      'completedAt':
-          completedAt != null ? Timestamp.fromDate(completedAt!) : null,
+      'completedAt': completedAt != null
+          ? Timestamp.fromDate(completedAt!)
+          : null,
       'deletedAt': deletedAt != null ? Timestamp.fromDate(deletedAt!) : null,
     };
   }

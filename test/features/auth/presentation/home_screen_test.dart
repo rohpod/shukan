@@ -65,77 +65,80 @@ void main() {
         firebaseAuthProvider.overrideWithValue(mockAuth),
         firestoreProvider.overrideWithValue(fakeFirestore),
       ],
-      child: const MaterialApp(
-        home: HomeScreen(),
-      ),
+      child: const MaterialApp(home: HomeScreen()),
     );
   }
 
   group('HomeScreen Lists Grid Tests', () {
     testWidgets(
-        'shows lists in grid, ensures default list has no delete button and custom list has delete button',
-        (tester) async {
-      await tester.pumpWidget(createWidgetUnderTest());
-      await tester.pumpAndSettle();
+      'shows lists in grid, ensures default list has no delete button and custom list has delete button',
+      (tester) async {
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
 
-      expect(find.text('shukan'), findsOneWidget);
-      expect(find.byKey(const Key('logoutButton')), findsOneWidget);
-      expect(find.byKey(const Key('addListButton')), findsOneWidget);
+        expect(find.text('shukan'), findsOneWidget);
+        expect(find.byKey(const Key('logoutButton')), findsOneWidget);
+        expect(find.byKey(const Key('addListButton')), findsOneWidget);
 
-      // Verify lists are rendered
-      expect(find.byKey(Key('listName_$defaultListId')), findsOneWidget);
-      expect(find.byKey(Key('listName_$customListId')), findsOneWidget);
-      expect(find.text('DEFAULT'), findsOneWidget);
+        // Verify lists are rendered
+        expect(find.byKey(Key('listName_$defaultListId')), findsOneWidget);
+        expect(find.byKey(Key('listName_$customListId')), findsOneWidget);
+        expect(find.text('DEFAULT'), findsOneWidget);
 
-      // Default list has NO delete button
-      expect(
-        find.byKey(Key('deleteListButton_$defaultListId')),
-        findsNothing,
-      );
+        // Default list has NO delete button
+        expect(
+          find.byKey(Key('deleteListButton_$defaultListId')),
+          findsNothing,
+        );
 
-      // Custom list HAS a delete button
-      expect(
-        find.byKey(Key('deleteListButton_$customListId')),
-        findsOneWidget,
-      );
-    });
+        // Custom list HAS a delete button
+        expect(
+          find.byKey(Key('deleteListButton_$customListId')),
+          findsOneWidget,
+        );
+      },
+    );
 
     testWidgets(
-        'delete list shows confirmation dialog with active task count warning and deletes list on confirm',
-        (tester) async {
-      await tester.pumpWidget(createWidgetUnderTest());
-      await tester.pumpAndSettle();
+      'delete list shows confirmation dialog with active task count warning and deletes list on confirm',
+      (tester) async {
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
 
-      // Tap delete on custom list
-      await tester.tap(find.byKey(Key('deleteListButton_$customListId')));
-      await tester.pumpAndSettle();
+        // Tap delete on custom list
+        await tester.tap(find.byKey(Key('deleteListButton_$customListId')));
+        await tester.pumpAndSettle();
 
-      // Verify confirmation dialog and active task warning
-      expect(find.text('Delete "Work"?'), findsOneWidget);
-      expect(
-        find.text('2 task(s) in this list will also be removed.'),
-        findsOneWidget,
-      );
+        // Verify confirmation dialog and active task warning
+        expect(find.text('Delete "Work"?'), findsOneWidget);
+        expect(
+          find.text('2 task(s) in this list will also be removed.'),
+          findsOneWidget,
+        );
 
-      // Tap confirm delete
-      await tester.tap(find.byKey(const Key('confirmDeleteListButton')));
-      await tester.pumpAndSettle();
+        // Tap confirm delete
+        await tester.tap(find.byKey(const Key('confirmDeleteListButton')));
+        await tester.pumpAndSettle();
 
-      // Verify custom list is deleted in Firestore
-      final listDoc =
-          await fakeFirestore.collection('lists').doc(customListId).get();
-      expect(listDoc.exists, isFalse);
+        // Verify custom list is deleted in Firestore
+        final listDoc = await fakeFirestore
+            .collection('lists')
+            .doc(customListId)
+            .get();
+        expect(listDoc.exists, isFalse);
 
-      // Verify tasks soft-deleted
-      final t1 = await fakeFirestore.collection('tasks').doc('t1').get();
-      expect(t1.data()!['deletedAt'], isNotNull);
+        // Verify tasks soft-deleted
+        final t1 = await fakeFirestore.collection('tasks').doc('t1').get();
+        expect(t1.data()!['deletedAt'], isNotNull);
 
-      // List should disappear from home screen
-      expect(find.byKey(Key('listName_$customListId')), findsNothing);
-    });
+        // List should disappear from home screen
+        expect(find.byKey(Key('listName_$customListId')), findsNothing);
+      },
+    );
 
-    testWidgets('create list dialog creates new list and shows it in grid',
-        (tester) async {
+    testWidgets('create list dialog creates new list and shows it in grid', (
+      tester,
+    ) async {
       await tester.pumpWidget(createWidgetUnderTest());
       await tester.pumpAndSettle();
 
@@ -184,16 +187,19 @@ void main() {
       await tester.pumpAndSettle();
 
       // Verify renamed in Firestore
-      final listDoc =
-          await fakeFirestore.collection('lists').doc(defaultListId).get();
+      final listDoc = await fakeFirestore
+          .collection('lists')
+          .doc(defaultListId)
+          .get();
       expect(listDoc.data()!['name'], equals('Primary Inbox'));
       expect(listDoc.data()!['isDefault'], isTrue);
 
       expect(find.text('Primary Inbox'), findsOneWidget);
     });
 
-    testWidgets('tapping a list navigates to ListDetailScreen and back',
-        (tester) async {
+    testWidgets('tapping a list navigates to ListDetailScreen and back', (
+      tester,
+    ) async {
       await tester.pumpWidget(createWidgetUnderTest());
       await tester.pumpAndSettle();
 
