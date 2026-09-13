@@ -161,6 +161,29 @@ class TaskRepository {
     });
   }
 
+  /// Moves an existing task to [newListId], updating only its [listId] field.
+  ///
+  /// Verifies that the target list exists and belongs to the same user as the task.
+  /// Throws [ArgumentError] if the task or target list doesn't exist, or if the
+  /// target list belongs to a different user.
+  Future<void> moveTaskToList(String taskId, String newListId) async {
+    final taskDoc = await _tasksCollection.doc(taskId).get();
+    if (!taskDoc.exists) {
+      throw ArgumentError('Task not found: $taskId');
+    }
+    final uid = taskDoc.data()?['uid'];
+
+    final listDoc = await _firestore.collection('lists').doc(newListId).get();
+    if (!listDoc.exists) {
+      throw ArgumentError('List not found: $newListId');
+    }
+    if (listDoc.data()?['uid'] != uid) {
+      throw ArgumentError('List does not belong to user: $newListId');
+    }
+
+    await _tasksCollection.doc(taskId).update({'listId': newListId});
+  }
+
   /// Streams a single task by [taskId]. Emits null if the document does not exist.
   Stream<Task?> streamTask(String taskId) {
     return _tasksCollection.doc(taskId).snapshots().map((snapshot) {

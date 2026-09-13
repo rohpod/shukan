@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/providers/auth_providers.dart';
+import '../../lists/providers/list_providers.dart';
 import '../../tags/providers/tag_providers.dart';
 import '../data/task.dart';
 import '../domain/task_constants.dart';
@@ -30,6 +31,19 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
       builder: (dialogContext) =>
           _TaskDialog(uid: uid, listId: listId, task: task),
     );
+  }
+
+  Future<void> _showMoveTaskDialog(BuildContext context, Task task) async {
+    final targetListName = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => _MoveTaskDialog(task: task),
+    );
+
+    if (targetListName != null && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Task moved to "$targetListName"')),
+      );
+    }
   }
 
   @override
@@ -180,6 +194,15 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                               }
                             });
                           },
+                        ),
+                        IconButton(
+                          key: Key('moveTaskButton_${task.taskId}'),
+                          icon: const Icon(
+                            Icons.drive_file_move_outlined,
+                            size: 20,
+                          ),
+                          tooltip: 'Move',
+                          onPressed: () => _showMoveTaskDialog(context, task),
                         ),
                         IconButton(
                           key: Key('editTaskButton_${task.taskId}'),
@@ -865,6 +888,88 @@ class _TaskDialogState extends ConsumerState<_TaskDialog> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : Text(isEditing ? 'Save' : 'Create'),
+        ),
+      ],
+    );
+  }
+}
+
+class _MoveTaskDialog extends ConsumerWidget {
+  final Task task;
+
+  const _MoveTaskDialog({required this.task});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final listsAsync = ref.watch(listsForUserProvider);
+
+    return AlertDialog(
+      title: const Text('Move Task to List'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: listsAsync.when(
+          data: (lists) {
+            final targetLists = lists
+                .where((l) => l.listId != task.listId)
+                .toList();
+
+            if (targetLists.isEmpty) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Text(
+                  'No other lists available',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey),
+                ),
+              );
+            }
+
+            return ListView.separated(
+              shrinkWrap: true,
+              itemCount: targetLists.length,
+              separatorBuilder: (context, index) => const Divider(height: 1),
+              itemBuilder: (context, index) {
+                final list = targetLists[index];
+                return ListTile(
+                  key: Key('moveToListOption_${list.listId}'),
+                  title: Text(list.name),
+                  onTap: () async {
+                    final navigator = Navigator.of(context);
+                    final messenger = ScaffoldMessenger.of(context);
+                    try {
+                      await ref
+                          .read(taskRepositoryProvider)
+                          .moveTaskToList(task.taskId, list.listId);
+                      if (context.mounted) {
+                        navigator.pop(list.name);
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        navigator.pop();
+                      }
+                      messenger.showSnackBar(
+                        SnackBar(content: Text('Failed to move task: $e')),
+                      );
+                    }
+                  },
+                );
+              },
+            );
+          },
+          loading: () => const Center(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: CircularProgressIndicator(),
+            ),
+          ),
+          error: (e, _) => Center(child: Text('Error loading lists: $e')),
+        ),
+      ),
+      actions: [
+        TextButton(
+          key: const Key('cancelMoveTaskButton'),
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
         ),
       ],
     );
