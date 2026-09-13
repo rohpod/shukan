@@ -550,5 +550,81 @@ void main() {
         expect(subtasks[2]['id'], equals('sub-a'));
       },
     );
+
+    testWidgets(
+      'move task button opens list picker, selects a list, and calls moveTaskToList',
+      (tester) async {
+        final mockTaskRepo = MockTaskRepository();
+        const targetListId = 'other-list-456';
+
+        // Add a second list for this user in fakeFirestore
+        await fakeFirestore.collection('lists').doc(targetListId).set({
+          'listId': targetListId,
+          'uid': uid,
+          'name': 'Work Projects',
+          'isDefault': false,
+          'createdAt': Timestamp.now(),
+        });
+
+        final testTask = Task(
+          taskId: 'task-move-1',
+          uid: uid,
+          listId: listId,
+          title: 'Task to be moved',
+          notes: '',
+          url: '',
+          priority: 'none',
+          tagIds: const [],
+          dueDate: null,
+          dueTime: null,
+          earlyReminderMinutes: 0,
+          repeatRule: 'none',
+          createdAt: DateTime(2026, 1, 1),
+        );
+
+        when(() => mockTaskRepo.streamTasksForList(uid, listId))
+            .thenAnswer((_) => Stream.value([testTask]));
+        when(() => mockTaskRepo.moveTaskToList('task-move-1', targetListId))
+            .thenAnswer((_) async {});
+
+        await tester.pumpWidget(
+          createWidgetUnderTest(taskRepository: mockTaskRepo),
+        );
+        await tester.pumpAndSettle();
+
+        // 1. Verify task item and move button are present
+        final moveButtonFinder = find.byKey(
+          const Key('moveTaskButton_task-move-1'),
+        );
+        expect(moveButtonFinder, findsOneWidget);
+
+        // 2. Tap the move button to open the list picker dialog
+        await tester.tap(moveButtonFinder);
+        await tester.pumpAndSettle();
+
+        expect(find.text('Move Task to List'), findsOneWidget);
+
+        // Current list (Inbox) should be excluded
+        expect(find.byKey(const Key('moveToListOption_$listId')), findsNothing);
+
+        // Target list (Work Projects) should be visible
+        final targetListOption = find.byKey(
+          const Key('moveToListOption_$targetListId'),
+        );
+        expect(targetListOption, findsOneWidget);
+        expect(find.text('Work Projects'), findsOneWidget);
+
+        // 3. Tap target list option
+        await tester.tap(targetListOption);
+        await tester.pumpAndSettle();
+
+        // 4. Verify moveTaskToList was called with expected IDs
+        verify(() => mockTaskRepo.moveTaskToList('task-move-1', targetListId))
+            .called(1);
+
+        // 5. Verify confirmation SnackBar
+        expect(find.text('Task moved to "Work Projects"'), findsOneWidget);
+      },
+    );
   });
 }

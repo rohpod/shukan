@@ -414,6 +414,75 @@ void main() {
       expect(tasksSnapshot.docs.isEmpty, isTrue);
     });
 
+    test(
+      'moveTaskToList updates listId correctly and preserves other fields',
+      () async {
+        await fakeFirestore.collection('lists').doc('work-123').set({
+          'listId': 'work-123',
+          'uid': 'user-123',
+          'name': 'Work',
+          'isDefault': false,
+        });
+
+        final task = await repository.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Task to move',
+          notes: 'Some notes',
+        );
+
+        await repository.moveTaskToList(task.taskId, 'work-123');
+
+        final updatedDoc = await fakeFirestore
+            .collection('tasks')
+            .doc(task.taskId)
+            .get();
+        expect(updatedDoc.data()!['listId'], equals('work-123'));
+        expect(updatedDoc.data()!['title'], equals('Task to move'));
+        expect(updatedDoc.data()!['notes'], equals('Some notes'));
+        expect(updatedDoc.data()!['uid'], equals('user-123'));
+      },
+    );
+
+    test('moveTaskToList throws ArgumentError when target list does not exist and does not update listId', () async {
+      final task = await repository.createTask(
+        uid: 'user-123',
+        listId: 'inbox-456',
+        title: 'Task to move',
+      );
+
+      await expectLater(
+        repository.moveTaskToList(task.taskId, 'nonexistent-list'),
+        throwsA(isA<ArgumentError>()),
+      );
+
+      final doc = await fakeFirestore
+          .collection('tasks')
+          .doc(task.taskId)
+          .get();
+      expect(doc.data()!['listId'], equals('inbox-456'));
+    });
+
+    test('moveTaskToList throws ArgumentError when target list belongs to a different uid and does not update listId', () async {
+      // list-xyz belongs to user-abc, but task belongs to user-123
+      final task = await repository.createTask(
+        uid: 'user-123',
+        listId: 'inbox-456',
+        title: 'Task to move',
+      );
+
+      await expectLater(
+        repository.moveTaskToList(task.taskId, 'list-xyz'),
+        throwsA(isA<ArgumentError>()),
+      );
+
+      final doc = await fakeFirestore
+          .collection('tasks')
+          .doc(task.taskId)
+          .get();
+      expect(doc.data()!['listId'], equals('inbox-456'));
+    });
+
     group('Subtasks', () {
       test('addSubtask appends new subtask with uuid, trimmed title, and false completed', () async {
         final task = await repository.createTask(
