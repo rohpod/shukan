@@ -17,15 +17,29 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _emailFocusNode = FocusNode();
+  final _passwordFocusNode = FocusNode();
 
   AuthMode _authMode = AuthMode.signIn;
   bool _isLoading = false;
   String? _errorMessage;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _emailFocusNode.requestFocus();
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _emailFocusNode.dispose();
+    _passwordFocusNode.dispose();
     super.dispose();
   }
 
@@ -194,7 +208,12 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                       TextFormField(
                         key: const Key('emailField'),
                         controller: _emailController,
+                        focusNode: _emailFocusNode,
+                        autofocus: true,
                         keyboardType: TextInputType.emailAddress,
+                        textInputAction: TextInputAction.next,
+                        onFieldSubmitted: (_) =>
+                            _passwordFocusNode.requestFocus(),
                         autocorrect: false,
                         decoration: const InputDecoration(
                           labelText: 'Email',
@@ -207,7 +226,10 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                       TextFormField(
                         key: const Key('passwordField'),
                         controller: _passwordController,
+                        focusNode: _passwordFocusNode,
                         obscureText: true,
+                        textInputAction: TextInputAction.done,
+                        onFieldSubmitted: (_) => _submit(),
                         decoration: const InputDecoration(
                           labelText: 'Password',
                           prefixIcon: Icon(Icons.lock_outlined),
