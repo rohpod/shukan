@@ -127,7 +127,11 @@ docs: add Firebase setup instructions to README
 
 - **Never commit** `google-services.json`, `GoogleService-Info.plist`, API keys, or any
   `firebase_options.dart` containing real project credentials. These must be in
-  `.gitignore`. Share them via a private channel (not GitHub) among the team.
+  `.gitignore`.
+- Setting up your own local copy of these (so you can actually run the app) is
+  a five-minute, self-serve process — see `docs/firebase-setup.md`. You don't
+  need anything shared with you directly beyond being added as a collaborator
+  on the Firebase project; the setup guide generates your config for you.
 - If a secret is committed by accident: rotate/regenerate it immediately, don't just
   delete it in a follow-up commit (it stays in git history).
 
