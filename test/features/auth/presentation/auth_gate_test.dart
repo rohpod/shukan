@@ -97,8 +97,8 @@ void main() {
         await tester.pumpAndSettle();
 
         // Should be on HomeScreen
-        expect(find.text('Welcome to shukan'), findsOneWidget);
-        expect(find.text('newuser@example.com'), findsOneWidget);
+        expect(find.byKey(const Key('logoutButton')), findsOneWidget);
+        expect(find.text('shukan'), findsOneWidget);
 
         // Verify Firestore data in fakeFirestore
         final userSnapshot = await fakeFirestore

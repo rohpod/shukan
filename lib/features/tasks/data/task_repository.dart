@@ -18,6 +18,14 @@ class TaskRepository {
     String notes = '',
     String url = '',
   }) async {
+    final listDoc = await _firestore.collection('lists').doc(listId).get();
+    if (!listDoc.exists) {
+      throw ArgumentError('List not found: $listId');
+    }
+    if (listDoc.data()?['uid'] != uid) {
+      throw ArgumentError('List does not belong to user: $listId');
+    }
+
     final docRef = _tasksCollection.doc();
     final data = <String, dynamic>{
       'taskId': docRef.id,

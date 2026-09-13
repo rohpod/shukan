@@ -8,9 +8,22 @@ void main() {
   late FakeFirebaseFirestore fakeFirestore;
   late TaskRepository repository;
 
-  setUp(() {
+  setUp(() async {
     fakeFirestore = FakeFirebaseFirestore();
     repository = TaskRepository(fakeFirestore);
+
+    await fakeFirestore.collection('lists').doc('inbox-456').set({
+      'listId': 'inbox-456',
+      'uid': 'user-123',
+      'name': 'Inbox',
+      'isDefault': true,
+    });
+    await fakeFirestore.collection('lists').doc('list-xyz').set({
+      'listId': 'list-xyz',
+      'uid': 'user-abc',
+      'name': 'Test List',
+      'isDefault': false,
+    });
   });
 
   group('TaskRepository', () {
@@ -255,6 +268,37 @@ void main() {
           await fakeFirestore.collection('tasks').doc(task.taskId).get();
       expect(doc.exists, isTrue);
       expect(doc.data()!['deletedAt'], isNotNull);
+    });
+
+    test('createTask throws ArgumentError when target list does not exist and does not write task doc', () async {
+      const nonExistentListId = 'ghost-list';
+
+      await expectLater(
+        repository.createTask(
+          uid: 'user-123',
+          listId: nonExistentListId,
+          title: 'Orphan task',
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+
+      final tasksSnapshot = await fakeFirestore.collection('tasks').get();
+      expect(tasksSnapshot.docs.isEmpty, isTrue);
+    });
+
+    test('createTask throws ArgumentError when target list belongs to a different uid and does not write task doc', () async {
+      // list-xyz belongs to user-abc, but we attempt creation as user-123
+      await expectLater(
+        repository.createTask(
+          uid: 'user-123',
+          listId: 'list-xyz',
+          title: 'Unauthorized list task',
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+
+      final tasksSnapshot = await fakeFirestore.collection('tasks').get();
+      expect(tasksSnapshot.docs.isEmpty, isTrue);
     });
   });
 }
