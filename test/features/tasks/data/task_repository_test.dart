@@ -235,6 +235,116 @@ void main() {
       expect(data['order'], equals(0));
     });
 
+    test('updateTask persists each new field individually', () async {
+      final task = await repository.createTask(
+        uid: 'user-abc',
+        listId: 'list-xyz',
+        title: 'Base Task',
+      );
+
+      // 1. Priority
+      await repository.updateTask(task.taskId, priority: 'high');
+      var doc = await fakeFirestore.collection('tasks').doc(task.taskId).get();
+      expect(doc.data()!['priority'], equals('high'));
+
+      // 2. Tag IDs
+      await repository.updateTask(task.taskId, tagIds: ['tag-1', 'tag-2']);
+      doc = await fakeFirestore.collection('tasks').doc(task.taskId).get();
+      expect(doc.data()!['tagIds'], equals(['tag-1', 'tag-2']));
+
+      // 3. Due Date
+      final targetDate = DateTime(2026, 12, 25);
+      await repository.updateTask(task.taskId, dueDate: targetDate);
+      doc = await fakeFirestore.collection('tasks').doc(task.taskId).get();
+      expect(
+        (doc.data()!['dueDate'] as Timestamp).toDate(),
+        equals(targetDate),
+      );
+
+      // 4. Due Time
+      await repository.updateTask(task.taskId, dueTime: '15:45');
+      doc = await fakeFirestore.collection('tasks').doc(task.taskId).get();
+      expect(doc.data()!['dueTime'], equals('15:45'));
+
+      // 5. Early Reminder Minutes
+      await repository.updateTask(task.taskId, earlyReminderMinutes: 30);
+      doc = await fakeFirestore.collection('tasks').doc(task.taskId).get();
+      expect(doc.data()!['earlyReminderMinutes'], equals(30));
+
+      // 6. Repeat Rule
+      await repository.updateTask(task.taskId, repeatRule: 'monthly');
+      doc = await fakeFirestore.collection('tasks').doc(task.taskId).get();
+      expect(doc.data()!['repeatRule'], equals('monthly'));
+    });
+
+    test('updateTask persists all new fields together', () async {
+      final task = await repository.createTask(
+        uid: 'user-abc',
+        listId: 'list-xyz',
+        title: 'Combined Task',
+      );
+
+      final dueDate = DateTime(2026, 11, 20);
+
+      await repository.updateTask(
+        task.taskId,
+        priority: 'medium',
+        tagIds: ['tag-work', 'tag-urgent'],
+        dueDate: dueDate,
+        dueTime: '09:30',
+        earlyReminderMinutes: 15,
+        repeatRule: 'weekly',
+      );
+
+      final doc = await fakeFirestore
+          .collection('tasks')
+          .doc(task.taskId)
+          .get();
+      final data = doc.data()!;
+
+      expect(data['priority'], equals('medium'));
+      expect(data['tagIds'], equals(['tag-work', 'tag-urgent']));
+      expect((data['dueDate'] as Timestamp).toDate(), equals(dueDate));
+      expect(data['dueTime'], equals('09:30'));
+      expect(data['earlyReminderMinutes'], equals(15));
+      expect(data['repeatRule'], equals('weekly'));
+    });
+
+    test('updateTask clears dueDate and dueTime', () async {
+      final task = await repository.createTask(
+        uid: 'user-abc',
+        listId: 'list-xyz',
+        title: 'Timed Task',
+      );
+
+      // Set initial date & time
+      await repository.updateTask(
+        task.taskId,
+        dueDate: DateTime(2026, 10, 10),
+        dueTime: '11:00',
+      );
+      var doc = await fakeFirestore.collection('tasks').doc(task.taskId).get();
+      expect(doc.data()!['dueDate'], isNotNull);
+      expect(doc.data()!['dueTime'], equals('11:00'));
+
+      // Clear only dueTime
+      await repository.updateTask(task.taskId, clearDueTime: true);
+      doc = await fakeFirestore.collection('tasks').doc(task.taskId).get();
+      expect(doc.data()!['dueDate'], isNotNull);
+      expect(doc.data()!['dueTime'], isNull);
+
+      // Restore dueTime
+      await repository.updateTask(task.taskId, dueTime: '12:00');
+      doc = await fakeFirestore.collection('tasks').doc(task.taskId).get();
+      expect(doc.data()!['dueTime'], equals('12:00'));
+
+      // Clearing dueDate automatically clears dueTime if dueTime is not explicitly passed
+      await repository.updateTask(task.taskId, clearDueDate: true);
+      doc = await fakeFirestore.collection('tasks').doc(task.taskId).get();
+      expect(doc.data()!['dueDate'], isNull);
+      expect(doc.data()!['dueTime'], isNull);
+    });
+
     test('toggleTaskCompleted sets and clears completedAt', () async {
       final task = await repository.createTask(
         uid: 'user-abc',
