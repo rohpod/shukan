@@ -25,8 +25,10 @@ final defaultListIdProvider = StreamProvider<String?>((ref) {
 });
 
 /// Family stream provider returning tasks for [listId] scoped to current user.
-final tasksForListProvider =
-    StreamProvider.family<List<Task>, String>((ref, listId) {
+final tasksForListProvider = StreamProvider.family<List<Task>, String>((
+  ref,
+  listId,
+) {
   final uid = ref.watch(currentUidProvider);
   if (uid == null) {
     return Stream.value(const <Task>[]);

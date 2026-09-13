@@ -34,7 +34,9 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
 
     setState(() => _isCreating = true);
     try {
-      await ref.read(taskRepositoryProvider).createTask(
+      await ref
+          .read(taskRepositoryProvider)
+          .createTask(
             uid: uid,
             listId: listId,
             title: _titleController.text,
@@ -46,9 +48,8 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
       _urlController.clear();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to add task: $e')),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Failed to add task: $e')));
       }
     } finally {
       if (mounted) {
@@ -88,9 +89,7 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
         key: Key('defaultListLoadingIndicator'),
         child: CircularProgressIndicator(),
       ),
-      error: (e, _) => Center(
-        child: Text('Error loading default list: $e'),
-      ),
+      error: (e, _) => Center(child: Text('Error loading default list: $e')),
     );
   }
 
@@ -156,7 +155,9 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                             ? const SizedBox(
                                 width: 16,
                                 height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               )
                             : const Text('Add'),
                       ),
@@ -184,7 +185,10 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
 
               return ListView.separated(
                 key: const Key('tasksListView'),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 itemCount: tasks.length,
                 separatorBuilder: (context, index) => const Divider(height: 1),
                 itemBuilder: (context, index) {
@@ -272,9 +276,7 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
               key: Key('tasksLoadingIndicator'),
               child: CircularProgressIndicator(),
             ),
-            error: (e, _) => Center(
-              child: Text('Error loading tasks: $e'),
-            ),
+            error: (e, _) => Center(child: Text('Error loading tasks: $e')),
           ),
         ),
       ],
@@ -318,7 +320,9 @@ class _EditTaskDialogState extends ConsumerState<_EditTaskDialog> {
     if (!_editFormKey.currentState!.validate()) return;
     setState(() => _isSaving = true);
     try {
-      await ref.read(taskRepositoryProvider).updateTask(
+      await ref
+          .read(taskRepositoryProvider)
+          .updateTask(
             widget.task.taskId,
             title: _titleController.text,
             notes: _notesController.text,
@@ -359,7 +363,9 @@ class _EditTaskDialogState extends ConsumerState<_EditTaskDialog> {
               TextFormField(
                 key: const Key('editTaskNotesInput'),
                 controller: _notesController,
-                decoration: const InputDecoration(labelText: 'Notes (optional)'),
+                decoration: const InputDecoration(
+                  labelText: 'Notes (optional)',
+                ),
                 maxLines: 2,
               ),
               const SizedBox(height: 12),

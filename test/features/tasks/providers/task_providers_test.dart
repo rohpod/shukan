@@ -50,56 +50,50 @@ void main() {
     );
 
     final values = <String?>[];
-    container.listen<AsyncValue<String?>>(
-      defaultListIdProvider,
-      (_, next) {
-        if (next.hasValue) values.add(next.value);
-      },
-      fireImmediately: true,
-    );
+    container.listen<AsyncValue<String?>>(defaultListIdProvider, (_, next) {
+      if (next.hasValue) values.add(next.value);
+    }, fireImmediately: true);
 
     await pumpEventQueue();
 
     expect(values, contains(defaultListId));
   });
 
-  test('tasksForListProvider streams tasks for current user and list', () async {
-    const uid = 'test-uid';
-    const listId = 'inbox-123';
+  test(
+    'tasksForListProvider streams tasks for current user and list',
+    () async {
+      const uid = 'test-uid';
+      const listId = 'inbox-123';
 
-    final container = createContainer(
-      user: MockUser(uid: uid, email: 'user@example.com'),
-    );
+      final container = createContainer(
+        user: MockUser(uid: uid, email: 'user@example.com'),
+      );
 
-    final emittedTasks = <List<Task>>[];
-    container.listen<AsyncValue<List<Task>>>(
-      tasksForListProvider(listId),
-      (_, next) {
+      final emittedTasks = <List<Task>>[];
+      container.listen<AsyncValue<List<Task>>>(tasksForListProvider(listId), (
+        _,
+        next,
+      ) {
         if (next.hasValue) emittedTasks.add(next.value!);
-      },
-      fireImmediately: true,
-    );
+      }, fireImmediately: true);
 
-    await pumpEventQueue();
-    expect(emittedTasks.last, isEmpty);
+      await pumpEventQueue();
+      expect(emittedTasks.last, isEmpty);
 
-    // Create a task
-    final repo = container.read(taskRepositoryProvider);
-    await fakeFirestore.collection('lists').doc(listId).set({
-      'listId': listId,
-      'uid': uid,
-      'name': 'Inbox',
-      'isDefault': true,
-    });
-    await repo.createTask(
-      uid: uid,
-      listId: listId,
-      title: 'Provider task',
-    );
+      // Create a task
+      final repo = container.read(taskRepositoryProvider);
+      await fakeFirestore.collection('lists').doc(listId).set({
+        'listId': listId,
+        'uid': uid,
+        'name': 'Inbox',
+        'isDefault': true,
+      });
+      await repo.createTask(uid: uid, listId: listId, title: 'Provider task');
 
-    await pumpEventQueue();
+      await pumpEventQueue();
 
-    expect(emittedTasks.last.length, equals(1));
-    expect(emittedTasks.last.first.title, equals('Provider task'));
-  });
+      expect(emittedTasks.last.length, equals(1));
+      expect(emittedTasks.last.first.title, equals('Provider task'));
+    },
+  );
 }

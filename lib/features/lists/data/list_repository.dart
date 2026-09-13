@@ -48,25 +48,23 @@ class ListRepository {
         .orderBy('createdAt')
         .snapshots()
         .map((snapshot) {
-      final lists = snapshot.docs.map(ListModel.fromFirestore).toList();
-      lists.sort((a, b) {
-        if (a.isDefault != b.isDefault) {
-          return a.isDefault ? -1 : 1;
-        }
-        if (a.createdAt != null && b.createdAt != null) {
-          return a.createdAt!.compareTo(b.createdAt!);
-        }
-        return 0;
-      });
-      return lists;
-    });
+          final lists = snapshot.docs.map(ListModel.fromFirestore).toList();
+          lists.sort((a, b) {
+            if (a.isDefault != b.isDefault) {
+              return a.isDefault ? -1 : 1;
+            }
+            if (a.createdAt != null && b.createdAt != null) {
+              return a.createdAt!.compareTo(b.createdAt!);
+            }
+            return 0;
+          });
+          return lists;
+        });
   }
 
   /// Renames a list. Renaming is allowed for any list, including the default list.
   Future<void> renameList(String listId, String newName) async {
-    await _listsCollection.doc(listId).update({
-      'name': newName.trim(),
-    });
+    await _listsCollection.doc(listId).update({'name': newName.trim()});
   }
 
   /// Returns the number of active (non-soft-deleted) tasks belonging to [listId].

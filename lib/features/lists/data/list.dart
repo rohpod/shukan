@@ -37,7 +37,8 @@ class ListModel {
   }
 
   factory ListModel.fromFirestore(
-      DocumentSnapshot<Map<String, dynamic>> snapshot) {
+    DocumentSnapshot<Map<String, dynamic>> snapshot,
+  ) {
     return ListModel.fromMap(snapshot.data() ?? {}, snapshot.id);
   }
 

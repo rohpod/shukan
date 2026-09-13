@@ -28,73 +28,74 @@ void main() {
 
   group('TaskRepository', () {
     test(
-        'createTask writes full schema with correct defaults and uid/listId set',
-        () async {
-      const uid = 'user-123';
-      const listId = 'inbox-456';
-      const title = 'Complete quarterly taxes';
-      const notes = 'Check deductions and receipts';
-      const url = 'https://irs.gov';
+      'createTask writes full schema with correct defaults and uid/listId set',
+      () async {
+        const uid = 'user-123';
+        const listId = 'inbox-456';
+        const title = 'Complete quarterly taxes';
+        const notes = 'Check deductions and receipts';
+        const url = 'https://irs.gov';
 
-      final task = await repository.createTask(
-        uid: uid,
-        listId: listId,
-        title: title,
-        notes: notes,
-        url: url,
-      );
+        final task = await repository.createTask(
+          uid: uid,
+          listId: listId,
+          title: title,
+          notes: notes,
+          url: url,
+        );
 
-      // Verify in-memory task entity
-      expect(task.taskId, isNotEmpty);
-      expect(task.uid, equals(uid));
-      expect(task.listId, equals(listId));
-      expect(task.title, equals(title));
-      expect(task.notes, equals(notes));
-      expect(task.url, equals(url));
-      expect(task.priority, equals('none'));
-      expect(task.tagIds, isEmpty);
-      expect(task.dueDate, isNull);
-      expect(task.dueTime, isNull);
-      expect(task.earlyReminderMinutes, equals(0));
-      expect(task.repeatRule, equals('none'));
-      expect(task.repeatCustomConfig, isNull);
-      expect(task.order, equals(0));
-      expect(task.subtasks, isEmpty);
-      expect(task.createdAt, isNotNull);
-      expect(task.completedAt, isNull);
-      expect(task.deletedAt, isNull);
-      expect(task.isCompleted, isFalse);
-      expect(task.isDeleted, isFalse);
+        // Verify in-memory task entity
+        expect(task.taskId, isNotEmpty);
+        expect(task.uid, equals(uid));
+        expect(task.listId, equals(listId));
+        expect(task.title, equals(title));
+        expect(task.notes, equals(notes));
+        expect(task.url, equals(url));
+        expect(task.priority, equals('none'));
+        expect(task.tagIds, isEmpty);
+        expect(task.dueDate, isNull);
+        expect(task.dueTime, isNull);
+        expect(task.earlyReminderMinutes, equals(0));
+        expect(task.repeatRule, equals('none'));
+        expect(task.repeatCustomConfig, isNull);
+        expect(task.order, equals(0));
+        expect(task.subtasks, isEmpty);
+        expect(task.createdAt, isNotNull);
+        expect(task.completedAt, isNull);
+        expect(task.deletedAt, isNull);
+        expect(task.isCompleted, isFalse);
+        expect(task.isDeleted, isFalse);
 
-      // Verify persisted Firestore document
-      final docSnapshot =
-          await fakeFirestore.collection('tasks').doc(task.taskId).get();
-      expect(docSnapshot.exists, isTrue);
+        // Verify persisted Firestore document
+        final docSnapshot = await fakeFirestore
+            .collection('tasks')
+            .doc(task.taskId)
+            .get();
+        expect(docSnapshot.exists, isTrue);
 
-      final data = docSnapshot.data()!;
-      expect(data['taskId'], equals(task.taskId));
-      expect(data['uid'], equals(uid));
-      expect(data['listId'], equals(listId));
-      expect(data['title'], equals(title));
-      expect(data['notes'], equals(notes));
-      expect(data['url'], equals(url));
-      expect(data['priority'], equals('none'));
-      expect(data['tagIds'], equals(<String>[]));
-      expect(data['dueDate'], isNull);
-      expect(data['dueTime'], isNull);
-      expect(data['earlyReminderMinutes'], equals(0));
-      expect(data['repeatRule'], equals('none'));
-      expect(data['repeatCustomConfig'], isNull);
-      expect(data['order'], equals(0));
-      expect(data['subtasks'], equals(<Map<String, dynamic>>[]));
-      expect(data['createdAt'], isNotNull);
-      expect(data['completedAt'], isNull);
-      expect(data['deletedAt'], isNull);
-    });
+        final data = docSnapshot.data()!;
+        expect(data['taskId'], equals(task.taskId));
+        expect(data['uid'], equals(uid));
+        expect(data['listId'], equals(listId));
+        expect(data['title'], equals(title));
+        expect(data['notes'], equals(notes));
+        expect(data['url'], equals(url));
+        expect(data['priority'], equals('none'));
+        expect(data['tagIds'], equals(<String>[]));
+        expect(data['dueDate'], isNull);
+        expect(data['dueTime'], isNull);
+        expect(data['earlyReminderMinutes'], equals(0));
+        expect(data['repeatRule'], equals('none'));
+        expect(data['repeatCustomConfig'], isNull);
+        expect(data['order'], equals(0));
+        expect(data['subtasks'], equals(<Map<String, dynamic>>[]));
+        expect(data['createdAt'], isNotNull);
+        expect(data['completedAt'], isNull);
+        expect(data['deletedAt'], isNull);
+      },
+    );
 
-    test(
-        'streamTasksForList excludes soft-deleted tasks and filters by uid+listId correctly',
-        () async {
+    test('streamTasksForList excludes soft-deleted tasks and filters by uid+listId correctly', () async {
       const uid = 'user-1';
       const listId = 'list-1';
 
@@ -187,8 +188,9 @@ void main() {
       });
 
       final emissions = <List<Task>>[];
-      final subscription =
-          repository.streamTasksForList(uid, listId).listen(emissions.add);
+      final subscription = repository
+          .streamTasksForList(uid, listId)
+          .listen(emissions.add);
 
       await pumpEventQueue();
 
@@ -201,9 +203,7 @@ void main() {
       await subscription.cancel();
     });
 
-    test(
-        'updateTask only changes the specified fields, leaves placeholder fields untouched',
-        () async {
+    test('updateTask only changes the specified fields, leaves placeholder fields untouched', () async {
       final initialTask = await repository.createTask(
         uid: 'user-abc',
         listId: 'list-xyz',
@@ -244,8 +244,7 @@ void main() {
 
       // Mark completed
       await repository.toggleTaskCompleted(task.taskId, isCompleted: true);
-      var doc =
-          await fakeFirestore.collection('tasks').doc(task.taskId).get();
+      var doc = await fakeFirestore.collection('tasks').doc(task.taskId).get();
       expect(doc.data()!['completedAt'], isNotNull);
 
       // Unmark completed
@@ -254,21 +253,25 @@ void main() {
       expect(doc.data()!['completedAt'], isNull);
     });
 
-    test('softDeleteTask sets deletedAt without removing the document',
-        () async {
-      final task = await repository.createTask(
-        uid: 'user-abc',
-        listId: 'list-xyz',
-        title: 'Task to Delete',
-      );
+    test(
+      'softDeleteTask sets deletedAt without removing the document',
+      () async {
+        final task = await repository.createTask(
+          uid: 'user-abc',
+          listId: 'list-xyz',
+          title: 'Task to Delete',
+        );
 
-      await repository.softDeleteTask(task.taskId);
+        await repository.softDeleteTask(task.taskId);
 
-      final doc =
-          await fakeFirestore.collection('tasks').doc(task.taskId).get();
-      expect(doc.exists, isTrue);
-      expect(doc.data()!['deletedAt'], isNotNull);
-    });
+        final doc = await fakeFirestore
+            .collection('tasks')
+            .doc(task.taskId)
+            .get();
+        expect(doc.exists, isTrue);
+        expect(doc.data()!['deletedAt'], isNotNull);
+      },
+    );
 
     test('createTask throws ArgumentError when target list does not exist and does not write task doc', () async {
       const nonExistentListId = 'ghost-list';
