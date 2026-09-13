@@ -54,6 +54,9 @@ tags/{tagId}
   createdAt: timestamp
 }
 ```
+
+Not yet implemented — schema is defined here so #3/#11 can build against it directly.
+
 ---
 
 ## `tasks/{taskId}`
@@ -95,7 +98,18 @@ tags/{tagId}
 
 Every Firestore query in every feature must filter by `uid == currentUser.uid` (via
 Firestore security rules, not just client-side filtering — client-side alone is not
-security). Firestore security rules (draft, refine once auth flow is built):
+security).
+
+**Live rules are in `firestore.rules` at the repo root — that file is the source of
+truth, not the draft below.** It's kept in version control and deployed via
+`firebase deploy --only firestore:rules` (see `docs/firebase-setup.md`). The draft
+below is preserved for historical context (this is what was originally planned
+before Auth/List CRUD were built) — it has since been superseded, specifically:
+`lists/{listId}` now splits `update` and `delete` permissions, with `delete` requiring
+`resource.data.isDefault == false` so the default Inbox list can't be removed.
+
+<details>
+<summary>Original draft rules (superseded — see firestore.rules for current state)</summary>
 
 ```
 rules_version = '2';
@@ -120,8 +134,22 @@ service cloud.firestore {
 }
 ```
 
-Whoever builds Auth (see grouped work plan) should add these rules in Firebase Console
-→ Firestore → Rules early — don't leave the database in open "test mode" once real
-auth exists, even for local dev among the three of you.
+</details>
+
+## Indexes
+
+Composite indexes required by current queries are tracked in
+`firestore.indexes.json` at the repo root (also the source of truth — deploy via
+`firebase deploy --only firestore:indexes`). Currently:
+
+- `tasks`: `uid` + `listId` + `deletedAt` + `createdAt` (ascending) — supports
+  streaming a list's active tasks ordered by creation time.
+- `lists`: `uid` + `createdAt` (ascending) — supports streaming a user's lists
+  ordered by creation time.
+
+If you add a new compound query, Firestore will tell you the exact index it
+needs the first time you run it (error message includes a console link). Add
+the resulting index definition to `firestore.indexes.json` rather than only
+creating it via the console, so it's captured for the whole team.
 
 ---
