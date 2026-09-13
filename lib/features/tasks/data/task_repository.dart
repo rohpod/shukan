@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:uuid/uuid.dart';
 
 import 'task.dart';
 
@@ -158,5 +159,101 @@ class TaskRepository {
     await _tasksCollection.doc(taskId).update({
       'deletedAt': FieldValue.serverTimestamp(),
     });
+  }
+
+  /// Streams a single task by [taskId]. Emits null if the document does not exist.
+  Stream<Task?> streamTask(String taskId) {
+    return _tasksCollection.doc(taskId).snapshots().map((snapshot) {
+      if (!snapshot.exists || snapshot.data() == null) {
+        return null;
+      }
+      return Task.fromFirestore(snapshot);
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> _getSubtasksForTask(String taskId) async {
+    final doc = await _tasksCollection.doc(taskId).get();
+    if (!doc.exists) {
+      throw ArgumentError('Task not found: $taskId');
+    }
+    final data = doc.data();
+    return (data?['subtasks'] as List<dynamic>?)
+            ?.map((e) => Map<String, dynamic>.from(e as Map))
+            .toList() ??
+        <Map<String, dynamic>>[];
+  }
+
+  /// Adds a subtask to [taskId] with a generated UUID.
+  Future<void> addSubtask(String taskId, String title) async {
+    final trimmed = title.trim();
+    if (trimmed.isEmpty) {
+      throw ArgumentError('Subtask title cannot be empty');
+    }
+    final subtasks = await _getSubtasksForTask(taskId);
+    final newSubtask = <String, dynamic>{
+      'id': const Uuid().v4(),
+      'title': trimmed,
+      'completed': false,
+    };
+    await _tasksCollection.doc(taskId).update({
+      'subtasks': [...subtasks, newSubtask],
+    });
+  }
+
+  /// Toggles the completion status of subtask [subtaskId] within [taskId].
+  Future<void> toggleSubtask(
+    String taskId,
+    String subtaskId, {
+    required bool completed,
+  }) async {
+    final subtasks = await _getSubtasksForTask(taskId);
+    final index = subtasks.indexWhere((s) => s['id'] == subtaskId);
+    if (index == -1) {
+      throw ArgumentError('Subtask not found: $subtaskId');
+    }
+    subtasks[index]['completed'] = completed;
+    await _tasksCollection.doc(taskId).update({'subtasks': subtasks});
+  }
+
+  /// Removes subtask [subtaskId] from [taskId].
+  Future<void> removeSubtask(String taskId, String subtaskId) async {
+    final subtasks = await _getSubtasksForTask(taskId);
+    final updated = subtasks.where((s) => s['id'] != subtaskId).toList();
+    await _tasksCollection.doc(taskId).update({'subtasks': updated});
+  }
+
+  /// Reorders subtasks of [taskId] to match [orderedSubtaskIds].
+  ///
+  /// Throws [ArgumentError] if [orderedSubtaskIds] does not exactly match
+  /// the set and count of current subtask IDs (e.g. duplicates, missing or extra IDs).
+  Future<void> reorderSubtasks(
+    String taskId,
+    List<String> orderedSubtaskIds,
+  ) async {
+    final subtasks = await _getSubtasksForTask(taskId);
+    final existingIds = subtasks.map((s) => s['id'] as String).toList();
+
+    if (orderedSubtaskIds.length != existingIds.length) {
+      throw ArgumentError(
+        'Ordered subtask IDs count (${orderedSubtaskIds.length}) does not match existing subtask count (${existingIds.length})',
+      );
+    }
+
+    final orderedSet = orderedSubtaskIds.toSet();
+    if (orderedSet.length != orderedSubtaskIds.length) {
+      throw ArgumentError('Ordered subtask IDs contains duplicate IDs');
+    }
+
+    final existingSet = existingIds.toSet();
+    if (!orderedSet.containsAll(existingSet) ||
+        !existingSet.containsAll(orderedSet)) {
+      throw ArgumentError(
+        'Ordered subtask IDs do not match existing subtask IDs',
+      );
+    }
+
+    final subtaskMap = {for (final s in subtasks) s['id'] as String: s};
+    final reordered = orderedSubtaskIds.map((id) => subtaskMap[id]!).toList();
+    await _tasksCollection.doc(taskId).update({'subtasks': reordered});
   }
 }

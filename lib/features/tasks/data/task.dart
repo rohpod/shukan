@@ -162,6 +162,24 @@ class Task {
     );
   }
 
+  static bool _subtasksEquals(
+    List<Map<String, dynamic>> a,
+    List<Map<String, dynamic>> b,
+  ) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (!mapEquals(a[i], b[i])) return false;
+    }
+    return true;
+  }
+
+  static int _subtasksHash(List<Map<String, dynamic>> subtasks) {
+    return Object.hashAll(
+      subtasks.map((s) => Object.hash(s['id'], s['title'], s['completed'])),
+    );
+  }
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -179,6 +197,7 @@ class Task {
           dueTime == other.dueTime &&
           earlyReminderMinutes == other.earlyReminderMinutes &&
           repeatRule == other.repeatRule &&
+          _subtasksEquals(subtasks, other.subtasks) &&
           order == other.order &&
           createdAt == other.createdAt &&
           completedAt == other.completedAt &&
@@ -197,6 +216,7 @@ class Task {
       dueTime.hashCode ^
       earlyReminderMinutes.hashCode ^
       repeatRule.hashCode ^
+      _subtasksHash(subtasks) ^
       order.hashCode ^
       createdAt.hashCode ^
       completedAt.hashCode ^

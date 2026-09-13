@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:firebase_auth_mocks/firebase_auth_mocks.dart';
 import 'package:flutter/material.dart';
@@ -353,6 +354,200 @@ void main() {
             clearDueTime: true,
           ),
         ).called(1);
+      },
+    );
+
+    testWidgets('tapping task row opens edit task popup dialog', (
+      tester,
+    ) async {
+      await fakeFirestore.collection('tasks').doc('task-row-tap').set({
+        'taskId': 'task-row-tap',
+        'uid': uid,
+        'listId': listId,
+        'title': 'Tappable Task',
+        'notes': 'Tap me',
+        'url': '',
+        'priority': 'none',
+        'tagIds': [],
+        'dueDate': null,
+        'dueTime': null,
+        'earlyReminderMinutes': 0,
+        'repeatRule': 'none',
+        'repeatCustomConfig': null,
+        'order': 0,
+        'subtasks': [],
+        'createdAt': Timestamp.now(),
+        'completedAt': null,
+        'deletedAt': null,
+      });
+
+      await tester.pumpWidget(createWidgetUnderTest());
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('taskItem_task-row-tap')), findsOneWidget);
+
+      // Tap the task row directly
+      await tester.tap(find.byKey(const Key('taskItem_task-row-tap')));
+      await tester.pumpAndSettle();
+
+      // Confirms edit popup dialog opened
+      expect(find.text('Edit Task'), findsOneWidget);
+      expect(find.byKey(const Key('editTaskTitleInput')), findsOneWidget);
+    });
+
+    testWidgets(
+      'dropdown button shows/hides indented subtasks, adds subtask inline, toggles, and deletes',
+      (tester) async {
+        final taskDoc = fakeFirestore.collection('tasks').doc('task-with-subs');
+        await taskDoc.set({
+          'taskId': 'task-with-subs',
+          'uid': uid,
+          'listId': listId,
+          'title': 'Task with Subtasks',
+          'notes': '',
+          'url': '',
+          'priority': 'none',
+          'tagIds': [],
+          'dueDate': null,
+          'dueTime': null,
+          'earlyReminderMinutes': 0,
+          'repeatRule': 'none',
+          'repeatCustomConfig': null,
+          'order': 0,
+          'subtasks': [
+            {'id': 'sub-1', 'title': 'Existing subtask 1', 'completed': false},
+          ],
+          'createdAt': Timestamp.now(),
+          'completedAt': null,
+          'deletedAt': null,
+        });
+
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        // Subtasks are initially collapsed/hidden
+        expect(find.byKey(const Key('subtaskRow_sub-1')), findsNothing);
+        expect(
+          find.byKey(const Key('toggleSubtasksButton_task-with-subs')),
+          findsOneWidget,
+        );
+
+        // 1. Tap dropdown button to show subtasks
+        await tester.tap(
+          find.byKey(const Key('toggleSubtasksButton_task-with-subs')),
+        );
+        await tester.pumpAndSettle();
+
+        // Now subtask is visible
+        expect(find.byKey(const Key('subtaskRow_sub-1')), findsOneWidget);
+        expect(find.text('Existing subtask 1'), findsOneWidget);
+
+        // 2. Add a new subtask inline
+        await tester.enterText(
+          find.byKey(const Key('addSubtaskInput_task-with-subs')),
+          'Second inline subtask',
+        );
+        await tester.tap(
+          find.byKey(const Key('addSubtaskButton_task-with-subs')),
+        );
+        await tester.pumpAndSettle();
+
+        // Verify second subtask appears in UI and Firestore
+        expect(find.text('Second inline subtask'), findsOneWidget);
+        var snap = await taskDoc.get();
+        var subtasks = (snap.data()!['subtasks'] as List<dynamic>);
+        expect(subtasks.length, equals(2));
+
+        // 3. Toggle subtask completion via checkbox
+        final checkboxFinder = find.byKey(const Key('subtaskCheckbox_sub-1'));
+        expect(checkboxFinder, findsOneWidget);
+        await tester.tap(checkboxFinder);
+        await tester.pumpAndSettle();
+
+        snap = await taskDoc.get();
+        subtasks = (snap.data()!['subtasks'] as List<dynamic>);
+        expect(subtasks[0]['completed'], isTrue);
+        // Parent task completedAt is still null
+        expect(snap.data()!['completedAt'], isNull);
+
+        // 4. Delete subtask via delete button
+        final deleteBtn = find.byKey(const Key('deleteSubtaskButton_sub-1'));
+        expect(deleteBtn, findsOneWidget);
+        await tester.tap(deleteBtn);
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('subtaskRow_sub-1')), findsNothing);
+        snap = await taskDoc.get();
+        subtasks = (snap.data()!['subtasks'] as List<dynamic>);
+        expect(subtasks.length, equals(1));
+
+        // 5. Tap dropdown button to hide subtasks
+        await tester.tap(
+          find.byKey(const Key('toggleSubtasksButton_task-with-subs')),
+        );
+        await tester.pumpAndSettle();
+
+        // Subtasks are hidden again
+        expect(find.text('Second inline subtask'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'reorders subtasks inline via ReorderableListView onReorderItem',
+      (tester) async {
+        final taskDoc = fakeFirestore.collection('tasks').doc('task-reorder');
+        await taskDoc.set({
+          'taskId': 'task-reorder',
+          'uid': uid,
+          'listId': listId,
+          'title': 'Reorder Task',
+          'notes': '',
+          'url': '',
+          'priority': 'none',
+          'tagIds': [],
+          'dueDate': null,
+          'dueTime': null,
+          'earlyReminderMinutes': 0,
+          'repeatRule': 'none',
+          'repeatCustomConfig': null,
+          'order': 0,
+          'subtasks': [
+            {'id': 'sub-a', 'title': 'Sub A', 'completed': false},
+            {'id': 'sub-b', 'title': 'Sub B', 'completed': false},
+            {'id': 'sub-c', 'title': 'Sub C', 'completed': false},
+          ],
+          'createdAt': Timestamp.now(),
+          'completedAt': null,
+          'deletedAt': null,
+        });
+
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        // Expand subtasks
+        await tester.tap(
+          find.byKey(const Key('toggleSubtasksButton_task-reorder')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('subtasksList_task-reorder')),
+          findsOneWidget,
+        );
+
+        // Move index 0 to index 2
+        final reorderableWidget = tester.widget<ReorderableListView>(
+          find.byKey(const Key('subtasksList_task-reorder')),
+        );
+        reorderableWidget.onReorderItem?.call(0, 2);
+        await tester.pumpAndSettle();
+
+        // Verify new order in Firestore: B, C, A
+        final snap = await taskDoc.get();
+        final subtasks = (snap.data()!['subtasks'] as List<dynamic>);
+        expect(subtasks[0]['id'], equals('sub-b'));
+        expect(subtasks[1]['id'], equals('sub-c'));
+        expect(subtasks[2]['id'], equals('sub-a'));
       },
     );
   });

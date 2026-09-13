@@ -36,3 +36,9 @@ final tasksForListProvider = StreamProvider.family<List<Task>, String>((
   final repository = ref.watch(taskRepositoryProvider);
   return repository.streamTasksForList(uid, listId);
 });
+
+/// Family stream provider returning a single task by [taskId].
+final taskStreamProvider = StreamProvider.family<Task?, String>((ref, taskId) {
+  final repository = ref.watch(taskRepositoryProvider);
+  return repository.streamTask(taskId);
+});
