@@ -220,9 +220,57 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                           ),
                           tooltip: 'Delete',
                           onPressed: () async {
-                            await ref
-                                .read(taskRepositoryProvider)
-                                .softDeleteTask(task.taskId);
+                            final defaultListId = ref
+                                .read(defaultListIdProvider)
+                                .value;
+                            try {
+                              await ref
+                                  .read(taskRepositoryProvider)
+                                  .softDeleteTask(task.taskId);
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).clearSnackBars();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Deleted "${task.title}"'),
+                                    action: SnackBarAction(
+                                      key: const Key('undoDeleteTaskButton'),
+                                      label: 'Undo',
+                                      onPressed: () async {
+                                        try {
+                                          await ref
+                                              .read(taskRepositoryProvider)
+                                              .restoreTask(
+                                                uid: uid,
+                                                taskId: task.taskId,
+                                                defaultListId: defaultListId,
+                                              );
+                                        } catch (e) {
+                                          if (context.mounted) {
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
+                                              SnackBar(
+                                                content: Text(
+                                                  'Failed to undo deletion: $e',
+                                                ),
+                                              ),
+                                            );
+                                          }
+                                        }
+                                      },
+                                    ),
+                                  ),
+                                );
+                              }
+                            } catch (e) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Failed to delete task: $e'),
+                                  ),
+                                );
+                              }
+                            }
                           },
                         ),
                       ],

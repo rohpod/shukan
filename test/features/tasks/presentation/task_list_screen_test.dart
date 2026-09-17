@@ -626,5 +626,55 @@ void main() {
         expect(find.text('Task moved to "Work Projects"'), findsOneWidget);
       },
     );
+
+    testWidgets(
+      'soft delete shows Undo SnackBar, and tapping Undo restores the task',
+      (tester) async {
+        const taskId = 'task-undo-1';
+        await fakeFirestore.collection('tasks').doc(taskId).set({
+          'taskId': taskId,
+          'uid': uid,
+          'listId': listId,
+          'title': 'Task to undo',
+          'notes': '',
+          'url': '',
+          'priority': 'none',
+          'tagIds': <String>[],
+          'dueDate': null,
+          'dueTime': null,
+          'earlyReminderMinutes': 0,
+          'repeatRule': 'none',
+          'repeatCustomConfig': null,
+          'order': 0,
+          'subtasks': <Map<String, dynamic>>[],
+          'createdAt': Timestamp.now(),
+          'completedAt': null,
+          'deletedAt': null,
+        });
+
+        await tester.pumpWidget(createWidgetUnderTest(customListId: listId));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Task to undo'), findsOneWidget);
+
+        // Tap delete
+        await tester.tap(find.byKey(const Key('deleteTaskButton_$taskId')));
+        await tester.pumpAndSettle();
+
+        // Task removed from view, SnackBar shown
+        expect(find.text('Task to undo'), findsNothing);
+        expect(find.text('Deleted "Task to undo"'), findsOneWidget);
+        expect(find.byKey(const Key('undoDeleteTaskButton')), findsOneWidget);
+
+        // Tap Undo button
+        await tester.tap(find.byKey(const Key('undoDeleteTaskButton')));
+        await tester.pumpAndSettle();
+
+        // Verify task is back in view and Firestore deletedAt is null
+        expect(find.text('Task to undo'), findsOneWidget);
+        final doc = await fakeFirestore.collection('tasks').doc(taskId).get();
+        expect(doc.data()!['deletedAt'], isNull);
+      },
+    );
   });
 }

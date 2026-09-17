@@ -728,5 +728,408 @@ void main() {
         await subscription.cancel();
       });
     });
+
+    group('Recently Deleted operations', () {
+      const uid = 'user-123';
+      const otherUid = 'user-other';
+      const listId = 'inbox-456';
+
+      test('streamRecentlyDeletedTasks returns soft-deleted tasks ordered descending by deletedAt', () async {
+        final time1 = DateTime(2026, 1, 1, 10, 0);
+        final time2 = DateTime(2026, 1, 1, 12, 0);
+
+        // Soft-deleted task 1
+        await fakeFirestore.collection('tasks').doc('task-del-1').set({
+          'taskId': 'task-del-1',
+          'uid': uid,
+          'listId': listId,
+          'title': 'Deleted 1',
+          'deletedAt': Timestamp.fromDate(time1),
+        });
+
+        // Soft-deleted task 2 (newer)
+        await fakeFirestore.collection('tasks').doc('task-del-2').set({
+          'taskId': 'task-del-2',
+          'uid': uid,
+          'listId': listId,
+          'title': 'Deleted 2',
+          'deletedAt': Timestamp.fromDate(time2),
+        });
+
+        // Active task (should be excluded)
+        await fakeFirestore.collection('tasks').doc('task-active').set({
+          'taskId': 'task-active',
+          'uid': uid,
+          'listId': listId,
+          'title': 'Active Task',
+          'deletedAt': null,
+        });
+
+        // Other user's deleted task (should be excluded)
+        await fakeFirestore.collection('tasks').doc('task-other-del').set({
+          'taskId': 'task-other-del',
+          'uid': otherUid,
+          'listId': listId,
+          'title': 'Other Deleted',
+          'deletedAt': Timestamp.fromDate(time2),
+        });
+
+        final deleted = await repository.streamRecentlyDeletedTasks(uid).first;
+
+        expect(deleted.length, equals(2));
+        expect(deleted[0].taskId, equals('task-del-2'));
+        expect(deleted[0].title, equals('Deleted 2'));
+        expect(deleted[1].taskId, equals('task-del-1'));
+        expect(deleted[1].title, equals('Deleted 1'));
+      });
+
+      test('streamRecentlyDeletedTasks recovers from malformed documents gracefully and sanitizes invalid fields', () async {
+        // Valid soft-deleted task
+        await fakeFirestore.collection('tasks').doc('valid-del').set({
+          'taskId': 'valid-del',
+          'uid': uid,
+          'listId': listId,
+          'title': 'Valid Deleted Task',
+          'deletedAt': Timestamp.now(),
+        });
+
+        // Non-deleted document (deletedAt is null, must be skipped)
+        await fakeFirestore.collection('tasks').doc('non-deleted-doc').set({
+          'taskId': 'non-deleted-doc',
+          'uid': uid,
+          'deletedAt': null,
+        });
+
+        // Document with abnormal fields (e.g. invalid subtasks type)
+        await fakeFirestore.collection('tasks').doc('malformed-subtasks').set({
+          'taskId': 'malformed-subtasks',
+          'uid': uid,
+          'deletedAt': Timestamp.now(),
+          'subtasks': 'not-a-list', // Invalid type, should be safely sanitized to empty list
+        });
+
+        final deleted = await repository.streamRecentlyDeletedTasks(uid).first;
+
+        // The non-deleted document is skipped, both soft-deleted tasks are returned with sanitized fields
+        expect(deleted.length, equals(2));
+        expect(deleted.any((t) => t.taskId == 'valid-del'), isTrue);
+        final sanitized = deleted.firstWhere(
+          (t) => t.taskId == 'malformed-subtasks',
+        );
+        expect(sanitized.subtasks, isEmpty);
+      });
+
+      test('softDeleteTask sets immediate Timestamp and task appears in streamRecentlyDeletedTasks', () async {
+        final task = await repository.createTask(
+          uid: uid,
+          listId: listId,
+          title: 'Immediate Soft Delete Task',
+        );
+
+        await repository.softDeleteTask(task.taskId);
+
+        final deleted = await repository.streamRecentlyDeletedTasks(uid).first;
+        expect(deleted.any((t) => t.taskId == task.taskId), isTrue);
+        final found = deleted.firstWhere((t) => t.taskId == task.taskId);
+        expect(found.deletedAt, isNotNull);
+      });
+
+      test(
+        'restoreTask clears deletedAt and keeps listId if list exists',
+        () async {
+          await fakeFirestore.collection('tasks').doc('task-res-1').set({
+            'taskId': 'task-res-1',
+            'uid': uid,
+            'listId': listId,
+            'title': 'To Restore',
+            'deletedAt': Timestamp.now(),
+          });
+
+          await repository.restoreTask(uid: uid, taskId: 'task-res-1');
+
+          final doc = await fakeFirestore
+              .collection('tasks')
+              .doc('task-res-1')
+              .get();
+          expect(doc.data()!['deletedAt'], isNull);
+          expect(doc.data()!['listId'], equals(listId));
+        },
+      );
+
+      test(
+        'restoreTask reassigns to defaultListId when original list was deleted',
+        () async {
+          // List 'deleted-list-id' does not exist in fakeFirestore
+          await fakeFirestore.collection('tasks').doc('task-orphan').set({
+            'taskId': 'task-orphan',
+            'uid': uid,
+            'listId': 'deleted-list-id',
+            'title': 'Orphan Task',
+            'deletedAt': Timestamp.now(),
+          });
+
+          await repository.restoreTask(
+            uid: uid,
+            taskId: 'task-orphan',
+            defaultListId: 'inbox-456',
+          );
+
+          final doc = await fakeFirestore
+              .collection('tasks')
+              .doc('task-orphan')
+              .get();
+          expect(doc.data()!['deletedAt'], isNull);
+          expect(doc.data()!['listId'], equals('inbox-456'));
+        },
+      );
+
+      test('restoreTask resolves defaultListId from users collection if parameter omitted', () async {
+        await fakeFirestore.collection('users').doc(uid).set({
+          'uid': uid,
+          'defaultListId': 'inbox-456',
+        });
+
+        await fakeFirestore.collection('tasks').doc('task-orphan-2').set({
+          'taskId': 'task-orphan-2',
+          'uid': uid,
+          'listId': 'missing-list-id',
+          'title': 'Orphan Task 2',
+          'deletedAt': Timestamp.now(),
+        });
+
+        await repository.restoreTask(uid: uid, taskId: 'task-orphan-2');
+
+        final doc = await fakeFirestore
+            .collection('tasks')
+            .doc('task-orphan-2')
+            .get();
+        expect(doc.data()!['deletedAt'], isNull);
+        expect(doc.data()!['listId'], equals('inbox-456'));
+      });
+
+      test('restoreTask throws ArgumentError if task does not exist or user mismatch', () async {
+        await fakeFirestore.collection('tasks').doc('task-other').set({
+          'taskId': 'task-other',
+          'uid': otherUid,
+          'listId': listId,
+          'title': 'Other Task',
+          'deletedAt': Timestamp.now(),
+        });
+
+        expect(
+          () => repository.restoreTask(uid: uid, taskId: 'non-existent'),
+          throwsA(isA<ArgumentError>()),
+        );
+
+        expect(
+          () => repository.restoreTask(uid: uid, taskId: 'task-other'),
+          throwsA(isA<ArgumentError>()),
+        );
+      });
+
+      test('permanentlyDeleteTask physically removes document and enforces ownership', () async {
+        await fakeFirestore.collection('tasks').doc('task-perm').set({
+          'taskId': 'task-perm',
+          'uid': uid,
+          'listId': listId,
+          'title': 'Permanent Task',
+          'deletedAt': Timestamp.now(),
+        });
+
+        // Non-owner cannot delete
+        expect(
+          () => repository.permanentlyDeleteTask(
+            uid: otherUid,
+            taskId: 'task-perm',
+          ),
+          throwsA(isA<ArgumentError>()),
+        );
+
+        // Owner permanently deletes
+        await repository.permanentlyDeleteTask(uid: uid, taskId: 'task-perm');
+
+        final doc = await fakeFirestore
+            .collection('tasks')
+            .doc('task-perm')
+            .get();
+        expect(doc.exists, isFalse);
+
+        // Deleting non-existent task throws
+        expect(
+          () => repository.permanentlyDeleteTask(uid: uid, taskId: 'task-perm'),
+          throwsA(isA<ArgumentError>()),
+        );
+      });
+
+      test('emptyRecentlyDeleted batch deletes all soft-deleted tasks for uid and preserves active and other user tasks', () async {
+        // 2 soft-deleted tasks for uid
+        await fakeFirestore.collection('tasks').doc('t-del-1').set({
+          'taskId': 't-del-1',
+          'uid': uid,
+          'deletedAt': Timestamp.now(),
+        });
+        await fakeFirestore.collection('tasks').doc('t-del-2').set({
+          'taskId': 't-del-2',
+          'uid': uid,
+          'deletedAt': Timestamp.now(),
+        });
+
+        // 1 active task for uid
+        await fakeFirestore.collection('tasks').doc('t-active').set({
+          'taskId': 't-active',
+          'uid': uid,
+          'deletedAt': null,
+        });
+
+        // 1 soft-deleted task for another user
+        await fakeFirestore.collection('tasks').doc('t-other-del').set({
+          'taskId': 't-other-del',
+          'uid': otherUid,
+          'deletedAt': Timestamp.now(),
+        });
+
+        await repository.emptyRecentlyDeleted(uid);
+
+        // Verify soft-deleted tasks for uid are gone
+        final doc1 = await fakeFirestore
+            .collection('tasks')
+            .doc('t-del-1')
+            .get();
+        final doc2 = await fakeFirestore
+            .collection('tasks')
+            .doc('t-del-2')
+            .get();
+        expect(doc1.exists, isFalse);
+        expect(doc2.exists, isFalse);
+
+        // Verify active task for uid is intact
+        final docActive = await fakeFirestore
+            .collection('tasks')
+            .doc('t-active')
+            .get();
+        expect(docActive.exists, isTrue);
+
+        // Verify other user's deleted task is intact
+        final docOther = await fakeFirestore
+            .collection('tasks')
+            .doc('t-other-del')
+            .get();
+        expect(docOther.exists, isTrue);
+      });
+
+      test('restoreTask no-ops gracefully when task is already active (deletedAt is null)', () async {
+        await fakeFirestore.collection('tasks').doc('t-active-restore').set({
+          'taskId': 't-active-restore',
+          'uid': uid,
+          'listId': listId,
+          'title': 'Active Task',
+          'deletedAt': null,
+        });
+
+        await repository.restoreTask(uid: uid, taskId: 't-active-restore');
+
+        final doc = await fakeFirestore
+            .collection('tasks')
+            .doc('t-active-restore')
+            .get();
+        expect(doc.data()!['deletedAt'], isNull);
+        expect(doc.data()!['title'], equals('Active Task'));
+      });
+
+      test('purgeExpiredDeletedTasks permanently deletes tasks older than retention threshold and preserves others', () async {
+        final now = DateTime.now();
+
+        // 1. Expired task (deleted 35 days ago) for uid -> should be purged
+        await fakeFirestore.collection('tasks').doc('t-expired-1').set({
+          'taskId': 't-expired-1',
+          'uid': uid,
+          'title': 'Expired Task 1',
+          'deletedAt': Timestamp.fromDate(
+            now.subtract(const Duration(days: 35)),
+          ),
+        });
+
+        // 2. Expired task (deleted 40 days ago) for uid with DateTime format -> should be purged
+        await fakeFirestore.collection('tasks').doc('t-expired-2').set({
+          'taskId': 't-expired-2',
+          'uid': uid,
+          'title': 'Expired Task 2',
+          'deletedAt': now.subtract(const Duration(days: 40)),
+        });
+
+        // 3. Recently deleted task (deleted 5 days ago) for uid -> should be retained
+        await fakeFirestore.collection('tasks').doc('t-recent').set({
+          'taskId': 't-recent',
+          'uid': uid,
+          'title': 'Recent Deleted Task',
+          'deletedAt': Timestamp.fromDate(
+            now.subtract(const Duration(days: 5)),
+          ),
+        });
+
+        // 4. Active task (deletedAt: null) for uid -> should be retained
+        await fakeFirestore.collection('tasks').doc('t-active-purge').set({
+          'taskId': 't-active-purge',
+          'uid': uid,
+          'title': 'Active Task',
+          'deletedAt': null,
+        });
+
+        // 5. Expired task for another user -> should be retained
+        await fakeFirestore.collection('tasks').doc('t-other-expired').set({
+          'taskId': 't-other-expired',
+          'uid': otherUid,
+          'title': 'Other Expired Task',
+          'deletedAt': Timestamp.fromDate(
+            now.subtract(const Duration(days: 60)),
+          ),
+        });
+
+        // Run purge
+        final purgedCount = await repository.purgeExpiredDeletedTasks(
+          uid,
+          retention: const Duration(days: 30),
+        );
+
+        expect(purgedCount, equals(2));
+
+        // Verify expired tasks for uid are gone
+        final docExpired1 = await fakeFirestore
+            .collection('tasks')
+            .doc('t-expired-1')
+            .get();
+        final docExpired2 = await fakeFirestore
+            .collection('tasks')
+            .doc('t-expired-2')
+            .get();
+        expect(docExpired1.exists, isFalse);
+        expect(docExpired2.exists, isFalse);
+
+        // Verify recent deleted task is still intact
+        final docRecent = await fakeFirestore
+            .collection('tasks')
+            .doc('t-recent')
+            .get();
+        expect(docRecent.exists, isTrue);
+
+        // Verify active task is still intact
+        final docActive = await fakeFirestore
+            .collection('tasks')
+            .doc('t-active-purge')
+            .get();
+        expect(docActive.exists, isTrue);
+
+        // Verify other user's expired task is still intact
+        final docOtherExpired = await fakeFirestore
+            .collection('tasks')
+            .doc('t-other-expired')
+            .get();
+        expect(docOtherExpired.exists, isTrue);
+
+        // Second run should return 0 since no expired tasks remain
+        final secondPurge = await repository.purgeExpiredDeletedTasks(uid);
+        expect(secondPurge, equals(0));
+      });
+    });
   });
 }

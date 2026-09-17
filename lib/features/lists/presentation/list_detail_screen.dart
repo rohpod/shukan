@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/firebase/firebase_providers.dart';
 import '../../export/export_service.dart';
 import '../../tasks/data/task.dart';
+import '../../tasks/presentation/recently_deleted_screen.dart';
 import '../../tasks/presentation/task_list_screen.dart';
 import '../../tasks/providers/task_providers.dart';
 import '../data/list.dart';
@@ -57,6 +58,28 @@ class ListDetailScreen extends ConsumerWidget {
       appBar: AppBar(
         title: Text(list.name, key: const Key('listDetailTitle')),
         actions: [
+          Consumer(
+            builder: (context, ref, child) {
+              final count = ref.watch(recentlyDeletedCountProvider);
+              return IconButton(
+                key: const Key('recentlyDeletedButton'),
+                icon: count > 0
+                    ? Badge.count(
+                        count: count,
+                        child: const Icon(Icons.delete_outline),
+                      )
+                    : const Icon(Icons.delete_outline),
+                tooltip: 'Recently Deleted',
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const RecentlyDeletedScreen(),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
           IconButton(
             key: const Key('exportListButton'),
             icon: const Icon(Icons.file_download_outlined),

@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../lists/data/list.dart';
 import '../../lists/presentation/list_detail_screen.dart';
 import '../../lists/providers/list_providers.dart';
+import '../../tasks/presentation/recently_deleted_screen.dart';
+import '../../tasks/providers/task_providers.dart';
 import '../providers/auth_providers.dart';
 
 class HomeScreen extends ConsumerWidget {
@@ -169,6 +171,28 @@ class HomeScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('shukan'),
         actions: [
+          Consumer(
+            builder: (context, ref, child) {
+              final count = ref.watch(recentlyDeletedCountProvider);
+              return IconButton(
+                key: const Key('recentlyDeletedButton'),
+                icon: count > 0
+                    ? Badge.count(
+                        count: count,
+                        child: const Icon(Icons.delete_outline),
+                      )
+                    : const Icon(Icons.delete_outline),
+                tooltip: 'Recently Deleted',
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const RecentlyDeletedScreen(),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
           IconButton(
             key: const Key('logoutButton'),
             icon: const Icon(Icons.logout),

@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import 'task.dart';
@@ -154,11 +155,195 @@ class TaskRepository {
     });
   }
 
-  /// Soft-deletes a task by setting its [deletedAt] field to the server timestamp.
+  /// Soft-deletes a task by setting its [deletedAt] field to the current timestamp.
   Future<void> softDeleteTask(String taskId) async {
-    await _tasksCollection.doc(taskId).update({
-      'deletedAt': FieldValue.serverTimestamp(),
-    });
+    await _tasksCollection.doc(taskId).update({'deletedAt': Timestamp.now()});
+  }
+
+  /// Streams soft-deleted tasks belonging to [uid], ordered descending by [deletedAt].
+  ///
+  /// Filters by [uid] in Firestore and performs [deletedAt] filtering and sorting in-memory.
+  /// This ensures immediate client-cache visibility upon deletion, avoids Firestore composite
+  /// index propagation lag, and supports instantaneous offline/local snapshot updates.
+  Stream<List<Task>> streamRecentlyDeletedTasks(String uid) {
+    return _tasksCollection
+        .where('uid', isEqualTo: uid)
+        .snapshots()
+        .map((snapshot) {
+          final tasks = <Task>[];
+          for (final doc in snapshot.docs) {
+            final data = doc.data();
+            if (data['deletedAt'] == null) {
+              continue;
+            }
+            try {
+              var task = Task.fromFirestore(doc);
+              if (task.deletedAt == null) {
+                task = task.copyWith(deletedAt: DateTime.now());
+              }
+              tasks.add(task);
+            } catch (e, st) {
+              debugPrint('Error parsing deleted task ${doc.id}: $e\n$st');
+            }
+          }
+          tasks.sort((a, b) {
+            if (a.deletedAt == null && b.deletedAt == null) return 0;
+            if (a.deletedAt == null) return 1;
+            if (b.deletedAt == null) return -1;
+            return b.deletedAt!.compareTo(a.deletedAt!);
+          });
+          return tasks;
+        })
+        .distinct((prev, next) => listEquals(prev, next));
+  }
+
+  /// Restores a soft-deleted task by clearing its [deletedAt] timestamp.
+  ///
+  /// Defense-in-depth:
+  /// - Throws [ArgumentError] if the task does not exist or does not belong to [uid].
+  /// - No-ops if the task is already active (deletedAt is already null).
+  ///
+  /// List assignment safeguard:
+  /// - If [task.listId] is empty or the referenced list no longer exists in `lists`,
+  ///   the task is reassigned to [defaultListId] (or resolved from `users/{uid}`).
+  Future<void> restoreTask({
+    required String uid,
+    required String taskId,
+    String? defaultListId,
+  }) async {
+    final taskDoc = await _tasksCollection.doc(taskId).get();
+    if (!taskDoc.exists) {
+      throw ArgumentError('Task not found: $taskId');
+    }
+    final taskData = taskDoc.data()!;
+    if (taskData['uid'] != uid) {
+      throw ArgumentError('Task does not belong to user: $taskId');
+    }
+
+    // Already active / restored
+    if (taskData['deletedAt'] == null) {
+      return;
+    }
+
+    final currentListId = taskData['listId'] as String?;
+    String? targetListId = currentListId;
+
+    bool listExists = false;
+    if (currentListId != null && currentListId.isNotEmpty) {
+      final listDoc = await _firestore
+          .collection('lists')
+          .doc(currentListId)
+          .get();
+      listExists = listDoc.exists && listDoc.data()?['uid'] == uid;
+    }
+
+    if (!listExists) {
+      if (defaultListId != null && defaultListId.isNotEmpty) {
+        targetListId = defaultListId;
+      } else {
+        final userDoc = await _firestore.collection('users').doc(uid).get();
+        targetListId = userDoc.data()?['defaultListId'] as String?;
+      }
+    }
+
+    final updates = <String, dynamic>{'deletedAt': null};
+    if (targetListId != null && targetListId != currentListId) {
+      updates['listId'] = targetListId;
+    }
+
+    await _tasksCollection.doc(taskId).update(updates);
+  }
+
+  /// Permanently hard-deletes a task document from Firestore.
+  ///
+  /// Defense-in-depth:
+  /// - Throws [ArgumentError] if the task does not exist or does not belong to [uid].
+  Future<void> permanentlyDeleteTask({
+    required String uid,
+    required String taskId,
+  }) async {
+    final taskDoc = await _tasksCollection.doc(taskId).get();
+    if (!taskDoc.exists) {
+      throw ArgumentError('Task not found: $taskId');
+    }
+    if (taskDoc.data()?['uid'] != uid) {
+      throw ArgumentError('Task does not belong to user: $taskId');
+    }
+
+    await _tasksCollection.doc(taskId).delete();
+  }
+
+  /// Permanently deletes all soft-deleted tasks belonging to [uid].
+  ///
+  /// Chunks deletions into batches of max 500 operations to respect Firestore's WriteBatch limit.
+  Future<void> emptyRecentlyDeleted(String uid) async {
+    final snapshot = await _tasksCollection.where('uid', isEqualTo: uid).get();
+
+    final docs = snapshot.docs
+        .where((doc) => doc.data()['deletedAt'] != null)
+        .toList();
+
+    if (docs.isEmpty) return;
+
+    const batchSize = 500;
+    for (var i = 0; i < docs.length; i += batchSize) {
+      final end = (i + batchSize < docs.length) ? i + batchSize : docs.length;
+      final chunk = docs.sublist(i, end);
+      final batch = _firestore.batch();
+      for (final doc in chunk) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+    }
+  }
+
+  /// Automatically purges soft-deleted tasks belonging to [uid] that were deleted
+  /// longer ago than [retention] (defaults to 30 days).
+  ///
+  /// Returns the number of permanently purged tasks.
+  Future<int> purgeExpiredDeletedTasks(
+    String uid, {
+    Duration retention = const Duration(days: 30),
+  }) async {
+    final snapshot = await _tasksCollection.where('uid', isEqualTo: uid).get();
+    final now = DateTime.now();
+    final expiredDocs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+
+    for (final doc in snapshot.docs) {
+      final data = doc.data();
+      final deletedAtRaw = data['deletedAt'];
+      if (deletedAtRaw == null) continue;
+
+      DateTime? deletedAt;
+      if (deletedAtRaw is Timestamp) {
+        deletedAt = deletedAtRaw.toDate();
+      } else if (deletedAtRaw is DateTime) {
+        deletedAt = deletedAtRaw;
+      } else if (deletedAtRaw is String) {
+        deletedAt = DateTime.tryParse(deletedAtRaw);
+      }
+
+      if (deletedAt != null && now.difference(deletedAt) >= retention) {
+        expiredDocs.add(doc);
+      }
+    }
+
+    if (expiredDocs.isEmpty) return 0;
+
+    const batchSize = 500;
+    for (var i = 0; i < expiredDocs.length; i += batchSize) {
+      final end = (i + batchSize < expiredDocs.length)
+          ? i + batchSize
+          : expiredDocs.length;
+      final chunk = expiredDocs.sublist(i, end);
+      final batch = _firestore.batch();
+      for (final doc in chunk) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+    }
+
+    return expiredDocs.length;
   }
 
   /// Moves an existing task to [newListId], updating only its [listId] field.
