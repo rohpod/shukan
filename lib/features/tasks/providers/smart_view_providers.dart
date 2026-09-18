@@ -71,6 +71,75 @@ final smartViewCompletionFilterProvider =
       CompletionFilterNotifier.new,
     );
 
+/// Timeout duration for the initial data emission of smart view streams.
+final smartViewTimeoutProvider = Provider<Duration>((ref) {
+  return const Duration(seconds: 10);
+});
+
+/// Extension providing a first-event-only timeout mechanism for streams.
+extension FirstEventTimeoutExtension<T> on Stream<T> {
+  /// Emits a [TimeoutException] if the first event is not received within [duration].
+  ///
+  /// Once the first event or error is received, the timeout timer is cancelled
+  /// and will not fire on subsequent idle periods.
+  Stream<T> timeoutFirstEvent(Duration duration, {String? message}) {
+    final controller = isBroadcast
+        ? StreamController<T>.broadcast(sync: true)
+        : StreamController<T>(sync: true);
+
+    StreamSubscription<T>? subscription;
+    Timer? timer;
+    bool hasEmitted = false;
+
+    controller.onListen = () {
+      timer = Timer(duration, () {
+        if (!hasEmitted) {
+          controller.addError(
+            TimeoutException(
+              message ?? 'This is taking longer than expected — check your connection or try again',
+              duration,
+            ),
+          );
+        }
+      });
+
+      subscription = listen(
+        (data) {
+          hasEmitted = true;
+          timer?.cancel();
+          timer = null;
+          controller.add(data);
+        },
+        onError: (Object error, StackTrace stackTrace) {
+          hasEmitted = true;
+          timer?.cancel();
+          timer = null;
+          controller.addError(error, stackTrace);
+        },
+        onDone: () {
+          timer?.cancel();
+          timer = null;
+          controller.close();
+        },
+        cancelOnError: false,
+      );
+    };
+
+    controller.onCancel = () {
+      timer?.cancel();
+      timer = null;
+      return subscription?.cancel();
+    };
+
+    if (!isBroadcast) {
+      controller.onPause = () => subscription?.pause();
+      controller.onResume = () => subscription?.resume();
+    }
+
+    return controller.stream;
+  }
+}
+
 /// Family provider that streams tasks for a specific [SmartViewType].
 ///
 /// Implements server-side filtering on `dueDate` range/inequality and `completedAt == null`
@@ -86,6 +155,7 @@ final smartViewTasksProvider = StreamProvider.family<List<Task>, SmartViewType>(
     final currentDate = ref.watch(currentDateProvider);
     final completionFilter = ref.watch(smartViewCompletionFilterProvider);
     final weekFilter = ref.watch(thisWeekFilterProvider);
+    final timeoutDuration = ref.watch(smartViewTimeoutProvider);
 
     final DateTime? startDueDate;
     final DateTime? endDueDate;
@@ -114,12 +184,17 @@ final smartViewTasksProvider = StreamProvider.family<List<Task>, SmartViewType>(
       onlyIncomplete: onlyIncomplete,
     );
 
-    return baseStream.map((tasks) {
+    final mappedStream = baseStream.map((tasks) {
       if (completionFilter == CompletionFilter.completed) {
         return tasks.where((t) => t.isCompleted).toList();
       }
       return tasks;
     });
+
+    return mappedStream.timeoutFirstEvent(
+      timeoutDuration,
+      message: 'This is taking longer than expected — check your connection or try again',
+    );
   },
 );
 

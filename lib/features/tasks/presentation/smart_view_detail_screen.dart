@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -174,6 +176,7 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
           const Divider(height: 1),
           Expanded(
             child: tasksAsync.when(
+              skipLoadingOnReload: true,
               data: (tasks) {
                 if (tasks.isEmpty) {
                   return const Center(
@@ -344,7 +347,19 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                   key: Key('smartViewLoadingIndicator'),
                 ),
               ),
-              error: (e, _) => Center(child: Text('Error loading tasks: $e')),
+              error: (e, _) => Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Text(
+                    e is TimeoutException
+                        ? (e.message ??
+                              'This is taking longer than expected — check your connection or try again')
+                        : 'Error loading tasks: $e',
+                    key: const Key('smartViewErrorText'),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
             ),
           ),
         ],

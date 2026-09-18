@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:firebase_auth_mocks/firebase_auth_mocks.dart';
@@ -5,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shukan/core/firebase/firebase_providers.dart';
+import 'package:shukan/features/auth/providers/auth_providers.dart';
+import 'package:shukan/features/tasks/data/task.dart';
 import 'package:shukan/features/tasks/domain/smart_view_models.dart';
 import 'package:shukan/features/tasks/presentation/smart_view_detail_screen.dart';
 import 'package:shukan/features/tasks/providers/smart_view_providers.dart';
@@ -252,6 +256,51 @@ void main() {
       // TaskDialog is open
       expect(find.text('New Task'), findsOneWidget);
       expect(find.text('2026-10-14'), findsOneWidget);
+    });
+
+    testWidgets('renders friendly timeout message when stream times out', (
+      tester,
+    ) async {
+      final controller = StreamController<List<Task>>();
+      addTearDown(controller.close);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            currentUidProvider.overrideWithValue(uid),
+            firebaseAuthProvider.overrideWithValue(mockAuth),
+            firestoreProvider.overrideWithValue(fakeFirestore),
+            smartViewTimeoutProvider.overrideWithValue(
+              const Duration(milliseconds: 50),
+            ),
+            smartViewTasksProvider.overrideWith(
+              (ref, viewType) => controller.stream.timeoutFirstEvent(
+                ref.watch(smartViewTimeoutProvider),
+                message: 'This is taking longer than expected — check your connection or try again',
+              ),
+            ),
+          ],
+          child: const MaterialApp(
+            home: SmartViewDetailScreen(viewType: SmartViewType.today),
+          ),
+        ),
+      );
+
+      expect(
+        find.byKey(const Key('smartViewLoadingIndicator')),
+        findsOneWidget,
+      );
+
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump();
+
+      expect(
+        find.text(
+          'This is taking longer than expected — check your connection or try again',
+        ),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('smartViewErrorText')), findsOneWidget);
     });
   });
 }

@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:firebase_auth_mocks/firebase_auth_mocks.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shukan/core/firebase/firebase_providers.dart';
+import 'package:shukan/features/auth/providers/auth_providers.dart';
 import 'package:shukan/features/tasks/data/task.dart';
 import 'package:shukan/features/tasks/domain/smart_view_models.dart';
 import 'package:shukan/features/tasks/providers/smart_view_providers.dart';
@@ -296,5 +299,93 @@ void main() {
       await pumpEventQueue();
       expect(counts.last, equals(1));
     });
+
+    test(
+      'smartViewTasksProvider transitions to AsyncError on first event timeout',
+      () async {
+        final controller = StreamController<List<Task>>();
+        addTearDown(controller.close);
+
+        final container = ProviderContainer(
+          overrides: [
+            currentUidProvider.overrideWithValue(uid),
+            smartViewTimeoutProvider.overrideWithValue(
+              const Duration(milliseconds: 50),
+            ),
+            smartViewTasksProvider(SmartViewType.today).overrideWith(
+              (ref) => controller.stream.timeoutFirstEvent(
+                ref.watch(smartViewTimeoutProvider),
+                message: 'This is taking longer than expected — check your connection or try again',
+              ),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        AsyncValue<List<Task>>? state;
+        container.listen<AsyncValue<List<Task>>>(
+          smartViewTasksProvider(SmartViewType.today),
+          (_, next) => state = next,
+          fireImmediately: true,
+        );
+
+        expect(state?.isLoading, isTrue);
+
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+
+        expect(state?.hasError, isTrue);
+        expect(state?.error, isA<TimeoutException>());
+        expect(
+          (state?.error as TimeoutException).message,
+          equals(
+            'This is taking longer than expected — check your connection or try again',
+          ),
+        );
+      },
+    );
+
+    test(
+      'smartViewTasksProvider does not timeout after first event is received',
+      () async {
+        final controller = StreamController<List<Task>>();
+        addTearDown(controller.close);
+
+        final container = ProviderContainer(
+          overrides: [
+            currentUidProvider.overrideWithValue(uid),
+            smartViewTimeoutProvider.overrideWithValue(
+              const Duration(milliseconds: 50),
+            ),
+            smartViewTasksProvider(SmartViewType.today).overrideWith(
+              (ref) => controller.stream.timeoutFirstEvent(
+                ref.watch(smartViewTimeoutProvider),
+                message: 'This is taking longer than expected — check your connection or try again',
+              ),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        final states = <AsyncValue<List<Task>>>[];
+        container.listen<AsyncValue<List<Task>>>(
+          smartViewTasksProvider(SmartViewType.today),
+          (_, next) => states.add(next),
+          fireImmediately: true,
+        );
+
+        controller.add(<Task>[]);
+        await pumpEventQueue();
+
+        expect(states.last.hasValue, isTrue);
+        expect(states.last.value, isEmpty);
+
+        // Wait past the timeout duration (100ms > 50ms)
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+
+        // Provider should remain in data state without timing out
+        expect(states.last.hasValue, isTrue);
+        expect(states.last.hasError, isFalse);
+      },
+    );
   });
 }
