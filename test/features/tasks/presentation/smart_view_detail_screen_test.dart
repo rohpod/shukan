@@ -84,10 +84,11 @@ void main() {
         // Work week toggle should NOT be visible on Today view
         expect(find.byKey(const Key('workWeekFilterButton')), findsNothing);
 
-        // Completion filter buttons should be visible
-        expect(find.byKey(const Key('incompleteFilterButton')), findsOneWidget);
-        expect(find.byKey(const Key('completedFilterButton')), findsOneWidget);
-        expect(find.byKey(const Key('allFilterButton')), findsOneWidget);
+        // Show completed toggle button should be visible
+        expect(
+          find.byKey(const Key('toggleShowCompleted_today')),
+          findsOneWidget,
+        );
 
         // Task is rendered
         expect(find.text('Pay Electricity Bill'), findsOneWidget);
@@ -266,15 +267,15 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // Because incomplete filter is active by default, completed task disappears
+        // Because show completed is off by default, completed task disappears
         expect(find.text('Grocery Shopping'), findsNothing);
         expect(find.byKey(const Key('noTasksText')), findsOneWidget);
 
-        // Tap "Completed" filter
-        await tester.tap(find.byKey(const Key('completedFilterButton')));
+        // Tap "Show completed" toggle
+        await tester.tap(find.byKey(const Key('toggleShowCompleted_today')));
         await tester.pumpAndSettle();
 
-        // Now visible under Completed filter
+        // Now visible
         expect(find.text('Grocery Shopping'), findsOneWidget);
       },
     );

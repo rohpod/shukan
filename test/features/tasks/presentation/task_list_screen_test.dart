@@ -118,6 +118,10 @@ void main() {
         var doc = await fakeFirestore.collection('tasks').doc(taskId).get();
         expect(doc.data()!['completedAt'], isNotNull);
 
+        // Toggle show completed to reveal the completed task for editing
+        await tester.tap(find.byKey(Key('toggleShowCompleted_$listId')));
+        await tester.pumpAndSettle();
+
         // 3. Edit task
         await tester.tap(find.byKey(Key('editTaskButton_$taskId')));
         await tester.pumpAndSettle();

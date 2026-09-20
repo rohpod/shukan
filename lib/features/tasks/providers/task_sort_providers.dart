@@ -49,6 +49,41 @@ final taskSortModeProvider =
       (arg) => TaskSortModeNotifier(arg),
     );
 
+/// Per-view toggle for displaying completed tasks, keyed by `listId` (for list views)
+/// or `viewType.name` (for smart views).
+///
+/// Persists a boolean to SharedPreferences under `task_show_completed_<viewKey>`.
+/// Defaults to `false` (hide completed tasks).
+class ShowCompletedTasksNotifier extends Notifier<bool> {
+  ShowCompletedTasksNotifier(this.viewKey);
+
+  final String viewKey;
+
+  @override
+  bool build() {
+    final prefs = ref.watch(sharedPreferencesProvider);
+    return prefs?.getBool('task_show_completed_$viewKey') ?? false;
+  }
+
+  Future<void> toggle() async {
+    state = !state;
+    final prefs = ref.read(sharedPreferencesProvider);
+    await prefs?.setBool('task_show_completed_$viewKey', state);
+  }
+
+  Future<void> setShowCompleted(bool show) async {
+    state = show;
+    final prefs = ref.read(sharedPreferencesProvider);
+    await prefs?.setBool('task_show_completed_$viewKey', state);
+  }
+}
+
+/// Provider exposing whether completed tasks should be shown for a given view.
+final showCompletedTasksProvider =
+    NotifierProvider.family<ShowCompletedTasksNotifier, bool, String>(
+      (arg) => ShowCompletedTasksNotifier(arg),
+    );
+
 /// Helper to map and sort tasks within an AsyncValue while preserving errors and loading states.
 AsyncValue<List<Task>> _mapSortedTasks(
   AsyncValue<List<Task>> tasksAsync,
@@ -75,13 +110,20 @@ AsyncValue<List<Task>> _mapSortedTasks(
   return const AsyncLoading();
 }
 
-/// Streams tasks for [listId] sorted by that list's independent [TaskSortOption].
+/// Streams tasks for [listId] sorted by that list's independent [TaskSortOption]
+/// and filtered by its independent [showCompletedTasksProvider].
 final sortedTasksForListProvider =
     Provider.family<AsyncValue<List<Task>>, String>((ref, listId) {
       final tasksAsync = ref.watch(tasksForListProvider(listId));
       final sortOption = ref.watch(taskSortModeProvider(listId));
+      final showCompleted = ref.watch(showCompletedTasksProvider(listId));
 
-      return _mapSortedTasks(tasksAsync, sortOption);
+      final filteredTasksAsync = tasksAsync.whenData((tasks) {
+        if (showCompleted) return tasks;
+        return tasks.where((t) => !t.isCompleted).toList();
+      });
+
+      return _mapSortedTasks(filteredTasksAsync, sortOption);
     });
 
 /// Streams tasks for [viewType] sorted by that smart view's independent [TaskSortOption].

@@ -13,6 +13,7 @@ import '../providers/smart_view_providers.dart';
 import '../providers/task_providers.dart';
 import '../providers/task_sort_providers.dart';
 import 'task_list_screen.dart';
+import 'widgets/show_completed_toggle.dart';
 import 'widgets/task_sort_selector.dart';
 
 class SmartViewDetailScreen extends ConsumerStatefulWidget {
@@ -81,7 +82,6 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
             : 'inbox');
 
     final currentDate = ref.watch(currentDateProvider);
-    final completionFilter = ref.watch(smartViewCompletionFilterProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -114,43 +114,11 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
         children: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                SegmentedButton<CompletionFilter>(
-                  showSelectedIcon: false,
-                  segments: const [
-                    ButtonSegment(
-                      value: CompletionFilter.incomplete,
-                      label: Text(
-                        'Incomplete',
-                        key: Key('incompleteFilterButton'),
-                      ),
-                    ),
-                    ButtonSegment(
-                      value: CompletionFilter.completed,
-                      label: Text(
-                        'Completed',
-                        key: Key('completedFilterButton'),
-                      ),
-                    ),
-                    ButtonSegment(
-                      value: CompletionFilter.all,
-                      label: Text('All', key: Key('allFilterButton')),
-                    ),
-                  ],
-                  selected: {completionFilter},
-                  onSelectionChanged: (newSelection) {
-                    ref
-                        .read(smartViewCompletionFilterProvider.notifier)
-                        .setFilter(newSelection.first);
-                  },
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [TaskSortSelector(viewKey: widget.viewType.name)],
-                ),
+                TaskSortSelector(viewKey: widget.viewType.name),
+                ShowCompletedToggle(viewKey: widget.viewType.name),
               ],
             ),
           ),

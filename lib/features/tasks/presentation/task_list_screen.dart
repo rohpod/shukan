@@ -9,6 +9,7 @@ import '../domain/task_constants.dart';
 import '../domain/task_sort_options.dart';
 import '../providers/task_providers.dart';
 import '../providers/task_sort_providers.dart';
+import 'widgets/show_completed_toggle.dart';
 import 'widgets/task_sort_selector.dart';
 
 class TaskListScreen extends ConsumerStatefulWidget {
@@ -95,7 +96,10 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [TaskSortSelector(viewKey: listId)],
+              children: [
+                TaskSortSelector(viewKey: listId),
+                ShowCompletedToggle(viewKey: listId),
+              ],
             ),
           ),
           const Divider(height: 1),
