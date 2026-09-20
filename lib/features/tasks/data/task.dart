@@ -16,7 +16,7 @@ class Task {
   final int earlyReminderMinutes;
   final String repeatRule;
   final Map<String, dynamic>? repeatCustomConfig;
-  final int order;
+  final double order;
   final List<Map<String, dynamic>> subtasks;
   final DateTime? createdAt;
   final DateTime? completedAt;
@@ -36,7 +36,7 @@ class Task {
     this.earlyReminderMinutes = 0,
     this.repeatRule = 'none',
     this.repeatCustomConfig,
-    this.order = 0,
+    this.order = 0.0,
     this.subtasks = const [],
     this.createdAt,
     this.completedAt,
@@ -83,6 +83,12 @@ class Task {
     return defaultValue;
   }
 
+  static double _parseDouble(dynamic value, [double defaultValue = 0.0]) {
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value) ?? defaultValue;
+    return defaultValue;
+  }
+
   factory Task.fromMap(Map<String, dynamic> data, String taskId) {
     return Task(
       taskId: taskId,
@@ -102,7 +108,7 @@ class Task {
       repeatCustomConfig: data['repeatCustomConfig'] is Map
           ? Map<String, dynamic>.from(data['repeatCustomConfig'] as Map)
           : null,
-      order: _parseInt(data['order']),
+      order: _parseDouble(data['order']),
       subtasks: data['subtasks'] is List
           ? (data['subtasks'] as List)
                 .whereType<Map>()
@@ -160,7 +166,7 @@ class Task {
     int? earlyReminderMinutes,
     String? repeatRule,
     Map<String, dynamic>? repeatCustomConfig,
-    int? order,
+    double? order,
     List<Map<String, dynamic>>? subtasks,
     DateTime? createdAt,
     DateTime? completedAt,

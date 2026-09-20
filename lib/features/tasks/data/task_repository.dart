@@ -66,7 +66,7 @@ class TaskRepository {
       earlyReminderMinutes: 0,
       repeatRule: 'none',
       repeatCustomConfig: null,
-      order: 0,
+      order: 0.0,
       subtasks: const [],
       createdAt: DateTime.now(),
       completedAt: null,
@@ -100,6 +100,7 @@ class TaskRepository {
     Object? dueTime = _sentinel,
     int? earlyReminderMinutes,
     String? repeatRule,
+    double? order,
     bool clearDueDate = false,
     bool clearDueTime = false,
   }) async {
@@ -113,6 +114,7 @@ class TaskRepository {
       updates['earlyReminderMinutes'] = earlyReminderMinutes;
     }
     if (repeatRule != null) updates['repeatRule'] = repeatRule;
+    if (order != null) updates['order'] = order;
 
     if (clearDueDate) {
       updates['dueDate'] = null;
@@ -143,6 +145,48 @@ class TaskRepository {
     if (updates.isNotEmpty) {
       await _tasksCollection.doc(taskId).update(updates);
     }
+  }
+
+  /// Updates the manual [order] attribute of a single task.
+  Future<void> updateTaskOrder(String taskId, double newOrder) async {
+    await _tasksCollection.doc(taskId).update({'order': newOrder});
+  }
+
+  /// Updates manual [order] attributes for multiple tasks in a single batch.
+  Future<void> batchUpdateTaskOrders(Map<String, double> taskIdToOrder) async {
+    final batch = _firestore.batch();
+    for (final entry in taskIdToOrder.entries) {
+      batch.update(_tasksCollection.doc(entry.key), {'order': entry.value});
+    }
+    await batch.commit();
+  }
+
+  /// Backfills `order` for tasks owned by [uid] where order is 0.0 or unassigned.
+  /// Orders tasks chronologically by [createdAt] (oldest = lowest).
+  Future<void> backfillTaskOrders(String uid) async {
+    final snapshot = await _tasksCollection
+        .where('uid', isEqualTo: uid)
+        .where('deletedAt', isNull: true)
+        .get();
+
+    final tasks = snapshot.docs.map(Task.fromFirestore).toList();
+    final unbackfilled = tasks.where((t) => t.order == 0.0).toList();
+    if (unbackfilled.isEmpty) return;
+
+    tasks.sort((a, b) {
+      if (a.createdAt != null && b.createdAt != null) {
+        return a.createdAt!.compareTo(b.createdAt!);
+      }
+      return 0;
+    });
+
+    final batch = _firestore.batch();
+    for (int i = 0; i < tasks.length; i++) {
+      final task = tasks[i];
+      final newOrder = (i + 1) * 1000.0;
+      batch.update(_tasksCollection.doc(task.taskId), {'order': newOrder});
+    }
+    await batch.commit();
   }
 
   /// Marks a task completed or clears its completion status.

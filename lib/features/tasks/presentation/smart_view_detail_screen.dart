@@ -8,9 +8,12 @@ import '../../lists/data/list.dart';
 import '../../lists/providers/list_providers.dart';
 import '../data/task.dart';
 import '../domain/smart_view_models.dart';
+import '../domain/task_sort_options.dart';
 import '../providers/smart_view_providers.dart';
 import '../providers/task_providers.dart';
+import '../providers/task_sort_providers.dart';
 import 'task_list_screen.dart';
+import 'widgets/task_sort_selector.dart';
 
 class SmartViewDetailScreen extends ConsumerStatefulWidget {
   final SmartViewType viewType;
@@ -63,7 +66,8 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
       );
     }
 
-    final tasksAsync = ref.watch(smartViewTasksProvider(widget.viewType));
+    final tasksAsync = ref.watch(sortedSmartViewTasksProvider(widget.viewType));
+    final sortOption = ref.watch(taskSortModeProvider(widget.viewType.name));
     final defaultListId = ref.watch(defaultListIdProvider).value;
     final listsAsync = ref.watch(listsForUserProvider);
     final listNames = {
@@ -142,6 +146,11 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                         .setFilter(newSelection.first);
                   },
                 ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [TaskSortSelector(viewKey: widget.viewType.name)],
+                ),
               ],
             ),
           ),
@@ -160,11 +169,51 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                   );
                 }
 
-                return ListView.separated(
+                return ReorderableListView.builder(
+                  key: Key('smartViewsListView_${widget.viewType.name}'),
                   padding: const EdgeInsets.all(12),
+                  buildDefaultDragHandles: false,
                   itemCount: tasks.length,
-                  separatorBuilder: (context, index) =>
-                      const Divider(height: 1),
+                  onReorderItem: (oldIndex, newIndex) async {
+                    if (sortOption != TaskSortOption.manual) return;
+                    if (oldIndex == newIndex) return;
+
+                    final movedTask = tasks[oldIndex];
+                    final remainingTasks = List<Task>.from(tasks)
+                      ..removeAt(oldIndex);
+
+                    final Task? before = newIndex > 0
+                        ? remainingTasks[newIndex - 1]
+                        : null;
+                    final Task? after = newIndex < remainingTasks.length
+                        ? remainingTasks[newIndex]
+                        : null;
+
+                    if (before != null &&
+                        after != null &&
+                        TaskSortUtils.needsRenumbering(
+                          before: before,
+                          after: after,
+                        )) {
+                      final updatedList = List<Task>.from(remainingTasks)
+                        ..insert(newIndex, movedTask);
+                      final batchMap = <String, double>{};
+                      for (int i = 0; i < updatedList.length; i++) {
+                        batchMap[updatedList[i].taskId] = (i + 1) * 1000.0;
+                      }
+                      await ref
+                          .read(taskRepositoryProvider)
+                          .batchUpdateTaskOrders(batchMap);
+                    } else {
+                      final newOrder = TaskSortUtils.computeMidpointOrder(
+                        before: before,
+                        after: after,
+                      );
+                      await ref
+                          .read(taskRepositoryProvider)
+                          .updateTaskOrder(movedTask.taskId, newOrder);
+                    }
+                  },
                   itemBuilder: (context, index) {
                     final task = tasks[index];
                     final listName = listNames[task.listId] ?? 'Inbox';
@@ -178,143 +227,179 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                         ? Colors.red.shade700
                         : Colors.blueGrey;
 
-                    return ListTile(
-                      key: Key('taskItem_${task.taskId}'),
-                      leading: Checkbox(
-                        key: Key('taskCompleteCheckbox_${task.taskId}'),
-                        value: task.isCompleted,
-                        onChanged: (val) async {
-                          if (val != null) {
-                            await ref
-                                .read(taskRepositoryProvider)
-                                .toggleTaskCompleted(
-                                  task.taskId,
-                                  isCompleted: val,
-                                );
-                          }
-                        },
-                      ),
-                      title: Text(
-                        task.title,
-                        key: Key('taskTitle_${task.taskId}'),
-                        style: TextStyle(
-                          decoration: task.isCompleted
-                              ? TextDecoration.lineThrough
-                              : null,
-                          color: task.isCompleted ? Colors.grey : null,
-                        ),
-                      ),
-                      subtitle: Wrap(
-                        spacing: 8,
-                        runSpacing: 4,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          if (task.dueDate != null)
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.calendar_today,
-                                  size: 13,
-                                  color: dueDateColor,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  _formatDueDate(task.dueDate, task.dueTime),
-                                  key: Key('taskDueDate_${task.taskId}'),
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: dueDateColor,
-                                    fontWeight: isOverdue
-                                        ? FontWeight.w600
-                                        : FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          Text(
-                            '• List: $listName',
-                            key: Key('taskListOrigin_${task.taskId}'),
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey,
-                            ),
-                          ),
-                          if (task.priority != 'none')
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: task.priority == 'high'
-                                    ? Colors.red.shade100
-                                    : (task.priority == 'medium'
-                                          ? Colors.orange.shade100
-                                          : Colors.blue.shade100),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                task.priority.toUpperCase(),
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: task.priority == 'high'
-                                      ? Colors.red.shade900
-                                      : (task.priority == 'medium'
-                                            ? Colors.orange.shade900
-                                            : Colors.blue.shade900),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            key: Key('editTaskButton_${task.taskId}'),
-                            icon: const Icon(Icons.edit_outlined, size: 20),
-                            tooltip: 'Edit Task',
-                            onPressed: () => _openTaskDialog(
-                              context,
-                              uid,
-                              task.listId,
-                              task: task,
-                            ),
-                          ),
-                          IconButton(
-                            key: Key('deleteTaskButton_${task.taskId}'),
-                            icon: const Icon(Icons.delete_outline, size: 20),
-                            tooltip: 'Delete Task',
-                            onPressed: () async {
-                              await ref
-                                  .read(taskRepositoryProvider)
-                                  .softDeleteTask(task.taskId);
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).clearSnackBars();
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('Deleted "${task.title}"'),
-                                    action: SnackBarAction(
-                                      label: 'Undo',
-                                      onPressed: () async {
-                                        await ref
-                                            .read(taskRepositoryProvider)
-                                            .restoreTask(
-                                              uid: uid,
-                                              taskId: task.taskId,
-                                              defaultListId: defaultListId,
-                                            );
-                                      },
+                    return Column(
+                      key: ValueKey('smartTaskItemWrapper_${task.taskId}'),
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        ListTile(
+                          key: Key('taskItem_${task.taskId}'),
+                          leading: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (sortOption == TaskSortOption.manual)
+                                ReorderableDragStartListener(
+                                  index: index,
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(right: 6),
+                                    child: Icon(
+                                      Icons.drag_handle,
+                                      key: Key(
+                                        'smartTaskDragHandle_${task.taskId}',
+                                      ),
+                                      size: 20,
+                                      color: Colors.grey,
                                     ),
                                   ),
-                                );
-                              }
-                            },
+                                ),
+                              Checkbox(
+                                key: Key('taskCompleteCheckbox_${task.taskId}'),
+                                value: task.isCompleted,
+                                onChanged: (val) async {
+                                  if (val != null) {
+                                    await ref
+                                        .read(taskRepositoryProvider)
+                                        .toggleTaskCompleted(
+                                          task.taskId,
+                                          isCompleted: val,
+                                        );
+                                  }
+                                },
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
+                          title: Text(
+                            task.title,
+                            key: Key('taskTitle_${task.taskId}'),
+                            style: TextStyle(
+                              decoration: task.isCompleted
+                                  ? TextDecoration.lineThrough
+                                  : null,
+                              color: task.isCompleted ? Colors.grey : null,
+                            ),
+                          ),
+                          subtitle: Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              if (task.dueDate != null)
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.calendar_today,
+                                      size: 13,
+                                      color: dueDateColor,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      _formatDueDate(
+                                        task.dueDate,
+                                        task.dueTime,
+                                      ),
+                                      key: Key('taskDueDate_${task.taskId}'),
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: dueDateColor,
+                                        fontWeight: isOverdue
+                                            ? FontWeight.w600
+                                            : FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              Text(
+                                '• List: $listName',
+                                key: Key('taskListOrigin_${task.taskId}'),
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                              if (task.priority != 'none')
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: task.priority == 'high'
+                                        ? Colors.red.shade100
+                                        : (task.priority == 'medium'
+                                              ? Colors.orange.shade100
+                                              : Colors.blue.shade100),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    task.priority.toUpperCase(),
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: task.priority == 'high'
+                                          ? Colors.red.shade900
+                                          : (task.priority == 'medium'
+                                                ? Colors.orange.shade900
+                                                : Colors.blue.shade900),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                key: Key('editTaskButton_${task.taskId}'),
+                                icon: const Icon(Icons.edit_outlined, size: 20),
+                                tooltip: 'Edit Task',
+                                onPressed: () => _openTaskDialog(
+                                  context,
+                                  uid,
+                                  task.listId,
+                                  task: task,
+                                ),
+                              ),
+                              IconButton(
+                                key: Key('deleteTaskButton_${task.taskId}'),
+                                icon: const Icon(
+                                  Icons.delete_outline,
+                                  size: 20,
+                                ),
+                                tooltip: 'Delete Task',
+                                onPressed: () async {
+                                  await ref
+                                      .read(taskRepositoryProvider)
+                                      .softDeleteTask(task.taskId);
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context)
+                                        .clearSnackBars();
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'Deleted "${task.title}"',
+                                        ),
+                                        action: SnackBarAction(
+                                          label: 'Undo',
+                                          onPressed: () async {
+                                            await ref
+                                                .read(taskRepositoryProvider)
+                                                .restoreTask(
+                                                  uid: uid,
+                                                  taskId: task.taskId,
+                                                  defaultListId: defaultListId,
+                                                );
+                                          },
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Divider(height: 1),
+                      ],
                     );
                   },
                 );
