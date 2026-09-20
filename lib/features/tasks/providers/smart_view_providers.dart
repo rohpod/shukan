@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../auth/providers/auth_providers.dart';
 import '../data/task.dart';
 import '../domain/smart_view_models.dart';
+import '../domain/task_priority_filter.dart';
 import 'task_providers.dart';
 import 'task_sort_providers.dart';
 
@@ -127,6 +128,7 @@ final smartViewTasksProvider = StreamProvider.family<List<Task>, SmartViewType>(
     final repository = ref.watch(taskRepositoryProvider);
     final currentDate = ref.watch(currentDateProvider);
     final showCompleted = ref.watch(showCompletedTasksProvider(viewType.name));
+    final priorityFilter = ref.watch(taskPriorityFilterProvider(viewType.name));
     final timeoutDuration = ref.watch(smartViewTimeoutProvider);
 
     final DateTime? startDueDate;
@@ -154,12 +156,18 @@ final smartViewTasksProvider = StreamProvider.family<List<Task>, SmartViewType>(
       startDueDate: startDueDate,
       endDueDate: endDueDate,
       onlyIncomplete: onlyIncomplete,
+      priority: priorityFilter.firestoreValue,
     );
 
     final mappedStream = baseStream.map((tasks) {
       final startOfToday = SmartViewDateUtils.startOfDay(currentDate);
       return tasks.where((t) {
         if (!showCompleted && t.isCompleted) {
+          return false;
+        }
+
+        if (priorityFilter != TaskPriorityFilter.all &&
+            t.priority != priorityFilter.firestoreValue) {
           return false;
         }
 

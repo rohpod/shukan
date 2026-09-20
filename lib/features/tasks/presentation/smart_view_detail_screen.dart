@@ -14,6 +14,7 @@ import '../providers/task_providers.dart';
 import '../providers/task_sort_providers.dart';
 import 'task_list_screen.dart';
 import 'widgets/show_completed_toggle.dart';
+import 'widgets/task_priority_filter_selector.dart';
 import 'widgets/task_sort_selector.dart';
 
 class SmartViewDetailScreen extends ConsumerStatefulWidget {
@@ -114,12 +115,17 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
         children: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                TaskSortSelector(viewKey: widget.viewType.name),
-                ShowCompletedToggle(viewKey: widget.viewType.name),
-              ],
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  TaskSortSelector(viewKey: widget.viewType.name),
+                  const SizedBox(width: 8),
+                  TaskPriorityFilterSelector(viewKey: widget.viewType.name),
+                  const SizedBox(width: 8),
+                  ShowCompletedToggle(viewKey: widget.viewType.name),
+                ],
+              ),
             ),
           ),
           const Divider(height: 1),

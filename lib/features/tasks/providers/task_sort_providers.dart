@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../auth/providers/auth_providers.dart';
 import '../data/task.dart';
 import '../domain/smart_view_models.dart';
+import '../domain/task_priority_filter.dart';
 import '../domain/task_sort_options.dart';
 import 'smart_view_providers.dart';
 import 'task_providers.dart';
@@ -84,6 +85,44 @@ final showCompletedTasksProvider =
       (arg) => ShowCompletedTasksNotifier(arg),
     );
 
+/// Per-view priority filter notifier, keyed by `listId` (for list views) or `viewType.name` (for smart views).
+///
+/// Persists the selected [TaskPriorityFilter] to SharedPreferences under `task_priority_filter_<viewKey>`.
+/// Defaults to [TaskPriorityFilter.all].
+class TaskPriorityFilterNotifier extends Notifier<TaskPriorityFilter> {
+  TaskPriorityFilterNotifier(this.viewKey);
+
+  final String viewKey;
+
+  @override
+  TaskPriorityFilter build() {
+    final prefs = ref.watch(sharedPreferencesProvider);
+    final saved = prefs?.getString('task_priority_filter_$viewKey');
+    if (saved != null) {
+      for (final option in TaskPriorityFilter.values) {
+        if (option.name == saved) {
+          return option;
+        }
+      }
+    }
+    return TaskPriorityFilter.all;
+  }
+
+  Future<void> setFilter(TaskPriorityFilter filter) async {
+    state = filter;
+    final prefs = ref.read(sharedPreferencesProvider);
+    await prefs?.setString('task_priority_filter_$viewKey', filter.name);
+  }
+}
+
+/// Provider exposing the active priority filter for a given view.
+final taskPriorityFilterProvider =
+    NotifierProvider.family<
+      TaskPriorityFilterNotifier,
+      TaskPriorityFilter,
+      String
+    >((arg) => TaskPriorityFilterNotifier(arg));
+
 /// Helper to map and sort tasks within an AsyncValue while preserving errors and loading states.
 AsyncValue<List<Task>> _mapSortedTasks(
   AsyncValue<List<Task>> tasksAsync,
@@ -111,16 +150,24 @@ AsyncValue<List<Task>> _mapSortedTasks(
 }
 
 /// Streams tasks for [listId] sorted by that list's independent [TaskSortOption]
-/// and filtered by its independent [showCompletedTasksProvider].
+/// and filtered by its independent [showCompletedTasksProvider] and [taskPriorityFilterProvider].
 final sortedTasksForListProvider =
     Provider.family<AsyncValue<List<Task>>, String>((ref, listId) {
       final tasksAsync = ref.watch(tasksForListProvider(listId));
       final sortOption = ref.watch(taskSortModeProvider(listId));
       final showCompleted = ref.watch(showCompletedTasksProvider(listId));
+      final priorityFilter = ref.watch(taskPriorityFilterProvider(listId));
 
       final filteredTasksAsync = tasksAsync.whenData((tasks) {
-        if (showCompleted) return tasks;
-        return tasks.where((t) => !t.isCompleted).toList();
+        var filtered = tasks;
+        if (!showCompleted) {
+          filtered = filtered.where((t) => !t.isCompleted).toList();
+        }
+        if (priorityFilter != TaskPriorityFilter.all) {
+          final target = priorityFilter.firestoreValue;
+          filtered = filtered.where((t) => t.priority == target).toList();
+        }
+        return filtered;
       });
 
       return _mapSortedTasks(filteredTasksAsync, sortOption);

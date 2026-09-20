@@ -254,6 +254,7 @@ class TaskRepository {
     DateTime? startDueDate,
     DateTime? endDueDate,
     bool onlyIncomplete = false,
+    String? priority,
   }) {
     Query<Map<String, dynamic>> query = _tasksCollection
         .where('uid', isEqualTo: uid)
@@ -261,6 +262,10 @@ class TaskRepository {
 
     if (onlyIncomplete) {
       query = query.where('completedAt', isNull: true);
+    }
+
+    if (priority != null) {
+      query = query.where('priority', isEqualTo: priority);
     }
 
     if (startDueDate != null && endDueDate != null) {
