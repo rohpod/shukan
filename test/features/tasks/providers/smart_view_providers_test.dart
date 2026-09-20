@@ -81,11 +81,11 @@ void main() {
       expect(emitted.last.first.taskId, equals('t-today'));
     });
 
-    test('thisWeek view respects workWeek vs fullWeek toggles', () async {
+    test('thisWeek view returns all tasks from Monday to Sunday', () async {
       final wednesday = DateTime(2026, 10, 14, 10, 0);
       final container = createContainer(overrideDate: wednesday);
 
-      // Task on Thursday (in both workWeek and fullWeek)
+      // Task on Thursday (in week)
       await fakeFirestore.collection('tasks').doc('t-thurs').set({
         'taskId': 't-thurs',
         'uid': uid,
@@ -96,7 +96,7 @@ void main() {
         'completedAt': null,
       });
 
-      // Task on Saturday (only in fullWeek)
+      // Task on Saturday (in week)
       await fakeFirestore.collection('tasks').doc('t-sat').set({
         'taskId': 't-sat',
         'uid': uid,
@@ -129,33 +129,149 @@ void main() {
 
       await pumpEventQueue();
 
-      // 1. In Full Week mode (default)
-      expect(
-        emitted.last.map((t) => t.taskId).toSet(),
-        equals({'t-thurs', 't-sat'}),
-      );
-
-      // 2. Switch to Work Week mode
-      container
-          .read(thisWeekFilterProvider.notifier)
-          .setFilter(WeekFilter.workWeek);
-
-      await pumpEventQueue();
-
-      expect(emitted.last.map((t) => t.taskId).toList(), equals(['t-thurs']));
-
-      // 3. Switch back to Full Week mode
-      container
-          .read(thisWeekFilterProvider.notifier)
-          .setFilter(WeekFilter.fullWeek);
-
-      await pumpEventQueue();
-
       expect(
         emitted.last.map((t) => t.taskId).toSet(),
         equals({'t-thurs', 't-sat'}),
       );
     });
+
+    test(
+      'today view includes overdue incomplete tasks ordered chronologically',
+      () async {
+        final today = DateTime(2026, 10, 14, 10, 0);
+        final container = createContainer(overrideDate: today);
+
+        // Overdue task 1 (yesterday)
+        await fakeFirestore.collection('tasks').doc('t-overdue-1').set({
+          'taskId': 't-overdue-1',
+          'uid': uid,
+          'listId': listId,
+          'title': 'Overdue Yesterday',
+          'dueDate': Timestamp.fromDate(DateTime(2026, 10, 13, 15, 0)),
+          'deletedAt': null,
+          'completedAt': null,
+        });
+
+        // Overdue task 2 (2 days ago)
+        await fakeFirestore.collection('tasks').doc('t-overdue-2').set({
+          'taskId': 't-overdue-2',
+          'uid': uid,
+          'listId': listId,
+          'title': 'Overdue 2 Days Ago',
+          'dueDate': Timestamp.fromDate(DateTime(2026, 10, 12, 10, 0)),
+          'deletedAt': null,
+          'completedAt': null,
+        });
+
+        // Task due today
+        await fakeFirestore.collection('tasks').doc('t-today').set({
+          'taskId': 't-today',
+          'uid': uid,
+          'listId': listId,
+          'title': 'Due Today',
+          'dueDate': Timestamp.fromDate(DateTime(2026, 10, 14, 11, 0)),
+          'deletedAt': null,
+          'completedAt': null,
+        });
+
+        final emitted = <List<Task>>[];
+        container.listen<AsyncValue<List<Task>>>(
+          smartViewTasksProvider(SmartViewType.today),
+          (_, next) {
+            if (next.hasValue) emitted.add(next.value!);
+          },
+          fireImmediately: true,
+        );
+
+        await pumpEventQueue();
+
+        // Sorted chronologically: oldest overdue first, then today's tasks
+        expect(
+          emitted.last.map((t) => t.taskId).toList(),
+          equals(['t-overdue-2', 't-overdue-1', 't-today']),
+        );
+      },
+    );
+
+    test(
+      'today view drops completed overdue tasks across all filters',
+      () async {
+        final today = DateTime(2026, 10, 14, 10, 0);
+        final container = createContainer(overrideDate: today);
+
+        // Incomplete overdue task
+        await fakeFirestore.collection('tasks').doc('t-overdue-inc').set({
+          'taskId': 't-overdue-inc',
+          'uid': uid,
+          'listId': listId,
+          'title': 'Overdue Incomplete',
+          'dueDate': Timestamp.fromDate(DateTime(2026, 10, 12, 10, 0)),
+          'deletedAt': null,
+          'completedAt': null,
+        });
+
+        // Completed overdue task (must NEVER be included in Today view)
+        await fakeFirestore.collection('tasks').doc('t-overdue-comp').set({
+          'taskId': 't-overdue-comp',
+          'uid': uid,
+          'listId': listId,
+          'title': 'Overdue Completed',
+          'dueDate': Timestamp.fromDate(DateTime(2026, 10, 12, 12, 0)),
+          'deletedAt': null,
+          'completedAt': Timestamp.now(),
+        });
+
+        // Today completed task
+        await fakeFirestore.collection('tasks').doc('t-today-comp').set({
+          'taskId': 't-today-comp',
+          'uid': uid,
+          'listId': listId,
+          'title': 'Today Completed',
+          'dueDate': Timestamp.fromDate(DateTime(2026, 10, 14, 14, 0)),
+          'deletedAt': null,
+          'completedAt': Timestamp.now(),
+        });
+
+        final emitted = <List<Task>>[];
+        container.listen<AsyncValue<List<Task>>>(
+          smartViewTasksProvider(SmartViewType.today),
+          (_, next) {
+            if (next.hasValue) emitted.add(next.value!);
+          },
+          fireImmediately: true,
+        );
+
+        await pumpEventQueue();
+
+        // 1. Incomplete mode (default): only t-overdue-inc
+        expect(
+          emitted.last.map((t) => t.taskId).toList(),
+          equals(['t-overdue-inc']),
+        );
+
+        // 2. Completed mode: only t-today-comp (overdue completed is excluded)
+        container
+            .read(smartViewCompletionFilterProvider.notifier)
+            .setFilter(CompletionFilter.completed);
+        await pumpEventQueue();
+
+        expect(
+          emitted.last.map((t) => t.taskId).toList(),
+          equals(['t-today-comp']),
+        );
+
+        // 3. All mode: t-overdue-inc and t-today-comp (overdue completed is still excluded)
+        container
+            .read(smartViewCompletionFilterProvider.notifier)
+            .setFilter(CompletionFilter.all);
+        await pumpEventQueue();
+
+        expect(
+          emitted.last.map((t) => t.taskId).toSet(),
+          equals({'t-overdue-inc', 't-today-comp'}),
+        );
+      },
+    );
 
     test('completion filter toggles incomplete, completed, and all', () async {
       final today = DateTime(2026, 10, 14, 10, 0);

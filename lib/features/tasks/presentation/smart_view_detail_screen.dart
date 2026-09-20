@@ -76,7 +76,7 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
             ? listsAsync.value!.first.listId
             : 'inbox');
 
-    final weekFilter = ref.watch(thisWeekFilterProvider);
+    final currentDate = ref.watch(currentDateProvider);
     final completionFilter = ref.watch(smartViewCompletionFilterProvider);
 
     return Scaffold(
@@ -113,34 +113,6 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (widget.viewType == SmartViewType.thisWeek) ...[
-                  SegmentedButton<WeekFilter>(
-                    showSelectedIcon: false,
-                    segments: const [
-                      ButtonSegment(
-                        value: WeekFilter.workWeek,
-                        label: Text(
-                          'Work week (Mon–Fri)',
-                          key: Key('workWeekFilterButton'),
-                        ),
-                      ),
-                      ButtonSegment(
-                        value: WeekFilter.fullWeek,
-                        label: Text(
-                          'Full week (Mon–Sun)',
-                          key: Key('fullWeekFilterButton'),
-                        ),
-                      ),
-                    ],
-                    selected: {weekFilter},
-                    onSelectionChanged: (newSelection) {
-                      ref
-                          .read(thisWeekFilterProvider.notifier)
-                          .setFilter(newSelection.first);
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                ],
                 SegmentedButton<CompletionFilter>(
                   showSelectedIcon: false,
                   segments: const [
@@ -196,6 +168,15 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                   itemBuilder: (context, index) {
                     final task = tasks[index];
                     final listName = listNames[task.listId] ?? 'Inbox';
+                    final isOverdue =
+                        SmartViewDateUtils.isOverdue(
+                          task.dueDate,
+                          currentDate,
+                        ) &&
+                        !task.isCompleted;
+                    final dueDateColor = isOverdue
+                        ? Colors.red.shade700
+                        : Colors.blueGrey;
 
                     return ListTile(
                       key: Key('taskItem_${task.taskId}'),
@@ -232,25 +213,21 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                             Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(
+                                Icon(
                                   Icons.calendar_today,
                                   size: 13,
-                                  color: Colors.blueGrey,
+                                  color: dueDateColor,
                                 ),
                                 const SizedBox(width: 4),
-                                ConstrainedBox(
-                                  constraints: const BoxConstraints(
-                                    maxWidth: 135,
-                                  ),
-                                  child: Text(
-                                    _formatDueDate(task.dueDate, task.dueTime),
-                                    key: Key('taskDueDate_${task.taskId}'),
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.blueGrey,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
+                                Text(
+                                  _formatDueDate(task.dueDate, task.dueTime),
+                                  key: Key('taskDueDate_${task.taskId}'),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: dueDateColor,
+                                    fontWeight: isOverdue
+                                        ? FontWeight.w600
+                                        : FontWeight.w500,
                                   ),
                                 ),
                               ],

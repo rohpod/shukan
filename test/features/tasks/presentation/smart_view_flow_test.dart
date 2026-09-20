@@ -116,17 +116,9 @@ void main() {
       await tester.tap(find.byKey(const Key('saveTaskButton')));
       await tester.pumpAndSettle();
 
-      // Both tasks visible in Full Week mode
+      // Both tasks visible in This Week
       expect(find.text('Dentist Appointment'), findsOneWidget);
       expect(find.text('Saturday Concert'), findsOneWidget);
-
-      // Switch to Work Week mode
-      await tester.tap(find.byKey(const Key('workWeekFilterButton')));
-      await tester.pumpAndSettle();
-
-      // Saturday task is hidden, Wednesday task remains
-      expect(find.text('Dentist Appointment'), findsOneWidget);
-      expect(find.text('Saturday Concert'), findsNothing);
 
       // 5. Check off Dentist Appointment
       final dentistTaskDoc = await fakeFirestore

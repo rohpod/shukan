@@ -10,15 +10,6 @@ enum SmartViewType {
   const SmartViewType(this.label, this.icon);
 }
 
-enum WeekFilter {
-  workWeek('Work week', 'Mon–Fri'),
-  fullWeek('Full week', 'Mon–Sun');
-
-  final String label;
-  final String subtitle;
-  const WeekFilter(this.label, this.subtitle);
-}
-
 enum CompletionFilter {
   incomplete('Incomplete'),
   completed('Completed'),
@@ -48,19 +39,23 @@ class SmartViewDateUtils {
     return startOfDay(monday);
   }
 
-  /// Returns the end of week (Friday 23:59:59.999 for workWeek, Sunday 23:59:59.999 for fullWeek) in local time.
-  static DateTime endOfWeek(DateTime date, WeekFilter filter) {
+  /// Returns the Sunday 23:59:59.999 of the week containing [date] in local time.
+  static DateTime endOfWeek(DateTime date) {
     final diff = date.weekday - DateTime.monday;
     final monday = DateTime(date.year, date.month, date.day - diff);
-    final targetDayOffset = filter == WeekFilter.workWeek
-        ? 4
-        : 6; // +4 for Fri, +6 for Sun
-    final targetDay = monday.add(Duration(days: targetDayOffset));
-    return endOfDay(targetDay);
+    final sunday = monday.add(const Duration(days: 6));
+    return endOfDay(sunday);
   }
 
   /// Returns true if [a] and [b] fall on the same local calendar day.
   static bool isSameCalendarDay(DateTime a, DateTime b) {
     return a.year == b.year && a.month == b.month && a.day == b.day;
+  }
+
+  /// Returns true if [dueDate] falls strictly before the start of the calendar day of [currentDate] in local time.
+  static bool isOverdue(DateTime? dueDate, DateTime currentDate) {
+    if (dueDate == null) return false;
+    final startOfCurrentDay = startOfDay(currentDate);
+    return dueDate.isBefore(startOfCurrentDay);
   }
 }

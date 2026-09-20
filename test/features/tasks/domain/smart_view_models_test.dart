@@ -35,24 +35,23 @@ void main() {
       );
     });
 
-    test('endOfWeek returns Friday 23:59:59.999 for workWeek', () {
+    test('endOfWeek returns Sunday 23:59:59.999 for the current week', () {
       final wednesday = DateTime(2026, 10, 14, 16, 0);
-      final fridayEnd = SmartViewDateUtils.endOfWeek(
-        wednesday,
-        WeekFilter.workWeek,
-      );
-      expect(fridayEnd, equals(DateTime(2026, 10, 16, 23, 59, 59, 999)));
-      expect(fridayEnd.weekday, equals(DateTime.friday));
-    });
-
-    test('endOfWeek returns Sunday 23:59:59.999 for fullWeek', () {
-      final wednesday = DateTime(2026, 10, 14, 16, 0);
-      final sundayEnd = SmartViewDateUtils.endOfWeek(
-        wednesday,
-        WeekFilter.fullWeek,
-      );
+      final sundayEnd = SmartViewDateUtils.endOfWeek(wednesday);
       expect(sundayEnd, equals(DateTime(2026, 10, 18, 23, 59, 59, 999)));
       expect(sundayEnd.weekday, equals(DateTime.sunday));
+    });
+
+    test('isOverdue returns true when dueDate is strictly before start of current day', () {
+      final today = DateTime(2026, 10, 15, 14, 30);
+      final yesterday = DateTime(2026, 10, 14, 23, 59);
+      final earlierToday = DateTime(2026, 10, 15, 8, 0);
+      final tomorrow = DateTime(2026, 10, 16, 9, 0);
+
+      expect(SmartViewDateUtils.isOverdue(yesterday, today), isTrue);
+      expect(SmartViewDateUtils.isOverdue(earlierToday, today), isFalse);
+      expect(SmartViewDateUtils.isOverdue(tomorrow, today), isFalse);
+      expect(SmartViewDateUtils.isOverdue(null, today), isFalse);
     });
 
     test('isSameCalendarDay compares year, month, and day correctly', () {

@@ -306,23 +306,6 @@ void main() {
     await snap(tester, repaintKey, 'smart_views_today_all.png');
   });
 
-  testWidgets('snap this week view - work week', (tester) async {
-    setupTester(tester);
-    addTearDown(() => teardownTester(tester));
-
-    final repaintKey = GlobalKey();
-    await tester.pumpWidget(
-      buildApp(
-        home: const SmartViewDetailScreen(viewType: SmartViewType.thisWeek),
-        repaintKey: repaintKey,
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
-    await tester.tap(find.byKey(const Key('workWeekFilterButton')));
-    await snap(tester, repaintKey, 'smart_views_this_week_work.png');
-  });
-
   testWidgets('snap this week view - full week', (tester) async {
     setupTester(tester);
     addTearDown(() => teardownTester(tester));

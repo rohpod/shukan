@@ -200,6 +200,7 @@ class TaskRepository {
   /// Streams active (non-soft-deleted) tasks for [uid] that have a `dueDate`.
   ///
   /// - If [startDueDate] and [endDueDate] are specified, applies server-side range query on [dueDate].
+  /// - If only [endDueDate] is specified, applies server-side query `dueDate <= endDueDate` (used by Today view).
   /// - If omitted, queries all tasks where `dueDate != null` (used by Scheduled view).
   /// - If [onlyIncomplete] is true, applies `completedAt == null` equality check in Firestore.
   /// - Tasks are sorted chronologically ascending by [dueDate], tie-broken by [dueTime],
@@ -224,6 +225,10 @@ class TaskRepository {
             'dueDate',
             isGreaterThanOrEqualTo: Timestamp.fromDate(startDueDate),
           )
+          .where('dueDate', isLessThanOrEqualTo: Timestamp.fromDate(endDueDate))
+          .orderBy('dueDate');
+    } else if (endDueDate != null) {
+      query = query
           .where('dueDate', isLessThanOrEqualTo: Timestamp.fromDate(endDueDate))
           .orderBy('dueDate');
     } else {

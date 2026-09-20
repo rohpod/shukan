@@ -43,20 +43,6 @@ final currentDateProvider = Provider<DateTime>((ref) {
   return asyncDate.value ?? DateTime.now();
 });
 
-/// User toggle for "This Week" view: Work week (Mon–Fri) vs Full week (Mon–Sun).
-// TODO: Persist across app restarts when local storage or user preferences are implemented.
-class ThisWeekFilterNotifier extends Notifier<WeekFilter> {
-  @override
-  WeekFilter build() => WeekFilter.fullWeek;
-
-  void setFilter(WeekFilter filter) => state = filter;
-}
-
-final thisWeekFilterProvider =
-    NotifierProvider<ThisWeekFilterNotifier, WeekFilter>(
-      ThisWeekFilterNotifier.new,
-    );
-
 /// User toggle for task completion status in smart views.
 // TODO: Persist across app restarts when local storage or user preferences are implemented.
 class CompletionFilterNotifier extends Notifier<CompletionFilter> {
@@ -154,7 +140,6 @@ final smartViewTasksProvider = StreamProvider.family<List<Task>, SmartViewType>(
     final repository = ref.watch(taskRepositoryProvider);
     final currentDate = ref.watch(currentDateProvider);
     final completionFilter = ref.watch(smartViewCompletionFilterProvider);
-    final weekFilter = ref.watch(thisWeekFilterProvider);
     final timeoutDuration = ref.watch(smartViewTimeoutProvider);
 
     final DateTime? startDueDate;
@@ -162,12 +147,12 @@ final smartViewTasksProvider = StreamProvider.family<List<Task>, SmartViewType>(
 
     switch (viewType) {
       case SmartViewType.today:
-        startDueDate = SmartViewDateUtils.startOfDay(currentDate);
+        startDueDate = null;
         endDueDate = SmartViewDateUtils.endOfDay(currentDate);
         break;
       case SmartViewType.thisWeek:
         startDueDate = SmartViewDateUtils.startOfWeek(currentDate);
-        endDueDate = SmartViewDateUtils.endOfWeek(currentDate, weekFilter);
+        endDueDate = SmartViewDateUtils.endOfWeek(currentDate);
         break;
       case SmartViewType.scheduled:
         startDueDate = null;
@@ -185,10 +170,21 @@ final smartViewTasksProvider = StreamProvider.family<List<Task>, SmartViewType>(
     );
 
     final mappedStream = baseStream.map((tasks) {
-      if (completionFilter == CompletionFilter.completed) {
-        return tasks.where((t) => t.isCompleted).toList();
-      }
-      return tasks;
+      final startOfToday = SmartViewDateUtils.startOfDay(currentDate);
+      return tasks.where((t) {
+        // In Today view, overdue tasks (dueDate < startOfToday) must only ever be incomplete.
+        // Completed past tasks are never overdue and must not appear in Today view under any filter.
+        if (viewType == SmartViewType.today &&
+            t.dueDate != null &&
+            t.dueDate!.isBefore(startOfToday)) {
+          if (t.isCompleted) return false;
+        }
+
+        if (completionFilter == CompletionFilter.completed) {
+          return t.isCompleted;
+        }
+        return true;
+      }).toList();
     });
 
     return mappedStream.timeoutFirstEvent(

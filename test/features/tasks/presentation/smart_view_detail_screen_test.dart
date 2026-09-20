@@ -98,7 +98,7 @@ void main() {
     );
 
     testWidgets(
-      'This Week view renders both week toggles and completion filters',
+      'This Week view renders all tasks for the week without week toggles',
       (tester) async {
         final wednesday = DateTime(2026, 10, 14, 10, 0);
 
@@ -136,28 +136,105 @@ void main() {
           find.byKey(const Key('smartViewTitle_thisWeek')),
           findsOneWidget,
         );
-        expect(find.byKey(const Key('workWeekFilterButton')), findsOneWidget);
-        expect(find.byKey(const Key('fullWeekFilterButton')), findsOneWidget);
+        // Week toggles must NOT exist
+        expect(find.byKey(const Key('workWeekFilterButton')), findsNothing);
+        expect(find.byKey(const Key('fullWeekFilterButton')), findsNothing);
 
-        // Full week is default -> both tasks visible
+        // All week tasks visible
         expect(find.text('Thursday Review'), findsOneWidget);
         expect(find.text('Saturday Hike'), findsOneWidget);
+      },
+    );
 
-        // Tap "Work week" filter
-        await tester.tap(find.byKey(const Key('workWeekFilterButton')));
+    testWidgets(
+      'Scheduled view renders due date and time under each task row',
+      (tester) async {
+        final now = DateTime(2026, 10, 14, 10, 0);
+
+        await fakeFirestore.collection('tasks').doc('t-sched-1').set({
+          'taskId': 't-sched-1',
+          'uid': uid,
+          'listId': defaultListId,
+          'title': 'Dentist Appointment',
+          'dueDate': Timestamp.fromDate(DateTime(2026, 10, 20, 14, 30)),
+          'dueTime': '14:30',
+          'deletedAt': null,
+          'completedAt': null,
+        });
+
+        await fakeFirestore.collection('tasks').doc('t-sched-2').set({
+          'taskId': 't-sched-2',
+          'uid': uid,
+          'listId': defaultListId,
+          'title': 'Tax Submission',
+          'dueDate': Timestamp.fromDate(DateTime(2026, 10, 25)),
+          'deletedAt': null,
+          'completedAt': null,
+        });
+
+        await tester.pumpWidget(
+          createWidgetUnderTest(SmartViewType.scheduled, overrideDate: now),
+        );
         await tester.pumpAndSettle();
 
-        // Only Thursday task should be visible
-        expect(find.text('Thursday Review'), findsOneWidget);
-        expect(find.text('Saturday Hike'), findsNothing);
+        expect(find.text('Dentist Appointment'), findsOneWidget);
+        expect(find.text('Tax Submission'), findsOneWidget);
 
-        // Tap "Full week" filter
-        await tester.tap(find.byKey(const Key('fullWeekFilterButton')));
+        // Due date subheading on line 2
+        expect(find.byKey(const Key('taskDueDate_t-sched-1')), findsOneWidget);
+        expect(find.text('2026-10-20 14:30'), findsOneWidget);
+
+        expect(find.byKey(const Key('taskDueDate_t-sched-2')), findsOneWidget);
+        expect(find.text('2026-10-25'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'Today view renders overdue tasks highlighted in red and today tasks in blueGrey',
+      (tester) async {
+        final today = DateTime(2026, 10, 14, 10, 0);
+
+        // Overdue task
+        await fakeFirestore.collection('tasks').doc('t-overdue').set({
+          'taskId': 't-overdue',
+          'uid': uid,
+          'listId': defaultListId,
+          'title': 'Late Report',
+          'dueDate': Timestamp.fromDate(DateTime(2026, 10, 12, 17, 0)),
+          'dueTime': '17:00',
+          'deletedAt': null,
+          'completedAt': null,
+        });
+
+        // Today task
+        await fakeFirestore.collection('tasks').doc('t-today').set({
+          'taskId': 't-today',
+          'uid': uid,
+          'listId': defaultListId,
+          'title': 'Today Standup',
+          'dueDate': Timestamp.fromDate(DateTime(2026, 10, 14, 9, 30)),
+          'dueTime': '09:30',
+          'deletedAt': null,
+          'completedAt': null,
+        });
+
+        await tester.pumpWidget(
+          createWidgetUnderTest(SmartViewType.today, overrideDate: today),
+        );
         await tester.pumpAndSettle();
 
-        // Both visible again
-        expect(find.text('Thursday Review'), findsOneWidget);
-        expect(find.text('Saturday Hike'), findsOneWidget);
+        expect(find.text('Late Report'), findsOneWidget);
+        expect(find.text('Today Standup'), findsOneWidget);
+
+        final overdueText = tester.widget<Text>(
+          find.byKey(const Key('taskDueDate_t-overdue')),
+        );
+        expect(overdueText.style?.color, equals(Colors.red.shade700));
+
+        final todayText = tester.widget<Text>(
+          find.byKey(const Key('taskDueDate_t-today')),
+        );
+        expect(todayText.style?.color, equals(Colors.blueGrey));
       },
     );
 
