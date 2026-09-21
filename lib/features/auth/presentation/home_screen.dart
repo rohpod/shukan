@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../lists/data/list.dart';
 import '../../lists/presentation/list_detail_screen.dart';
 import '../../lists/providers/list_providers.dart';
+import '../../tags/presentation/tag_browser_screen.dart';
 import '../../tasks/domain/smart_view_models.dart';
 import '../../tasks/presentation/recently_deleted_screen.dart';
 import '../../tasks/presentation/smart_view_detail_screen.dart';
@@ -174,6 +175,18 @@ class HomeScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('shukan'),
         actions: [
+          IconButton(
+            key: const Key('tagBrowserButton'),
+            icon: const Icon(Icons.label_outline),
+            tooltip: 'Tags',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const TagBrowserScreen(),
+                ),
+              );
+            },
+          ),
           Consumer(
             builder: (context, ref, child) {
               final count = ref.watch(recentlyDeletedCountProvider);

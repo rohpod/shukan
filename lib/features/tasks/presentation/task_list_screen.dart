@@ -9,9 +9,12 @@ import '../domain/task_constants.dart';
 import '../domain/task_sort_options.dart';
 import '../providers/task_providers.dart';
 import '../providers/task_sort_providers.dart';
+import '../providers/task_tag_filter_providers.dart';
 import 'widgets/show_completed_toggle.dart';
 import 'widgets/task_priority_filter_selector.dart';
+import 'widgets/task_row_tag_chips.dart';
 import 'widgets/task_sort_selector.dart';
+import 'widgets/task_tag_filter_selector.dart';
 
 class TaskListScreen extends ConsumerStatefulWidget {
   final String? listId;
@@ -82,6 +85,7 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
   Widget _buildContent(BuildContext context, String uid, String listId) {
     final tasksAsync = ref.watch(sortedTasksForListProvider(listId));
     final sortOption = ref.watch(taskSortModeProvider(listId));
+    final tagFilter = ref.watch(taskTagFilterProvider(listId));
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -104,6 +108,8 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                   TaskPriorityFilterSelector(viewKey: listId),
                   const SizedBox(width: 8),
                   ShowCompletedToggle(viewKey: listId),
+                  const SizedBox(width: 8),
+                  TaskTagFilterSelector(viewKey: listId),
                 ],
               ),
             ),
@@ -223,7 +229,9 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                             ),
                           ),
                           subtitle:
-                              (task.notes.isNotEmpty || task.url.isNotEmpty)
+                              (task.notes.isNotEmpty ||
+                                  task.url.isNotEmpty ||
+                                  tagFilter.isNotEmpty)
                               ? Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
@@ -246,6 +254,8 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                                           decoration: TextDecoration.underline,
                                         ),
                                       ),
+                                    if (tagFilter.isNotEmpty)
+                                      TaskRowTagChips(task: task),
                                   ],
                                 )
                               : null,

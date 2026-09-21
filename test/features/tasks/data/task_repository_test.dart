@@ -1300,6 +1300,144 @@ void main() {
               .first;
           expect(allResult.length, equals(2));
         });
+
+        test(
+          'streamTasksWithDueDate filters by tagIds with OR semantics',
+          () async {
+            await fakeFirestore.collection('tasks').doc('t-tag1').set({
+              'taskId': 't-tag1',
+              'uid': uid,
+              'listId': listId,
+              'title': 'Tag 1 Task',
+              'dueDate': Timestamp.fromDate(DateTime(2026, 10, 15)),
+              'tagIds': ['work'],
+              'deletedAt': null,
+            });
+
+            await fakeFirestore.collection('tasks').doc('t-tag2').set({
+              'taskId': 't-tag2',
+              'uid': uid,
+              'listId': listId,
+              'title': 'Tag 2 Task',
+              'dueDate': Timestamp.fromDate(DateTime(2026, 10, 15)),
+              'tagIds': ['urgent'],
+              'deletedAt': null,
+            });
+
+            await fakeFirestore.collection('tasks').doc('t-notag').set({
+              'taskId': 't-notag',
+              'uid': uid,
+              'listId': listId,
+              'title': 'No Tag Task',
+              'dueDate': Timestamp.fromDate(DateTime(2026, 10, 15)),
+              'tagIds': <String>[],
+              'deletedAt': null,
+            });
+
+            final singleFilter = await repository
+                .streamTasksWithDueDate(uid: uid, tagIds: ['work'])
+                .first;
+            expect(singleFilter.length, equals(1));
+            expect(singleFilter.first.taskId, equals('t-tag1'));
+
+            final orFilter = await repository
+                .streamTasksWithDueDate(uid: uid, tagIds: ['work', 'urgent'])
+                .first;
+            expect(orFilter.length, equals(2));
+            expect(
+              orFilter.map((t) => t.taskId).toSet(),
+              equals({'t-tag1', 't-tag2'}),
+            );
+          },
+        );
+
+        test(
+          'streamAllActiveTasks returns only active tasks for uid',
+          () async {
+            await fakeFirestore.collection('tasks').doc('act-1').set({
+              'taskId': 'act-1',
+              'uid': uid,
+              'title': 'Active 1',
+              'deletedAt': null,
+            });
+            await fakeFirestore.collection('tasks').doc('act-del').set({
+              'taskId': 'act-del',
+              'uid': uid,
+              'title': 'Deleted',
+              'deletedAt': Timestamp.now(),
+            });
+            await fakeFirestore.collection('tasks').doc('act-other').set({
+              'taskId': 'act-other',
+              'uid': 'other-uid',
+              'title': 'Other User',
+              'deletedAt': null,
+            });
+
+            final activeTasks = await repository
+                .streamAllActiveTasks(uid)
+                .first;
+            expect(activeTasks.length, equals(1));
+            expect(activeTasks.first.taskId, equals('act-1'));
+          },
+        );
+
+        test(
+          'streamTasksForTagIds correctly returns tasks without due date',
+          () async {
+            // Task WITH due date
+            await fakeFirestore.collection('tasks').doc('with-due').set({
+              'taskId': 'with-due',
+              'uid': uid,
+              'title': 'Has Due Date',
+              'dueDate': Timestamp.fromDate(DateTime(2026, 10, 20)),
+              'tagIds': ['target-tag'],
+              'deletedAt': null,
+              'createdAt': Timestamp.now(),
+            });
+
+            // Task WITHOUT due date — critical test case!
+            await fakeFirestore.collection('tasks').doc('no-due').set({
+              'taskId': 'no-due',
+              'uid': uid,
+              'title': 'No Due Date',
+              'dueDate': null,
+              'tagIds': ['target-tag'],
+              'deletedAt': null,
+              'createdAt': Timestamp.now(),
+            });
+
+            // Task with different tag
+            await fakeFirestore.collection('tasks').doc('other-tag').set({
+              'taskId': 'other-tag',
+              'uid': uid,
+              'title': 'Different Tag',
+              'dueDate': null,
+              'tagIds': ['other-tag'],
+              'deletedAt': null,
+              'createdAt': Timestamp.now(),
+            });
+
+            final result = await repository
+                .streamTasksForTagIds(uid: uid, tagIds: ['target-tag'])
+                .first;
+
+            expect(result.length, equals(2));
+            final taskIds = result.map((t) => t.taskId).toSet();
+            expect(taskIds, contains('no-due'));
+            expect(taskIds, contains('with-due'));
+            expect(taskIds, isNot(contains('other-tag')));
+          },
+        );
+
+        test(
+          'streamTasksForTagIds returns empty stream when tagIds is empty',
+          () async {
+            final result = await repository
+                .streamTasksForTagIds(uid: uid, tagIds: [])
+                .first;
+            expect(result, isEmpty);
+          },
+        );
       });
     });
   });

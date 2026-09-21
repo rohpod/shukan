@@ -12,10 +12,13 @@ import '../domain/task_sort_options.dart';
 import '../providers/smart_view_providers.dart';
 import '../providers/task_providers.dart';
 import '../providers/task_sort_providers.dart';
+import '../providers/task_tag_filter_providers.dart';
 import 'task_list_screen.dart';
 import 'widgets/show_completed_toggle.dart';
 import 'widgets/task_priority_filter_selector.dart';
+import 'widgets/task_row_tag_chips.dart';
 import 'widgets/task_sort_selector.dart';
+import 'widgets/task_tag_filter_selector.dart';
 
 class SmartViewDetailScreen extends ConsumerStatefulWidget {
   final SmartViewType viewType;
@@ -70,6 +73,7 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
 
     final tasksAsync = ref.watch(sortedSmartViewTasksProvider(widget.viewType));
     final sortOption = ref.watch(taskSortModeProvider(widget.viewType.name));
+    final tagFilter = ref.watch(taskTagFilterProvider(widget.viewType.name));
     final defaultListId = ref.watch(defaultListIdProvider).value;
     final listsAsync = ref.watch(listsForUserProvider);
     final listNames = {
@@ -124,6 +128,8 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                   TaskPriorityFilterSelector(viewKey: widget.viewType.name),
                   const SizedBox(width: 8),
                   ShowCompletedToggle(viewKey: widget.viewType.name),
+                  const SizedBox(width: 8),
+                  TaskTagFilterSelector(viewKey: widget.viewType.name),
                 ],
               ),
             ),
@@ -251,72 +257,81 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                               color: task.isCompleted ? Colors.grey : null,
                             ),
                           ),
-                          subtitle: Wrap(
-                            spacing: 8,
-                            runSpacing: 4,
-                            crossAxisAlignment: WrapCrossAlignment.center,
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              if (task.dueDate != null)
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.calendar_today,
-                                      size: 13,
-                                      color: dueDateColor,
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 4,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  if (task.dueDate != null)
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.calendar_today,
+                                          size: 13,
+                                          color: dueDateColor,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          _formatDueDate(
+                                            task.dueDate,
+                                            task.dueTime,
+                                          ),
+                                          key: Key(
+                                            'taskDueDate_${task.taskId}',
+                                          ),
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: dueDateColor,
+                                            fontWeight: isOverdue
+                                                ? FontWeight.w600
+                                                : FontWeight.w500,
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      _formatDueDate(
-                                        task.dueDate,
-                                        task.dueTime,
+                                  Text(
+                                    '• List: $listName',
+                                    key: Key('taskListOrigin_${task.taskId}'),
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                                  if (task.priority != 'none')
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 6,
+                                        vertical: 2,
                                       ),
-                                      key: Key('taskDueDate_${task.taskId}'),
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: dueDateColor,
-                                        fontWeight: isOverdue
-                                            ? FontWeight.w600
-                                            : FontWeight.w500,
+                                      decoration: BoxDecoration(
+                                        color: task.priority == 'high'
+                                            ? Colors.red.shade100
+                                            : (task.priority == 'medium'
+                                                  ? Colors.orange.shade100
+                                                  : Colors.blue.shade100),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        task.priority.toUpperCase(),
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                          color: task.priority == 'high'
+                                              ? Colors.red.shade900
+                                              : (task.priority == 'medium'
+                                                    ? Colors.orange.shade900
+                                                    : Colors.blue.shade900),
+                                        ),
                                       ),
                                     ),
-                                  ],
-                                ),
-                              Text(
-                                '• List: $listName',
-                                key: Key('taskListOrigin_${task.taskId}'),
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey,
-                                ),
+                                ],
                               ),
-                              if (task.priority != 'none')
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: task.priority == 'high'
-                                        ? Colors.red.shade100
-                                        : (task.priority == 'medium'
-                                              ? Colors.orange.shade100
-                                              : Colors.blue.shade100),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Text(
-                                    task.priority.toUpperCase(),
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
-                                      color: task.priority == 'high'
-                                          ? Colors.red.shade900
-                                          : (task.priority == 'medium'
-                                                ? Colors.orange.shade900
-                                                : Colors.blue.shade900),
-                                    ),
-                                  ),
-                                ),
+                              if (tagFilter.isNotEmpty)
+                                TaskRowTagChips(task: task),
                             ],
                           ),
                           trailing: Row(

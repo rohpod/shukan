@@ -255,7 +255,12 @@ class TaskRepository {
     DateTime? endDueDate,
     bool onlyIncomplete = false,
     String? priority,
+    List<String>? tagIds,
   }) {
+    if (tagIds != null && tagIds.isEmpty) {
+      return Stream.value(const <Task>[]);
+    }
+
     Query<Map<String, dynamic>> query = _tasksCollection
         .where('uid', isEqualTo: uid)
         .where('deletedAt', isNull: true);
@@ -266,6 +271,10 @@ class TaskRepository {
 
     if (priority != null) {
       query = query.where('priority', isEqualTo: priority);
+    }
+
+    if (tagIds != null && tagIds.isNotEmpty) {
+      query = query.where('tagIds', arrayContainsAny: tagIds);
     }
 
     if (startDueDate != null && endDueDate != null) {
@@ -318,6 +327,49 @@ class TaskRepository {
           return tasks;
         })
         .distinct((prev, next) => listEquals(prev, next));
+  }
+
+  /// Streams all active (non-soft-deleted) tasks belonging to [uid].
+  Stream<List<Task>> streamAllActiveTasks(String uid) {
+    return _tasksCollection
+        .where('uid', isEqualTo: uid)
+        .where('deletedAt', isNull: true)
+        .snapshots()
+        .map((snapshot) => snapshot.docs.map(Task.fromFirestore).toList());
+  }
+
+  /// Streams tasks belonging to [uid] that contain any of [tagIds] (OR semantics),
+  /// ordered chronologically by [createdAt].
+  ///
+  /// Supports optional server-side filtering on [onlyIncomplete] and [priority].
+  Stream<List<Task>> streamTasksForTagIds({
+    required String uid,
+    required List<String> tagIds,
+    bool onlyIncomplete = false,
+    String? priority,
+  }) {
+    if (tagIds.isEmpty) {
+      return Stream.value(const <Task>[]);
+    }
+
+    Query<Map<String, dynamic>> query = _tasksCollection
+        .where('uid', isEqualTo: uid)
+        .where('deletedAt', isNull: true)
+        .where('tagIds', arrayContainsAny: tagIds);
+
+    if (onlyIncomplete) {
+      query = query.where('completedAt', isNull: true);
+    }
+
+    if (priority != null) {
+      query = query.where('priority', isEqualTo: priority);
+    }
+
+    query = query.orderBy('createdAt');
+
+    return query.snapshots().map(
+      (snapshot) => snapshot.docs.map(Task.fromFirestore).toList(),
+    );
   }
 
   /// Restores a soft-deleted task by clearing its [deletedAt] timestamp.

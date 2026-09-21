@@ -12,6 +12,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shukan/core/firebase/firebase_providers.dart';
 import 'package:shukan/features/auth/presentation/home_screen.dart';
+import 'package:shukan/features/tags/presentation/tag_browser_screen.dart';
+import 'package:shukan/features/tags/presentation/tag_detail_screen.dart';
 import 'package:shukan/features/tasks/domain/smart_view_models.dart';
 import 'package:shukan/features/tasks/presentation/smart_view_detail_screen.dart';
 import 'package:shukan/features/tasks/presentation/task_list_screen.dart';
@@ -123,6 +125,24 @@ void main() {
       'createdAt': DateTime.now().toIso8601String(),
     });
 
+    final tagDefs = [
+      {'tagId': 'work', 'name': 'work'},
+      {'tagId': 'design', 'name': 'design'},
+      {'tagId': 'meeting', 'name': 'meeting'},
+      {'tagId': 'finance', 'name': 'finance'},
+      {'tagId': 'errand', 'name': 'errand'},
+      {'tagId': 'personal', 'name': 'personal'},
+      {'tagId': 'general', 'name': 'general'},
+    ];
+    for (final t in tagDefs) {
+      await fakeFirestore.collection('tags').doc(t['tagId'] as String).set({
+        'tagId': t['tagId'],
+        'name': t['name'],
+        'uid': uid,
+        'createdAt': DateTime.now().toIso8601String(),
+      });
+    }
+
     // Tasks:
     await fakeFirestore.collection('tasks').doc('task-today-1').set({
       'taskId': 'task-today-1',
@@ -134,6 +154,7 @@ void main() {
       'dueTime': '09:30',
       'priority': 'high',
       'tag': 'work',
+      'tagIds': ['work'],
       'completedAt': null,
       'deletedAt': null,
       'createdAt': DateTime(2026, 9, 18, 8, 0).toIso8601String(),
@@ -149,6 +170,7 @@ void main() {
       'dueTime': '14:00',
       'priority': 'medium',
       'tag': 'design',
+      'tagIds': ['design', 'work'],
       'completedAt': null,
       'deletedAt': null,
       'createdAt': DateTime(2026, 9, 18, 8, 30).toIso8601String(),
@@ -164,6 +186,7 @@ void main() {
       'dueTime': '09:00',
       'priority': 'none',
       'tag': 'meeting',
+      'tagIds': ['meeting', 'work'],
       'completedAt': DateTime(2026, 9, 18, 9, 30).toIso8601String(),
       'deletedAt': null,
       'createdAt': DateTime(2026, 9, 18, 7, 30).toIso8601String(),
@@ -179,6 +202,7 @@ void main() {
       'dueTime': '11:00',
       'priority': 'high',
       'tag': 'finance',
+      'tagIds': ['finance', 'work'],
       'completedAt': null,
       'deletedAt': null,
       'createdAt': DateTime(2026, 9, 17, 8, 0).toIso8601String(),
@@ -194,6 +218,7 @@ void main() {
       'dueTime': '10:00',
       'priority': 'low',
       'tag': 'errand',
+      'tagIds': ['errand'],
       'completedAt': null,
       'deletedAt': null,
       'createdAt': DateTime(2026, 9, 18, 8, 0).toIso8601String(),
@@ -209,6 +234,7 @@ void main() {
       'dueTime': '16:00',
       'priority': 'high',
       'tag': 'personal',
+      'tagIds': ['personal'],
       'completedAt': null,
       'deletedAt': null,
       'createdAt': DateTime(2026, 9, 18, 8, 0).toIso8601String(),
@@ -224,9 +250,26 @@ void main() {
       'dueTime': null,
       'priority': 'low',
       'tag': 'general',
+      'tagIds': ['general'],
       'completedAt': DateTime(2026, 9, 18, 9, 0).toIso8601String(),
       'deletedAt': null,
       'createdAt': DateTime(2026, 9, 18, 7, 0).toIso8601String(),
+    });
+
+    await fakeFirestore.collection('tasks').doc('task-work-noduedate').set({
+      'taskId': 'task-work-noduedate',
+      'title': 'Update team architecture documentation',
+      'listId': 'work',
+      'uid': uid,
+      'order': 7,
+      'dueDate': null,
+      'dueTime': null,
+      'priority': 'medium',
+      'tag': 'work',
+      'tagIds': ['work'],
+      'completedAt': null,
+      'deletedAt': null,
+      'createdAt': DateTime(2026, 9, 18, 9, 0).toIso8601String(),
     });
   });
 
@@ -448,5 +491,74 @@ void main() {
     );
     await tester.pumpAndSettle();
     await snap(tester, repaintKey, 'smart_views_today_priority_high.png');
+  });
+
+  testWidgets('snap tag browser', (tester) async {
+    setupTester(tester);
+    addTearDown(() => teardownTester(tester));
+
+    final repaintKey = GlobalKey();
+    await tester.pumpWidget(
+      buildApp(home: const TagBrowserScreen(), repaintKey: repaintKey),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await snap(tester, repaintKey, 'tag_browser.png');
+  });
+
+  testWidgets('snap tag detail', (tester) async {
+    setupTester(tester);
+    addTearDown(() => teardownTester(tester));
+
+    final repaintKey = GlobalKey();
+    await tester.pumpWidget(
+      buildApp(
+        home: const TagDetailScreen(tagId: 'work', tagName: 'work'),
+        repaintKey: repaintKey,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await snap(tester, repaintKey, 'tag_detail.png');
+  });
+
+  testWidgets('snap task list view - tag filter active', (tester) async {
+    setupTester(tester);
+    addTearDown(() => teardownTester(tester));
+
+    await sharedPrefs.setStringList('task_tag_filter_work', ['work']);
+
+    final repaintKey = GlobalKey();
+    await tester.pumpWidget(
+      buildApp(
+        home: const Scaffold(body: TaskListScreen(listId: 'work')),
+        repaintKey: repaintKey,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.ensureVisible(
+      find.byKey(const Key('taskTagFilterSelector_work')),
+    );
+    await tester.pumpAndSettle();
+    await snap(tester, repaintKey, 'task_list_tag_filter.png');
+  });
+
+  testWidgets('snap smart view - tag filter active', (tester) async {
+    setupTester(tester);
+    addTearDown(() => teardownTester(tester));
+
+    await sharedPrefs.setStringList('task_tag_filter_today', ['work']);
+
+    final repaintKey = GlobalKey();
+    await tester.pumpWidget(
+      buildApp(
+        home: const SmartViewDetailScreen(viewType: SmartViewType.today),
+        repaintKey: repaintKey,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await snap(tester, repaintKey, 'smart_views_today_tag_work.png');
   });
 }
