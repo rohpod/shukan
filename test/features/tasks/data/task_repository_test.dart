@@ -1130,6 +1130,177 @@ void main() {
         final secondPurge = await repository.purgeExpiredDeletedTasks(uid);
         expect(secondPurge, equals(0));
       });
+
+      group('streamTasksWithDueDate', () {
+        test('streams tasks with dueDate sorted chronologically and tie-broken by dueTime', () async {
+          // Task A: Oct 15 at 14:00
+          await fakeFirestore.collection('tasks').doc('t-a').set({
+            'taskId': 't-a',
+            'uid': uid,
+            'listId': listId,
+            'title': 'Task A',
+            'dueDate': Timestamp.fromDate(DateTime(2026, 10, 15)),
+            'dueTime': '14:00',
+            'order': 0,
+            'deletedAt': null,
+          });
+
+          // Task B: Oct 15 at 09:00
+          await fakeFirestore.collection('tasks').doc('t-b').set({
+            'taskId': 't-b',
+            'uid': uid,
+            'listId': listId,
+            'title': 'Task B',
+            'dueDate': Timestamp.fromDate(DateTime(2026, 10, 15)),
+            'dueTime': '09:00',
+            'order': 0,
+            'deletedAt': null,
+          });
+
+          // Task C: Oct 15 untimed
+          await fakeFirestore.collection('tasks').doc('t-c').set({
+            'taskId': 't-c',
+            'uid': uid,
+            'listId': listId,
+            'title': 'Task C',
+            'dueDate': Timestamp.fromDate(DateTime(2026, 10, 15)),
+            'dueTime': null,
+            'order': 0,
+            'deletedAt': null,
+          });
+
+          // Task D: Oct 10 earlier date
+          await fakeFirestore.collection('tasks').doc('t-d').set({
+            'taskId': 't-d',
+            'uid': uid,
+            'listId': listId,
+            'title': 'Task D',
+            'dueDate': Timestamp.fromDate(DateTime(2026, 10, 10)),
+            'dueTime': '11:00',
+            'order': 0,
+            'deletedAt': null,
+          });
+
+          // Task E: Oct 20 later date
+          await fakeFirestore.collection('tasks').doc('t-e').set({
+            'taskId': 't-e',
+            'uid': uid,
+            'listId': listId,
+            'title': 'Task E',
+            'dueDate': Timestamp.fromDate(DateTime(2026, 10, 20)),
+            'dueTime': '08:00',
+            'order': 0,
+            'deletedAt': null,
+          });
+
+          // Task F: No due date (excluded)
+          await fakeFirestore.collection('tasks').doc('t-f').set({
+            'taskId': 't-f',
+            'uid': uid,
+            'listId': listId,
+            'title': 'Task F',
+            'dueDate': null,
+            'deletedAt': null,
+          });
+
+          // Task G: Soft-deleted (excluded)
+          await fakeFirestore.collection('tasks').doc('t-g').set({
+            'taskId': 't-g',
+            'uid': uid,
+            'listId': listId,
+            'title': 'Task G',
+            'dueDate': Timestamp.fromDate(DateTime(2026, 10, 15)),
+            'deletedAt': Timestamp.now(),
+          });
+
+          // Task H: Other user (excluded)
+          await fakeFirestore.collection('tasks').doc('t-h').set({
+            'taskId': 't-h',
+            'uid': otherUid,
+            'listId': listId,
+            'title': 'Task H',
+            'dueDate': Timestamp.fromDate(DateTime(2026, 10, 15)),
+            'deletedAt': null,
+          });
+
+          final result = await repository
+              .streamTasksWithDueDate(uid: uid)
+              .first;
+
+          expect(result.length, equals(5));
+          expect(result.map((t) => t.taskId).toList(), [
+            't-d', // Oct 10
+            't-b', // Oct 15 09:00
+            't-a', // Oct 15 14:00
+            't-c', // Oct 15 untimed
+            't-e', // Oct 20
+          ]);
+        });
+
+        test('streamTasksWithDueDate applies startDueDate and endDueDate range query', () async {
+          await fakeFirestore.collection('tasks').doc('t-in-range').set({
+            'taskId': 't-in-range',
+            'uid': uid,
+            'listId': listId,
+            'title': 'In Range',
+            'dueDate': Timestamp.fromDate(DateTime(2026, 10, 15, 12, 0)),
+            'deletedAt': null,
+          });
+
+          await fakeFirestore.collection('tasks').doc('t-out-range').set({
+            'taskId': 't-out-range',
+            'uid': uid,
+            'listId': listId,
+            'title': 'Out of Range',
+            'dueDate': Timestamp.fromDate(DateTime(2026, 10, 18)),
+            'deletedAt': null,
+          });
+
+          final rangeResult = await repository
+              .streamTasksWithDueDate(
+                uid: uid,
+                startDueDate: DateTime(2026, 10, 15, 0, 0),
+                endDueDate: DateTime(2026, 10, 15, 23, 59, 59),
+              )
+              .first;
+
+          expect(rangeResult.length, equals(1));
+          expect(rangeResult.first.taskId, equals('t-in-range'));
+        });
+
+        test('streamTasksWithDueDate filters completedAt when onlyIncomplete is true', () async {
+          await fakeFirestore.collection('tasks').doc('t-incomplete').set({
+            'taskId': 't-incomplete',
+            'uid': uid,
+            'listId': listId,
+            'title': 'Incomplete Task',
+            'dueDate': Timestamp.fromDate(DateTime(2026, 10, 15)),
+            'completedAt': null,
+            'deletedAt': null,
+          });
+
+          await fakeFirestore.collection('tasks').doc('t-completed').set({
+            'taskId': 't-completed',
+            'uid': uid,
+            'listId': listId,
+            'title': 'Completed Task',
+            'dueDate': Timestamp.fromDate(DateTime(2026, 10, 15)),
+            'completedAt': Timestamp.now(),
+            'deletedAt': null,
+          });
+
+          final incompleteResult = await repository
+              .streamTasksWithDueDate(uid: uid, onlyIncomplete: true)
+              .first;
+          expect(incompleteResult.length, equals(1));
+          expect(incompleteResult.first.taskId, equals('t-incomplete'));
+
+          final allResult = await repository
+              .streamTasksWithDueDate(uid: uid, onlyIncomplete: false)
+              .first;
+          expect(allResult.length, equals(2));
+        });
+      });
     });
   });
 }

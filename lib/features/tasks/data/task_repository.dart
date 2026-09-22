@@ -197,6 +197,80 @@ class TaskRepository {
         .distinct((prev, next) => listEquals(prev, next));
   }
 
+  /// Streams active (non-soft-deleted) tasks for [uid] that have a `dueDate`.
+  ///
+  /// - If [startDueDate] and [endDueDate] are specified, applies server-side range query on [dueDate].
+  /// - If only [endDueDate] is specified, applies server-side query `dueDate <= endDueDate` (used by Today view).
+  /// - If omitted, queries all tasks where `dueDate != null` (used by Scheduled view).
+  /// - If [onlyIncomplete] is true, applies `completedAt == null` equality check in Firestore.
+  /// - Tasks are sorted chronologically ascending by [dueDate], tie-broken by [dueTime],
+  ///   then [order], then [createdAt].
+  Stream<List<Task>> streamTasksWithDueDate({
+    required String uid,
+    DateTime? startDueDate,
+    DateTime? endDueDate,
+    bool onlyIncomplete = false,
+  }) {
+    Query<Map<String, dynamic>> query = _tasksCollection
+        .where('uid', isEqualTo: uid)
+        .where('deletedAt', isNull: true);
+
+    if (onlyIncomplete) {
+      query = query.where('completedAt', isNull: true);
+    }
+
+    if (startDueDate != null && endDueDate != null) {
+      query = query
+          .where(
+            'dueDate',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(startDueDate),
+          )
+          .where('dueDate', isLessThanOrEqualTo: Timestamp.fromDate(endDueDate))
+          .orderBy('dueDate');
+    } else if (endDueDate != null) {
+      query = query
+          .where('dueDate', isLessThanOrEqualTo: Timestamp.fromDate(endDueDate))
+          .orderBy('dueDate');
+    } else {
+      query = query.where('dueDate', isNull: false).orderBy('dueDate');
+    }
+
+    return query
+        .snapshots()
+        .map((snapshot) {
+          final tasks = snapshot.docs.map(Task.fromFirestore).toList();
+          tasks.sort((a, b) {
+            if (a.dueDate == null && b.dueDate == null) return 0;
+            if (a.dueDate == null) return 1;
+            if (b.dueDate == null) return -1;
+            final dateCmp = a.dueDate!.compareTo(b.dueDate!);
+            if (dateCmp != 0) return dateCmp;
+
+            // Tie-break 1: dueTime ("HH:mm")
+            if (a.dueTime != null && b.dueTime != null) {
+              final timeCmp = a.dueTime!.compareTo(b.dueTime!);
+              if (timeCmp != 0) return timeCmp;
+            } else if (a.dueTime != null && b.dueTime == null) {
+              return -1;
+            } else if (a.dueTime == null && b.dueTime != null) {
+              return 1;
+            }
+
+            // Tie-break 2: order
+            final orderCmp = a.order.compareTo(b.order);
+            if (orderCmp != 0) return orderCmp;
+
+            // Tie-break 3: createdAt
+            if (a.createdAt != null && b.createdAt != null) {
+              return a.createdAt!.compareTo(b.createdAt!);
+            }
+            return 0;
+          });
+          return tasks;
+        })
+        .distinct((prev, next) => listEquals(prev, next));
+  }
+
   /// Restores a soft-deleted task by clearing its [deletedAt] timestamp.
   ///
   /// Defense-in-depth:
