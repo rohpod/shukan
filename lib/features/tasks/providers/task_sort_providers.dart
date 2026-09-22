@@ -8,6 +8,7 @@ import '../domain/task_priority_filter.dart';
 import '../domain/task_sort_options.dart';
 import 'smart_view_providers.dart';
 import 'task_providers.dart';
+import 'task_tag_filter_providers.dart';
 
 /// Provider for SharedPreferences instance. Overridden in ProviderScope at app startup and in tests.
 final sharedPreferencesProvider = Provider<SharedPreferences?>((ref) {
@@ -150,13 +151,15 @@ AsyncValue<List<Task>> _mapSortedTasks(
 }
 
 /// Streams tasks for [listId] sorted by that list's independent [TaskSortOption]
-/// and filtered by its independent [showCompletedTasksProvider] and [taskPriorityFilterProvider].
+/// and filtered by its independent [showCompletedTasksProvider], [taskPriorityFilterProvider],
+/// and [taskTagFilterProvider].
 final sortedTasksForListProvider =
     Provider.family<AsyncValue<List<Task>>, String>((ref, listId) {
       final tasksAsync = ref.watch(tasksForListProvider(listId));
       final sortOption = ref.watch(taskSortModeProvider(listId));
       final showCompleted = ref.watch(showCompletedTasksProvider(listId));
       final priorityFilter = ref.watch(taskPriorityFilterProvider(listId));
+      final tagFilter = ref.watch(taskTagFilterProvider(listId));
 
       final filteredTasksAsync = tasksAsync.whenData((tasks) {
         var filtered = tasks;
@@ -166,6 +169,11 @@ final sortedTasksForListProvider =
         if (priorityFilter != TaskPriorityFilter.all) {
           final target = priorityFilter.firestoreValue;
           filtered = filtered.where((t) => t.priority == target).toList();
+        }
+        if (tagFilter.isNotEmpty) {
+          filtered = filtered
+              .where((t) => t.tagIds.any(tagFilter.contains))
+              .toList();
         }
         return filtered;
       });
@@ -178,6 +186,15 @@ final sortedSmartViewTasksProvider =
     Provider.family<AsyncValue<List<Task>>, SmartViewType>((ref, viewType) {
       final tasksAsync = ref.watch(smartViewTasksProvider(viewType));
       final sortOption = ref.watch(taskSortModeProvider(viewType.name));
+
+      return _mapSortedTasks(tasksAsync, sortOption);
+    });
+
+/// Streams tasks for [viewKey] in TagDetailScreen sorted by that view's independent [TaskSortOption].
+final sortedTasksForTagDetailProvider =
+    Provider.family<AsyncValue<List<Task>>, String>((ref, viewKey) {
+      final tasksAsync = ref.watch(tasksForTagDetailProvider(viewKey));
+      final sortOption = ref.watch(taskSortModeProvider(viewKey));
 
       return _mapSortedTasks(tasksAsync, sortOption);
     });

@@ -8,6 +8,7 @@ import '../domain/smart_view_models.dart';
 import '../domain/task_priority_filter.dart';
 import 'task_providers.dart';
 import 'task_sort_providers.dart';
+import 'task_tag_filter_providers.dart';
 
 /// Stream that emits the current local time and automatically emits again
 /// as soon as the clock crosses local midnight.
@@ -129,6 +130,7 @@ final smartViewTasksProvider = StreamProvider.family<List<Task>, SmartViewType>(
     final currentDate = ref.watch(currentDateProvider);
     final showCompleted = ref.watch(showCompletedTasksProvider(viewType.name));
     final priorityFilter = ref.watch(taskPriorityFilterProvider(viewType.name));
+    final tagFilter = ref.watch(taskTagFilterProvider(viewType.name));
     final timeoutDuration = ref.watch(smartViewTimeoutProvider);
 
     final DateTime? startDueDate;
@@ -157,6 +159,7 @@ final smartViewTasksProvider = StreamProvider.family<List<Task>, SmartViewType>(
       endDueDate: endDueDate,
       onlyIncomplete: onlyIncomplete,
       priority: priorityFilter.firestoreValue,
+      tagIds: tagFilter.isNotEmpty ? tagFilter.toList() : null,
     );
 
     final mappedStream = baseStream.map((tasks) {
@@ -168,6 +171,10 @@ final smartViewTasksProvider = StreamProvider.family<List<Task>, SmartViewType>(
 
         if (priorityFilter != TaskPriorityFilter.all &&
             t.priority != priorityFilter.firestoreValue) {
+          return false;
+        }
+
+        if (tagFilter.isNotEmpty && !t.tagIds.any(tagFilter.contains)) {
           return false;
         }
 

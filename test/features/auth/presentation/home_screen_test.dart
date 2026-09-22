@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shukan/core/firebase/firebase_providers.dart';
 import 'package:shukan/features/auth/presentation/home_screen.dart';
 import 'package:shukan/features/lists/presentation/list_detail_screen.dart';
+import 'package:shukan/features/tags/presentation/tag_browser_screen.dart';
 import 'package:shukan/features/tasks/presentation/recently_deleted_screen.dart';
 
 void main() {
@@ -268,15 +269,19 @@ void main() {
       },
     );
 
-    testWidgets(
-      'recentlyDeletedCard does not appear in lists grid and access is via top right button',
-      (tester) async {
-        await tester.pumpWidget(createWidgetUnderTest());
-        await tester.pumpAndSettle();
+    testWidgets('tapping tag browser button navigates to TagBrowserScreen', (
+      tester,
+    ) async {
+      await tester.pumpWidget(createWidgetUnderTest());
+      await tester.pumpAndSettle();
 
-        expect(find.byKey(const Key('recentlyDeletedCard')), findsNothing);
-        expect(find.byKey(const Key('recentlyDeletedButton')), findsOneWidget);
-      },
-    );
+      expect(find.byKey(const Key('tagBrowserButton')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('tagBrowserButton')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(TagBrowserScreen), findsOneWidget);
+      expect(find.text('Tags'), findsWidgets);
+    });
   });
 }
