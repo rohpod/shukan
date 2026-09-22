@@ -16,7 +16,7 @@ class Task {
   final int earlyReminderMinutes;
   final String repeatRule;
   final Map<String, dynamic>? repeatCustomConfig;
-  final int order;
+  final double order;
   final List<Map<String, dynamic>> subtasks;
   final DateTime? createdAt;
   final DateTime? completedAt;
@@ -36,7 +36,7 @@ class Task {
     this.earlyReminderMinutes = 0,
     this.repeatRule = 'none',
     this.repeatCustomConfig,
-    this.order = 0,
+    this.order = 0.0,
     this.subtasks = const [],
     this.createdAt,
     this.completedAt,
@@ -47,42 +47,74 @@ class Task {
   bool get isDeleted => deletedAt != null;
 
   static DateTime? _parseDateTime(dynamic value) {
+    if (value == null) return null;
     if (value is Timestamp) {
       return value.toDate();
     } else if (value is DateTime) {
       return value;
+    } else if (value is String) {
+      return DateTime.tryParse(value);
+    } else if (value is int) {
+      return DateTime.fromMillisecondsSinceEpoch(value);
+    } else if (value is Map) {
+      final seconds = value['seconds'] ?? value['_seconds'];
+      final nanoseconds = value['nanoseconds'] ?? value['_nanoseconds'] ?? 0;
+      if (seconds is num) {
+        final sec = seconds.toInt();
+        final nano = (nanoseconds is num) ? nanoseconds.toInt() : 0;
+        return DateTime.fromMillisecondsSinceEpoch(
+          sec * 1000 + (nano ~/ 1000000),
+          isUtc: true,
+        );
+      }
     }
+    try {
+      final dynamic dyn = value;
+      if (dyn.toDate is Function) {
+        return dyn.toDate() as DateTime;
+      }
+    } catch (_) {}
     return null;
+  }
+
+  static int _parseInt(dynamic value, [int defaultValue = 0]) {
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value) ?? defaultValue;
+    return defaultValue;
+  }
+
+  static double _parseDouble(dynamic value, [double defaultValue = 0.0]) {
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value) ?? defaultValue;
+    return defaultValue;
   }
 
   factory Task.fromMap(Map<String, dynamic> data, String taskId) {
     return Task(
       taskId: taskId,
-      uid: data['uid'] as String? ?? '',
-      listId: data['listId'] as String? ?? '',
-      title: data['title'] as String? ?? '',
-      notes: data['notes'] as String? ?? '',
-      url: data['url'] as String? ?? '',
-      priority: data['priority'] as String? ?? 'none',
-      tagIds:
-          (data['tagIds'] as List<dynamic>?)
-              ?.map((e) => e.toString())
-              .toList() ??
-          const [],
+      uid: data['uid']?.toString() ?? '',
+      listId: data['listId']?.toString() ?? '',
+      title: data['title']?.toString() ?? '',
+      notes: data['notes']?.toString() ?? '',
+      url: data['url']?.toString() ?? '',
+      priority: data['priority']?.toString() ?? 'none',
+      tagIds: data['tagIds'] is List
+          ? (data['tagIds'] as List).map((e) => e.toString()).toList()
+          : const [],
       dueDate: _parseDateTime(data['dueDate']),
-      dueTime: data['dueTime'] as String?,
-      earlyReminderMinutes: ((data['earlyReminderMinutes'] as num?) ?? 0)
-          .toInt(),
-      repeatRule: data['repeatRule'] as String? ?? 'none',
-      repeatCustomConfig: data['repeatCustomConfig'] != null
+      dueTime: data['dueTime']?.toString(),
+      earlyReminderMinutes: _parseInt(data['earlyReminderMinutes']),
+      repeatRule: data['repeatRule']?.toString() ?? 'none',
+      repeatCustomConfig: data['repeatCustomConfig'] is Map
           ? Map<String, dynamic>.from(data['repeatCustomConfig'] as Map)
           : null,
-      order: ((data['order'] as num?) ?? 0).toInt(),
-      subtasks:
-          (data['subtasks'] as List<dynamic>?)
-              ?.map((e) => Map<String, dynamic>.from(e as Map))
-              .toList() ??
-          const [],
+      order: _parseDouble(data['order']),
+      subtasks: data['subtasks'] is List
+          ? (data['subtasks'] as List)
+                .whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList()
+          : const [],
       createdAt: _parseDateTime(data['createdAt']),
       completedAt: _parseDateTime(data['completedAt']),
       deletedAt: _parseDateTime(data['deletedAt']),
@@ -134,7 +166,7 @@ class Task {
     int? earlyReminderMinutes,
     String? repeatRule,
     Map<String, dynamic>? repeatCustomConfig,
-    int? order,
+    double? order,
     List<Map<String, dynamic>>? subtasks,
     DateTime? createdAt,
     DateTime? completedAt,
@@ -162,6 +194,24 @@ class Task {
     );
   }
 
+  static bool _subtasksEquals(
+    List<Map<String, dynamic>> a,
+    List<Map<String, dynamic>> b,
+  ) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (!mapEquals(a[i], b[i])) return false;
+    }
+    return true;
+  }
+
+  static int _subtasksHash(List<Map<String, dynamic>> subtasks) {
+    return Object.hashAll(
+      subtasks.map((s) => Object.hash(s['id'], s['title'], s['completed'])),
+    );
+  }
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -179,6 +229,7 @@ class Task {
           dueTime == other.dueTime &&
           earlyReminderMinutes == other.earlyReminderMinutes &&
           repeatRule == other.repeatRule &&
+          _subtasksEquals(subtasks, other.subtasks) &&
           order == other.order &&
           createdAt == other.createdAt &&
           completedAt == other.completedAt &&
@@ -197,6 +248,7 @@ class Task {
       dueTime.hashCode ^
       earlyReminderMinutes.hashCode ^
       repeatRule.hashCode ^
+      _subtasksHash(subtasks) ^
       order.hashCode ^
       createdAt.hashCode ^
       completedAt.hashCode ^

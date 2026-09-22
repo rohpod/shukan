@@ -5,6 +5,11 @@ import '../../lists/data/list.dart';
 import '../../lists/presentation/list_detail_screen.dart';
 import '../../lists/providers/list_providers.dart';
 import '../../search/presentation/search_screen.dart';
+import '../../tasks/domain/smart_view_models.dart';
+import '../../tasks/presentation/recently_deleted_screen.dart';
+import '../../tasks/presentation/smart_view_detail_screen.dart';
+import '../../tasks/providers/smart_view_providers.dart';
+import '../../tasks/providers/task_providers.dart';
 import '../providers/auth_providers.dart';
 
 class HomeScreen extends ConsumerWidget {
@@ -170,6 +175,28 @@ class HomeScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('shukan'),
         actions: [
+          Consumer(
+            builder: (context, ref, child) {
+              final count = ref.watch(recentlyDeletedCountProvider);
+              return IconButton(
+                key: const Key('recentlyDeletedButton'),
+                icon: count > 0
+                    ? Badge.count(
+                        count: count,
+                        child: const Icon(Icons.delete_outline),
+                      )
+                    : const Icon(Icons.delete_outline),
+                tooltip: 'Recently Deleted',
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const RecentlyDeletedScreen(),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
           IconButton(
             key: const Key('searchButton'),
             icon: const Icon(Icons.search),
@@ -199,142 +226,257 @@ class HomeScreen extends ConsumerWidget {
             )
           : null,
       body: SafeArea(
-        child: listsAsync.when(
-          data: (lists) {
-            if (lists.isEmpty) {
-              return const Center(
-                child: Text('No lists found', key: Key('noListsText')),
-              );
-            }
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildSmartViews(context, ref),
+            Expanded(
+              child: listsAsync.when(
+                data: (lists) {
+                  if (lists.isEmpty) {
+                    return const Center(
+                      child: Text('No lists found', key: Key('noListsText')),
+                    );
+                  }
 
-            return GridView.builder(
-              padding: const EdgeInsets.all(16),
-              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 280,
-                childAspectRatio: 1.25,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-              ),
-              itemCount: lists.length,
-              itemBuilder: (context, index) {
-                final list = lists[index];
+                  return GridView.builder(
+                    padding: const EdgeInsets.all(16),
+                    gridDelegate:
+                        const SliverGridDelegateWithMaxCrossAxisExtent(
+                          maxCrossAxisExtent: 280,
+                          childAspectRatio: 1.0,
+                          crossAxisSpacing: 12,
+                          mainAxisSpacing: 12,
+                        ),
+                    itemCount: lists.length,
+                    itemBuilder: (context, index) {
+                      final list = lists[index];
 
-                return Card(
-                  key: Key('listTile_${list.listId}'),
-                  clipBehavior: Clip.antiAlias,
-                  elevation: 1.5,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: InkWell(
-                    key: Key('listCard_${list.listId}'),
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => ListDetailScreen(list: list),
+                      return Card(
+                        key: Key('listTile_${list.listId}'),
+                        clipBehavior: Clip.antiAlias,
+                        elevation: 1.5,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: InkWell(
+                          key: Key('listCard_${list.listId}'),
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => ListDetailScreen(list: list),
+                              ),
+                            );
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(
+                                      list.isDefault
+                                          ? Icons.inbox
+                                          : Icons.folder_outlined,
+                                      color: list.isDefault
+                                          ? Theme.of(context)
+                                                .colorScheme
+                                                .primary
+                                          : Theme.of(context)
+                                                .colorScheme
+                                                .onSurfaceVariant,
+                                    ),
+                                    const Spacer(),
+                                    if (list.isDefault)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .primaryContainer
+                                              .withValues(alpha: 0.5),
+                                          borderRadius: BorderRadius.circular(
+                                            4,
+                                          ),
+                                        ),
+                                        child: const Text(
+                                          'DEFAULT',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                const Spacer(),
+                                Text(
+                                  list.name,
+                                  key: Key('listName_${list.listId}'),
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 8),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  children: [
+                                    IconButton(
+                                      key: Key(
+                                        'renameListButton_${list.listId}',
+                                      ),
+                                      icon: const Icon(
+                                        Icons.edit_outlined,
+                                        size: 18,
+                                      ),
+                                      tooltip: 'Rename List',
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                      onPressed: () =>
+                                          _showRenameDialog(context, ref, list),
+                                    ),
+                                    if (!list.isDefault && uid != null) ...[
+                                      const SizedBox(width: 12),
+                                      IconButton(
+                                        key: Key(
+                                          'deleteListButton_${list.listId}',
+                                        ),
+                                        icon: const Icon(
+                                          Icons.delete_outline,
+                                          size: 18,
+                                          color: Colors.redAccent,
+                                        ),
+                                        tooltip: 'Delete List',
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(),
+                                        onPressed: () => _showDeleteDialog(
+                                          context,
+                                          ref,
+                                          list,
+                                          uid,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
                       );
                     },
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                list.isDefault
-                                    ? Icons.inbox
-                                    : Icons.folder_outlined,
-                                color: list.isDefault
-                                    ? Theme.of(context).colorScheme.primary
-                                    : Theme.of(context)
-                                          .colorScheme
-                                          .onSurfaceVariant,
-                              ),
-                              const Spacer(),
-                              if (list.isDefault)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .primaryContainer
-                                        .withValues(alpha: 0.5),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: const Text(
-                                    'DEFAULT',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                          const Spacer(),
-                          Text(
-                            list.name,
-                            key: Key('listName_${list.listId}'),
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              IconButton(
-                                key: Key('renameListButton_${list.listId}'),
-                                icon: const Icon(Icons.edit_outlined, size: 18),
-                                tooltip: 'Rename List',
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(),
-                                onPressed: () =>
-                                    _showRenameDialog(context, ref, list),
-                              ),
-                              if (!list.isDefault && uid != null) ...[
-                                const SizedBox(width: 12),
-                                IconButton(
-                                  key: Key('deleteListButton_${list.listId}'),
-                                  icon: const Icon(
-                                    Icons.delete_outline,
-                                    size: 18,
-                                    color: Colors.redAccent,
-                                  ),
-                                  tooltip: 'Delete List',
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(),
-                                  onPressed: () => _showDeleteDialog(
-                                    context,
-                                    ref,
-                                    list,
-                                    uid,
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
+                  );
+                },
+                loading: () => const Center(
+                  key: Key('listsLoadingIndicator'),
+                  child: CircularProgressIndicator(),
+                ),
+                error: (e, _) => Center(child: Text('Error loading lists: $e')),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSmartViews(BuildContext context, WidgetRef ref) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _buildSmartViewCard(context, ref, SmartViewType.today),
+              const SizedBox(width: 8),
+              _buildSmartViewCard(context, ref, SmartViewType.thisWeek),
+              const SizedBox(width: 8),
+              _buildSmartViewCard(context, ref, SmartViewType.scheduled),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Divider(height: 1),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSmartViewCard(
+    BuildContext context,
+    WidgetRef ref,
+    SmartViewType type,
+  ) {
+    final count = ref.watch(smartViewCountProvider(type));
+    final theme = Theme.of(context);
+
+    return Expanded(
+      child: Card(
+        key: Key('smartViewCard_${type.name}'),
+        elevation: 1,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        child: InkWell(
+          key: Key('smartViewInkWell_${type.name}'),
+          borderRadius: BorderRadius.circular(10),
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => SmartViewDetailScreen(viewType: type),
+              ),
             );
           },
-          loading: () => const Center(
-            key: Key('listsLoadingIndicator'),
-            child: CircularProgressIndicator(),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Icon(type.icon, size: 22, color: theme.colorScheme.primary),
+                    if (count > 0)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '$count',
+                          key: Key('smartViewCount_${type.name}'),
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: theme.colorScheme.onPrimaryContainer,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  type.label,
+                  key: Key('smartViewLabel_${type.name}'),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
           ),
-          error: (e, _) => Center(child: Text('Error loading lists: $e')),
         ),
       ),
     );

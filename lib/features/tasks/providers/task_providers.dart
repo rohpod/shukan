@@ -37,6 +37,31 @@ final tasksForListProvider = StreamProvider.family<List<Task>, String>((
   return repository.streamTasksForList(uid, listId);
 });
 
+/// Family stream provider returning a single task by [taskId].
+final taskStreamProvider = StreamProvider.family<Task?, String>((ref, taskId) {
+  final repository = ref.watch(taskRepositoryProvider);
+  return repository.streamTask(taskId);
+});
+
+/// Streams all soft-deleted tasks belonging to the current user, ordered descending by deletedAt.
+final recentlyDeletedTasksProvider = StreamProvider.autoDispose<List<Task>>((
+  ref,
+) {
+  final uid = ref.watch(currentUidProvider);
+  if (uid == null) {
+    return Stream.value(const <Task>[]);
+  }
+  final repository = ref.watch(taskRepositoryProvider);
+  return repository.streamRecentlyDeletedTasks(uid);
+});
+
+/// Provider exposing the count of recently deleted tasks for badge displays.
+/// Rebuilds listeners only when the integer count changes.
+final recentlyDeletedCountProvider = Provider.autoDispose<int>((ref) {
+  final tasksAsync = ref.watch(recentlyDeletedTasksProvider);
+  return tasksAsync.value?.length ?? 0;
+});
+
 /// Stream provider returning all tasks for the current user across all lists.
 final allTasksForCurrentUserProvider = StreamProvider<List<Task>>((ref) {
   final uid = ref.watch(currentUidProvider);

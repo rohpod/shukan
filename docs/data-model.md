@@ -144,8 +144,13 @@ Composite indexes required by current queries are tracked in
 
 - `tasks`: `uid` + `listId` + `deletedAt` + `createdAt` (ascending) — supports
   streaming a list's active tasks ordered by creation time.
+- `tasks`: `uid` (ascending) + `deletedAt` (descending) — supports streaming a
+  user's recently deleted tasks ordered by deletion time.
 - `lists`: `uid` + `createdAt` (ascending) — supports streaming a user's lists
   ordered by creation time.
+
+> **Note on Index Build Lag**: In production Firebase, newly deployed composite indexes
+> take several minutes to build before queries using them will succeed.
 
 If you add a new compound query, Firestore will tell you the exact index it
 needs the first time you run it (error message includes a console link). Add
@@ -153,3 +158,24 @@ the resulting index definition to `firestore.indexes.json` rather than only
 creating it via the console, so it's captured for the whole team.
 
 ---
+
+## Soft Deletion & Retention Policy
+
+### Soft deletion mechanics
+- When a task is soft-deleted, `deletedAt` is populated with `Timestamp.now()` (or `FieldValue.serverTimestamp()`).
+- Active task queries filter with `.where('deletedAt', isNull: true)`.
+- Recently deleted queries filter by `uid` in Firestore and evaluate `deletedAt != null` with `.distinct` in-memory. This guarantees immediate local cache visibility on web/mobile clients upon deletion without suffering composite index propagation lag.
+- Task creation must always write `deletedAt: null` explicitly so queries can accurately match `isNull: true`.
+
+### Retention & Purge Policy
+- **Policy**: Tasks in Recently Deleted are retained for 30 days before being purged.
+- **Manual Purge**: Users can manually invoke "Empty Recently Deleted", which permanently hard-deletes all soft-deleted tasks belonging to the user using chunked Firestore `WriteBatch` operations (capped at 500 operations per batch).
+- **Automated Purge**: When entering the Recently Deleted view, `TaskRepository.purgeExpiredDeletedTasks` automatically sweeps and permanently purges tasks whose `deletedAt` timestamp is older than 30 days. Scheduled Cloud Functions can supplement this for background offline purges.
+
+### Restoration Rules
+- Restoring a task sets `deletedAt: null`. If already active, the operation gracefully no-ops.
+- If the original parent list still exists, the task returns to that list.
+- If the original parent list was deleted (or `listId` is empty), the task is safely reassigned to the user's `defaultListId` (Inbox).
+
+### Future Habit Tracking Architectural Note
+- Permanent hard-deletion physically removes the task document from Firestore (`doc(taskId).delete()`). Future habit tracking implementations (Phases 2 & 3) referencing `taskId` should ensure streak/log integrity when tasks are purged.

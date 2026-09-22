@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shukan/core/firebase/firebase_providers.dart';
 import 'package:shukan/features/lists/data/list.dart';
 import 'package:shukan/features/lists/presentation/list_detail_screen.dart';
+import 'package:shukan/features/tasks/presentation/recently_deleted_screen.dart';
 import 'package:shukan/features/tasks/presentation/task_list_screen.dart';
 
 void main() {
@@ -160,4 +161,37 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets(
+    'ListDetailScreen contains recentlyDeletedButton and navigates to RecentlyDeletedScreen',
+    (tester) async {
+      final list = ListModel(
+        listId: listId,
+        uid: uid,
+        name: 'Work Projects',
+        isDefault: false,
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            firebaseAuthProvider.overrideWithValue(mockAuth),
+            firestoreProvider.overrideWithValue(fakeFirestore),
+          ],
+          child: MaterialApp(home: ListDetailScreen(list: list)),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final recentlyDeletedButton = find.byKey(
+        const Key('recentlyDeletedButton'),
+      );
+      expect(recentlyDeletedButton, findsOneWidget);
+
+      await tester.tap(recentlyDeletedButton);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(RecentlyDeletedScreen), findsOneWidget);
+    },
+  );
 }
