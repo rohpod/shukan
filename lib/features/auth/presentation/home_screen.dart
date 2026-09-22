@@ -5,6 +5,7 @@ import '../../lists/data/list.dart';
 import '../../lists/presentation/list_detail_screen.dart';
 import '../../lists/providers/list_providers.dart';
 import '../../tags/presentation/tag_browser_screen.dart';
+import '../../search/presentation/search_screen.dart';
 import '../../tasks/domain/smart_view_models.dart';
 import '../../tasks/presentation/recently_deleted_screen.dart';
 import '../../tasks/presentation/smart_view_detail_screen.dart';
@@ -206,6 +207,16 @@ class HomeScreen extends ConsumerWidget {
                     ),
                   );
                 },
+              );
+            },
+          ),
+          IconButton(
+            key: const Key('searchButton'),
+            icon: const Icon(Icons.search),
+            tooltip: 'Search',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const SearchScreen()),
               );
             },
           ),

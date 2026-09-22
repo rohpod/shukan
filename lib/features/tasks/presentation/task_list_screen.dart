@@ -556,7 +556,6 @@ class _AddSubtaskInputRowState extends ConsumerState<_AddSubtaskInputRow> {
   Future<void> _submit() async {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
-
     setState(() => _isAdding = true);
     try {
       await ref.read(taskRepositoryProvider).addSubtask(widget.taskId, text);

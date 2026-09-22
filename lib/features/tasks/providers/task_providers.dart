@@ -61,3 +61,13 @@ final recentlyDeletedCountProvider = Provider.autoDispose<int>((ref) {
   final tasksAsync = ref.watch(recentlyDeletedTasksProvider);
   return tasksAsync.value?.length ?? 0;
 });
+
+/// Stream provider returning all tasks for the current user across all lists.
+final allTasksForCurrentUserProvider = StreamProvider<List<Task>>((ref) {
+  final uid = ref.watch(currentUidProvider);
+  if (uid == null) {
+    return Stream.value(const <Task>[]);
+  }
+  final repository = ref.watch(taskRepositoryProvider);
+  return repository.streamAllTasksForUser(uid);
+});
