@@ -9,11 +9,14 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shukan/core/firebase/firebase_providers.dart';
 import 'package:shukan/features/auth/presentation/home_screen.dart';
 import 'package:shukan/features/tasks/domain/smart_view_models.dart';
 import 'package:shukan/features/tasks/presentation/smart_view_detail_screen.dart';
+import 'package:shukan/features/tasks/presentation/task_list_screen.dart';
 import 'package:shukan/features/tasks/providers/smart_view_providers.dart';
+import 'package:shukan/features/tasks/providers/task_sort_providers.dart';
 
 Future<void> loadFonts() async {
   const fontDir =
@@ -75,6 +78,7 @@ void main() {
 
   late MockFirebaseAuth mockAuth;
   late FakeFirebaseFirestore fakeFirestore;
+  late SharedPreferences sharedPrefs;
 
   setUpAll(() async {
     TestWidgetsFlutterBinding.ensureInitialized();
@@ -82,6 +86,8 @@ void main() {
   });
 
   setUp(() async {
+    SharedPreferences.setMockInitialValues({});
+    sharedPrefs = await SharedPreferences.getInstance();
     mockAuth = MockFirebaseAuth(
       mockUser: MockUser(uid: uid, email: 'alex@example.com'),
       signedIn: true,
@@ -223,12 +229,17 @@ void main() {
     });
   }
 
-  Widget buildApp({required Widget home, required GlobalKey repaintKey}) {
+  Widget buildApp({
+    required Widget home,
+    required GlobalKey repaintKey,
+    SharedPreferences? prefs,
+  }) {
     return ProviderScope(
       overrides: [
         firebaseAuthProvider.overrideWithValue(mockAuth),
         firestoreProvider.overrideWithValue(fakeFirestore),
         currentDateProvider.overrideWithValue(now),
+        sharedPreferencesProvider.overrideWithValue(prefs ?? sharedPrefs),
       ],
       child: MaterialApp(
         theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.indigo),
@@ -351,5 +362,41 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     await tester.tap(find.byKey(const Key('allFilterButton')));
     await snap(tester, repaintKey, 'smart_views_scheduled_all.png');
+  });
+
+  testWidgets('snap task list view - manual sort', (tester) async {
+    setupTester(tester);
+    addTearDown(() => teardownTester(tester));
+
+    final repaintKey = GlobalKey();
+    await tester.pumpWidget(
+      buildApp(
+        home: const Scaffold(body: TaskListScreen(listId: 'inbox')),
+        repaintKey: repaintKey,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await snap(tester, repaintKey, 'task_list_sort_manual.png');
+  });
+
+  testWidgets('snap smart view - priority sort', (tester) async {
+    setupTester(tester);
+    addTearDown(() => teardownTester(tester));
+
+    final repaintKey = GlobalKey();
+    await tester.pumpWidget(
+      buildApp(
+        home: const SmartViewDetailScreen(viewType: SmartViewType.today),
+        repaintKey: repaintKey,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(find.byKey(const Key('taskSortDropdown_today')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('taskSortOption_today_priority')).last);
+    await tester.pumpAndSettle();
+    await snap(tester, repaintKey, 'smart_view_sort_priority.png');
   });
 }

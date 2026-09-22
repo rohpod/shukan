@@ -6,7 +6,10 @@ import '../../lists/providers/list_providers.dart';
 import '../../tags/providers/tag_providers.dart';
 import '../data/task.dart';
 import '../domain/task_constants.dart';
+import '../domain/task_sort_options.dart';
 import '../providers/task_providers.dart';
+import '../providers/task_sort_providers.dart';
+import 'widgets/task_sort_selector.dart';
 
 class TaskListScreen extends ConsumerStatefulWidget {
   final String? listId;
@@ -75,7 +78,8 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
   }
 
   Widget _buildContent(BuildContext context, String uid, String listId) {
-    final tasksAsync = ref.watch(tasksForListProvider(listId));
+    final tasksAsync = ref.watch(sortedTasksForListProvider(listId));
+    final sortOption = ref.watch(taskSortModeProvider(listId));
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -85,208 +89,301 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
         onPressed: () => _showTaskDialog(context, uid, listId),
         child: const Icon(Icons.add),
       ),
-      body: tasksAsync.when(
-        data: (tasks) {
-          if (tasks.isEmpty) {
-            return const Center(
-              child: Text(
-                'No tasks yet',
-                key: Key('noTasksText'),
-                style: TextStyle(color: Colors.grey),
-              ),
-            );
-          }
-
-          return ListView.separated(
-            key: const Key('tasksListView'),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            itemCount: tasks.length,
-            separatorBuilder: (context, index) => const Divider(height: 1),
-            itemBuilder: (context, index) {
-              final task = tasks[index];
-              final isExpanded = _expandedTaskIds.contains(task.taskId);
-
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  ListTile(
-                    key: Key('taskItem_${task.taskId}'),
-                    onTap: () =>
-                        _showTaskDialog(context, uid, listId, task: task),
-                    leading: Checkbox(
-                      key: Key('taskCompleteCheckbox_${task.taskId}'),
-                      value: task.isCompleted,
-                      onChanged: (val) async {
-                        await ref
-                            .read(taskRepositoryProvider)
-                            .toggleTaskCompleted(
-                              task.taskId,
-                              isCompleted: val ?? false,
-                            );
-                      },
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [TaskSortSelector(viewKey: listId)],
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: tasksAsync.when(
+              data: (tasks) {
+                if (tasks.isEmpty) {
+                  return const Center(
+                    child: Text(
+                      'No tasks yet',
+                      key: Key('noTasksText'),
+                      style: TextStyle(color: Colors.grey),
                     ),
-                    title: Text(
-                      task.title,
-                      key: Key('taskTitle_${task.taskId}'),
-                      style: TextStyle(
-                        decoration: task.isCompleted
-                            ? TextDecoration.lineThrough
-                            : null,
-                        color: task.isCompleted ? Colors.grey : null,
-                      ),
-                    ),
-                    subtitle: (task.notes.isNotEmpty || task.url.isNotEmpty)
-                        ? Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (task.notes.isNotEmpty)
-                                Text(
-                                  task.notes,
-                                  key: Key('taskNotes_${task.taskId}'),
-                                  style: TextStyle(
-                                    color: task.isCompleted
-                                        ? Colors.grey
-                                        : Colors.grey[700],
-                                  ),
-                                ),
-                              if (task.url.isNotEmpty)
-                                Text(
-                                  task.url,
-                                  key: Key('taskUrl_${task.taskId}'),
-                                  style: const TextStyle(
-                                    color: Colors.blue,
-                                    decoration: TextDecoration.underline,
-                                  ),
-                                ),
-                            ],
-                          )
-                        : null,
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
+                  );
+                }
+
+                return ReorderableListView.builder(
+                  key: const Key('tasksListView'),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  buildDefaultDragHandles: false,
+                  itemCount: tasks.length,
+                  onReorderItem: (oldIndex, newIndex) async {
+                    if (sortOption != TaskSortOption.manual) return;
+                    if (oldIndex == newIndex) return;
+
+                    final movedTask = tasks[oldIndex];
+                    final remainingTasks = List<Task>.from(tasks)
+                      ..removeAt(oldIndex);
+
+                    final Task? before = newIndex > 0
+                        ? remainingTasks[newIndex - 1]
+                        : null;
+                    final Task? after = newIndex < remainingTasks.length
+                        ? remainingTasks[newIndex]
+                        : null;
+
+                    if (before != null &&
+                        after != null &&
+                        TaskSortUtils.needsRenumbering(
+                          before: before,
+                          after: after,
+                        )) {
+                      final updatedList = List<Task>.from(remainingTasks)
+                        ..insert(newIndex, movedTask);
+                      final batchMap = <String, double>{};
+                      for (int i = 0; i < updatedList.length; i++) {
+                        batchMap[updatedList[i].taskId] = (i + 1) * 1000.0;
+                      }
+                      await ref
+                          .read(taskRepositoryProvider)
+                          .batchUpdateTaskOrders(batchMap);
+                    } else {
+                      final newOrder = TaskSortUtils.computeMidpointOrder(
+                        before: before,
+                        after: after,
+                      );
+                      await ref
+                          .read(taskRepositoryProvider)
+                          .updateTaskOrder(movedTask.taskId, newOrder);
+                    }
+                  },
+                  itemBuilder: (context, index) {
+                    final task = tasks[index];
+                    final isExpanded = _expandedTaskIds.contains(task.taskId);
+
+                    return Column(
+                      key: ValueKey('taskItemWrapper_${task.taskId}'),
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        if (task.subtasks.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(right: 2),
-                            child: Text(
-                              '${task.subtasks.where((s) => s['completed'] == true).length}/${task.subtasks.length}',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey[600],
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                        IconButton(
-                          key: Key('toggleSubtasksButton_${task.taskId}'),
-                          icon: Icon(
-                            isExpanded ? Icons.expand_less : Icons.expand_more,
-                            size: 20,
-                          ),
-                          tooltip: isExpanded
-                              ? 'Hide subtasks'
-                              : 'Show subtasks',
-                          onPressed: () {
-                            setState(() {
-                              if (isExpanded) {
-                                _expandedTaskIds.remove(task.taskId);
-                              } else {
-                                _expandedTaskIds.add(task.taskId);
-                              }
-                            });
-                          },
-                        ),
-                        IconButton(
-                          key: Key('moveTaskButton_${task.taskId}'),
-                          icon: const Icon(
-                            Icons.drive_file_move_outlined,
-                            size: 20,
-                          ),
-                          tooltip: 'Move',
-                          onPressed: () => _showMoveTaskDialog(context, task),
-                        ),
-                        IconButton(
-                          key: Key('editTaskButton_${task.taskId}'),
-                          icon: const Icon(Icons.edit_outlined, size: 20),
-                          tooltip: 'Edit',
-                          onPressed: () =>
+                        ListTile(
+                          key: Key('taskItem_${task.taskId}'),
+                          onTap: () =>
                               _showTaskDialog(context, uid, listId, task: task),
-                        ),
-                        IconButton(
-                          key: Key('deleteTaskButton_${task.taskId}'),
-                          icon: const Icon(
-                            Icons.delete_outline,
-                            size: 20,
-                            color: Colors.redAccent,
-                          ),
-                          tooltip: 'Delete',
-                          onPressed: () async {
-                            final defaultListId = ref
-                                .read(defaultListIdProvider)
-                                .value;
-                            try {
-                              await ref
-                                  .read(taskRepositoryProvider)
-                                  .softDeleteTask(task.taskId);
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).clearSnackBars();
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('Deleted "${task.title}"'),
-                                    action: SnackBarAction(
-                                      key: const Key('undoDeleteTaskButton'),
-                                      label: 'Undo',
-                                      onPressed: () async {
-                                        try {
-                                          await ref
-                                              .read(taskRepositoryProvider)
-                                              .restoreTask(
-                                                uid: uid,
-                                                taskId: task.taskId,
-                                                defaultListId: defaultListId,
-                                              );
-                                        } catch (e) {
-                                          if (context.mounted) {
-                                            ScaffoldMessenger.of(
-                                              context,
-                                            ).showSnackBar(
-                                              SnackBar(
-                                                content: Text(
-                                                  'Failed to undo deletion: $e',
-                                                ),
-                                              ),
-                                            );
-                                          }
-                                        }
-                                      },
+                          leading: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (sortOption == TaskSortOption.manual)
+                                ReorderableDragStartListener(
+                                  index: index,
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(right: 6),
+                                    child: Icon(
+                                      Icons.drag_handle,
+                                      key: Key('taskDragHandle_${task.taskId}'),
+                                      size: 20,
+                                      color: Colors.grey,
                                     ),
                                   ),
-                                );
-                              }
-                            } catch (e) {
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('Failed to delete task: $e'),
+                                ),
+                              Checkbox(
+                                key: Key('taskCompleteCheckbox_${task.taskId}'),
+                                value: task.isCompleted,
+                                onChanged: (val) async {
+                                  await ref
+                                      .read(taskRepositoryProvider)
+                                      .toggleTaskCompleted(
+                                        task.taskId,
+                                        isCompleted: val ?? false,
+                                      );
+                                },
+                              ),
+                            ],
+                          ),
+                          title: Text(
+                            task.title,
+                            key: Key('taskTitle_${task.taskId}'),
+                            style: TextStyle(
+                              decoration: task.isCompleted
+                                  ? TextDecoration.lineThrough
+                                  : null,
+                              color: task.isCompleted ? Colors.grey : null,
+                            ),
+                          ),
+                          subtitle:
+                              (task.notes.isNotEmpty || task.url.isNotEmpty)
+                              ? Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    if (task.notes.isNotEmpty)
+                                      Text(
+                                        task.notes,
+                                        key: Key('taskNotes_${task.taskId}'),
+                                        style: TextStyle(
+                                          color: task.isCompleted
+                                              ? Colors.grey
+                                              : Colors.grey[700],
+                                        ),
+                                      ),
+                                    if (task.url.isNotEmpty)
+                                      Text(
+                                        task.url,
+                                        key: Key('taskUrl_${task.taskId}'),
+                                        style: const TextStyle(
+                                          color: Colors.blue,
+                                          decoration: TextDecoration.underline,
+                                        ),
+                                      ),
+                                  ],
+                                )
+                              : null,
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (task.subtasks.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 2),
+                                  child: Text(
+                                    '${task.subtasks.where((s) => s['completed'] == true).length}/${task.subtasks.length}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[600],
+                                      fontWeight: FontWeight.w500,
+                                    ),
                                   ),
-                                );
-                              }
-                            }
-                          },
+                                ),
+                              IconButton(
+                                key: Key('toggleSubtasksButton_${task.taskId}'),
+                                icon: Icon(
+                                  isExpanded
+                                      ? Icons.expand_less
+                                      : Icons.expand_more,
+                                  size: 20,
+                                ),
+                                tooltip: isExpanded
+                                    ? 'Hide subtasks'
+                                    : 'Show subtasks',
+                                onPressed: () {
+                                  setState(() {
+                                    if (isExpanded) {
+                                      _expandedTaskIds.remove(task.taskId);
+                                    } else {
+                                      _expandedTaskIds.add(task.taskId);
+                                    }
+                                  });
+                                },
+                              ),
+                              IconButton(
+                                key: Key('moveTaskButton_${task.taskId}'),
+                                icon: const Icon(
+                                  Icons.drive_file_move_outlined,
+                                  size: 20,
+                                ),
+                                tooltip: 'Move to List',
+                                onPressed: () =>
+                                    _showMoveTaskDialog(context, task),
+                              ),
+                              IconButton(
+                                key: Key('editTaskButton_${task.taskId}'),
+                                icon: const Icon(Icons.edit_outlined, size: 20),
+                                tooltip: 'Edit Task',
+                                onPressed: () => _showTaskDialog(
+                                  context,
+                                  uid,
+                                  listId,
+                                  task: task,
+                                ),
+                              ),
+                              IconButton(
+                                key: Key('deleteTaskButton_${task.taskId}'),
+                                icon: const Icon(
+                                  Icons.delete_outline,
+                                  size: 20,
+                                ),
+                                tooltip: 'Delete',
+                                onPressed: () async {
+                                  try {
+                                    await ref
+                                        .read(taskRepositoryProvider)
+                                        .softDeleteTask(task.taskId);
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context)
+                                          .clearSnackBars();
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            'Deleted "${task.title}"',
+                                          ),
+                                          action: SnackBarAction(
+                                            key: const Key(
+                                              'undoDeleteTaskButton',
+                                            ),
+                                            label: 'Undo',
+                                            onPressed: () async {
+                                              try {
+                                                await ref
+                                                    .read(
+                                                      taskRepositoryProvider,
+                                                    )
+                                                    .restoreTask(
+                                                      uid: uid,
+                                                      taskId: task.taskId,
+                                                      defaultListId: listId,
+                                                    );
+                                              } catch (e) {
+                                                if (context.mounted) {
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text(
+                                                        'Failed to undo deletion: $e',
+                                                      ),
+                                                    ),
+                                                  );
+                                                }
+                                              }
+                                            },
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  } catch (e) {
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                'Failed to delete task: $e',
+                                              ),
+                                            ),
+                                          );
+                                    }
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
                         ),
+                        if (isExpanded) _buildIndentedSubtasks(context, task),
+                        const Divider(height: 1),
                       ],
-                    ),
-                  ),
-                  if (isExpanded) _buildIndentedSubtasks(context, task),
-                ],
-              );
-            },
-          );
-        },
-        loading: () => const Center(
-          key: Key('tasksLoadingIndicator'),
-          child: CircularProgressIndicator(),
-        ),
-        error: (e, _) => Center(child: Text('Error loading tasks: $e')),
+                    );
+                  },
+                );
+              },
+              loading: () => const Center(
+                key: Key('tasksLoadingIndicator'),
+                child: CircularProgressIndicator(),
+              ),
+              error: (e, _) => Center(child: Text('Error loading tasks: $e')),
+            ),
+          ),
+        ],
       ),
     );
   }
