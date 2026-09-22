@@ -10,6 +10,7 @@ import 'package:shukan/features/auth/providers/auth_providers.dart';
 import 'package:shukan/features/tasks/data/task.dart';
 import 'package:shukan/features/tasks/domain/smart_view_models.dart';
 import 'package:shukan/features/tasks/providers/smart_view_providers.dart';
+import 'package:shukan/features/tasks/providers/task_sort_providers.dart';
 
 void main() {
   late MockFirebaseAuth mockAuth;
@@ -243,27 +244,16 @@ void main() {
 
         await pumpEventQueue();
 
-        // 1. Incomplete mode (default): only t-overdue-inc
+        // 1. Incomplete mode (default, showCompleted == false): only t-overdue-inc
         expect(
           emitted.last.map((t) => t.taskId).toList(),
           equals(['t-overdue-inc']),
         );
 
-        // 2. Completed mode: only t-today-comp (overdue completed is excluded)
-        container
-            .read(smartViewCompletionFilterProvider.notifier)
-            .setFilter(CompletionFilter.completed);
-        await pumpEventQueue();
-
-        expect(
-          emitted.last.map((t) => t.taskId).toList(),
-          equals(['t-today-comp']),
-        );
-
-        // 3. All mode: t-overdue-inc and t-today-comp (overdue completed is still excluded)
-        container
-            .read(smartViewCompletionFilterProvider.notifier)
-            .setFilter(CompletionFilter.all);
+        // 2. Show completed == true: t-overdue-inc and t-today-comp (overdue completed is excluded)
+        await container
+            .read(showCompletedTasksProvider(SmartViewType.today.name).notifier)
+            .setShowCompleted(true);
         await pumpEventQueue();
 
         expect(
@@ -273,7 +263,7 @@ void main() {
       },
     );
 
-    test('completion filter toggles incomplete, completed, and all', () async {
+    test('show completed toggle hides and shows completed tasks', () async {
       final today = DateTime(2026, 10, 14, 10, 0);
       final container = createContainer(overrideDate: today);
 
@@ -310,22 +300,13 @@ void main() {
 
       await pumpEventQueue();
 
-      // 1. Default is incomplete only
+      // 1. Default (showCompleted == false) is incomplete only
       expect(emitted.last.map((t) => t.taskId).toList(), equals(['t-inc']));
 
-      // 2. Toggle to Completed only (evaluated in-memory over date range)
-      container
-          .read(smartViewCompletionFilterProvider.notifier)
-          .setFilter(CompletionFilter.completed);
-
-      await pumpEventQueue();
-
-      expect(emitted.last.map((t) => t.taskId).toList(), equals(['t-comp']));
-
-      // 3. Toggle to All
-      container
-          .read(smartViewCompletionFilterProvider.notifier)
-          .setFilter(CompletionFilter.all);
+      // 2. Toggle to Show completed
+      await container
+          .read(showCompletedTasksProvider(SmartViewType.today.name).notifier)
+          .setShowCompleted(true);
 
       await pumpEventQueue();
 
@@ -333,6 +314,15 @@ void main() {
         emitted.last.map((t) => t.taskId).toSet(),
         equals({'t-inc', 't-comp'}),
       );
+
+      // 3. Toggle back to hide completed
+      await container
+          .read(showCompletedTasksProvider(SmartViewType.today.name).notifier)
+          .setShowCompleted(false);
+
+      await pumpEventQueue();
+
+      expect(emitted.last.map((t) => t.taskId).toList(), equals(['t-inc']));
     });
 
     test(

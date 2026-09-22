@@ -10,15 +10,6 @@ enum SmartViewType {
   const SmartViewType(this.label, this.icon);
 }
 
-enum CompletionFilter {
-  incomplete('Incomplete'),
-  completed('Completed'),
-  all('All');
-
-  final String label;
-  const CompletionFilter(this.label);
-}
-
 class SmartViewDateUtils {
   const SmartViewDateUtils._();
 

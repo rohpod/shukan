@@ -213,6 +213,21 @@ void main() {
       'deletedAt': null,
       'createdAt': DateTime(2026, 9, 18, 8, 0).toIso8601String(),
     });
+
+    await fakeFirestore.collection('tasks').doc('task-inbox-comp').set({
+      'taskId': 'task-inbox-comp',
+      'title': 'Completed onboarding checklist',
+      'listId': 'inbox',
+      'uid': uid,
+      'order': 6,
+      'dueDate': null,
+      'dueTime': null,
+      'priority': 'low',
+      'tag': 'general',
+      'completedAt': DateTime(2026, 9, 18, 9, 0).toIso8601String(),
+      'deletedAt': null,
+      'createdAt': DateTime(2026, 9, 18, 7, 0).toIso8601String(),
+    });
   });
 
   Future<void> snap(WidgetTester tester, GlobalKey key, String filename) async {
@@ -283,7 +298,7 @@ void main() {
     await snap(tester, repaintKey, 'smart_views_today_incomplete.png');
   });
 
-  testWidgets('snap today view - completed', (tester) async {
+  testWidgets('snap today view - show completed', (tester) async {
     setupTester(tester);
     addTearDown(() => teardownTester(tester));
 
@@ -296,24 +311,8 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
-    await tester.tap(find.byKey(const Key('completedFilterButton')));
+    await tester.tap(find.byKey(const Key('toggleShowCompleted_today')));
     await snap(tester, repaintKey, 'smart_views_today_completed.png');
-  });
-
-  testWidgets('snap today view - all', (tester) async {
-    setupTester(tester);
-    addTearDown(() => teardownTester(tester));
-
-    final repaintKey = GlobalKey();
-    await tester.pumpWidget(
-      buildApp(
-        home: const SmartViewDetailScreen(viewType: SmartViewType.today),
-        repaintKey: repaintKey,
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
-    await tester.tap(find.byKey(const Key('allFilterButton')));
     await snap(tester, repaintKey, 'smart_views_today_all.png');
   });
 
@@ -360,7 +359,7 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
-    await tester.tap(find.byKey(const Key('allFilterButton')));
+    await tester.tap(find.byKey(const Key('toggleShowCompleted_scheduled')));
     await snap(tester, repaintKey, 'smart_views_scheduled_all.png');
   });
 
@@ -395,8 +394,27 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     await tester.tap(find.byKey(const Key('taskSortDropdown_today')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('taskSortOption_today_priority')).last);
+    await tester.tap(
+      find.byKey(const Key('taskSortOption_today_priority')).last,
+    );
     await tester.pumpAndSettle();
     await snap(tester, repaintKey, 'smart_view_sort_priority.png');
+  });
+
+  testWidgets('snap task list view - show completed', (tester) async {
+    setupTester(tester);
+    addTearDown(() => teardownTester(tester));
+
+    final repaintKey = GlobalKey();
+    await tester.pumpWidget(
+      buildApp(
+        home: const Scaffold(body: TaskListScreen(listId: 'inbox')),
+        repaintKey: repaintKey,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(find.byKey(const Key('toggleShowCompleted_inbox')));
+    await snap(tester, repaintKey, 'task_list_show_completed.png');
   });
 }

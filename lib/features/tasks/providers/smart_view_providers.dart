@@ -6,6 +6,7 @@ import '../../auth/providers/auth_providers.dart';
 import '../data/task.dart';
 import '../domain/smart_view_models.dart';
 import 'task_providers.dart';
+import 'task_sort_providers.dart';
 
 /// Stream that emits the current local time and automatically emits again
 /// as soon as the clock crosses local midnight.
@@ -42,20 +43,6 @@ final currentDateProvider = Provider<DateTime>((ref) {
   final asyncDate = ref.watch(currentDateStreamProvider);
   return asyncDate.value ?? DateTime.now();
 });
-
-/// User toggle for task completion status in smart views.
-// TODO: Persist across app restarts when local storage or user preferences are implemented.
-class CompletionFilterNotifier extends Notifier<CompletionFilter> {
-  @override
-  CompletionFilter build() => CompletionFilter.incomplete;
-
-  void setFilter(CompletionFilter filter) => state = filter;
-}
-
-final smartViewCompletionFilterProvider =
-    NotifierProvider<CompletionFilterNotifier, CompletionFilter>(
-      CompletionFilterNotifier.new,
-    );
 
 /// Timeout duration for the initial data emission of smart view streams.
 final smartViewTimeoutProvider = Provider<Duration>((ref) {
@@ -139,7 +126,7 @@ final smartViewTasksProvider = StreamProvider.family<List<Task>, SmartViewType>(
 
     final repository = ref.watch(taskRepositoryProvider);
     final currentDate = ref.watch(currentDateProvider);
-    final completionFilter = ref.watch(smartViewCompletionFilterProvider);
+    final showCompleted = ref.watch(showCompletedTasksProvider(viewType.name));
     final timeoutDuration = ref.watch(smartViewTimeoutProvider);
 
     final DateTime? startDueDate;
@@ -160,7 +147,7 @@ final smartViewTasksProvider = StreamProvider.family<List<Task>, SmartViewType>(
         break;
     }
 
-    final onlyIncomplete = completionFilter == CompletionFilter.incomplete;
+    final onlyIncomplete = !showCompleted;
 
     final baseStream = repository.streamTasksWithDueDate(
       uid: uid,
@@ -172,6 +159,10 @@ final smartViewTasksProvider = StreamProvider.family<List<Task>, SmartViewType>(
     final mappedStream = baseStream.map((tasks) {
       final startOfToday = SmartViewDateUtils.startOfDay(currentDate);
       return tasks.where((t) {
+        if (!showCompleted && t.isCompleted) {
+          return false;
+        }
+
         // In Today view, overdue tasks (dueDate < startOfToday) must only ever be incomplete.
         // Completed past tasks are never overdue and must not appear in Today view under any filter.
         if (viewType == SmartViewType.today &&
@@ -180,9 +171,6 @@ final smartViewTasksProvider = StreamProvider.family<List<Task>, SmartViewType>(
           if (t.isCompleted) return false;
         }
 
-        if (completionFilter == CompletionFilter.completed) {
-          return t.isCompleted;
-        }
         return true;
       }).toList();
     });

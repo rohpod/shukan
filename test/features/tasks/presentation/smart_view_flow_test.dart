@@ -130,11 +130,11 @@ void main() {
       await tester.tap(find.byKey(Key('taskCompleteCheckbox_$dentistTaskId')));
       await tester.pumpAndSettle();
 
-      // Dentist appointment is hidden under Incomplete filter
+      // Dentist appointment is hidden because show completed is off by default
       expect(find.text('Dentist Appointment'), findsNothing);
 
-      // Tap Completed filter
-      await tester.tap(find.byKey(const Key('completedFilterButton')));
+      // Tap Show completed toggle
+      await tester.tap(find.byKey(const Key('toggleShowCompleted_thisWeek')));
       await tester.pumpAndSettle();
 
       expect(find.text('Dentist Appointment'), findsOneWidget);
