@@ -197,6 +197,16 @@ class HomeScreen extends ConsumerWidget {
             },
           ),
           IconButton(
+            key: const Key('searchButton'),
+            icon: const Icon(Icons.search),
+            tooltip: 'Search',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const SearchScreen()),
+              );
+            },
+          ),
+          IconButton(
             key: const Key('logoutButton'),
             icon: const Icon(Icons.logout),
             tooltip: 'Log Out',
