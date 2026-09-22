@@ -26,7 +26,7 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) =>
-          _TaskDialog(uid: uid, listId: listId, task: task),
+          TaskDialog(uid: uid, listId: listId, task: task),
     );
   }
 
@@ -178,18 +178,23 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
   }
 }
 
-class _TaskDialog extends ConsumerStatefulWidget {
+class TaskDialog extends ConsumerStatefulWidget {
   final String uid;
   final String listId;
   final Task? task;
 
-  const _TaskDialog({required this.uid, required this.listId, this.task});
+  const TaskDialog({
+    super.key,
+    required this.uid,
+    required this.listId,
+    this.task,
+  });
 
   @override
-  ConsumerState<_TaskDialog> createState() => _TaskDialogState();
+  ConsumerState<TaskDialog> createState() => _TaskDialogState();
 }
 
-class _TaskDialogState extends ConsumerState<_TaskDialog> {
+class _TaskDialogState extends ConsumerState<TaskDialog> {
   bool get isEditing => widget.task != null;
 
   final _formKey = GlobalKey<FormState>();

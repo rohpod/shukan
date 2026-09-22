@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../lists/data/list.dart';
 import '../../lists/presentation/list_detail_screen.dart';
 import '../../lists/providers/list_providers.dart';
+import '../../search/presentation/search_screen.dart';
 import '../providers/auth_providers.dart';
 
 class HomeScreen extends ConsumerWidget {
@@ -169,6 +170,16 @@ class HomeScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('shukan'),
         actions: [
+          IconButton(
+            key: const Key('searchButton'),
+            icon: const Icon(Icons.search),
+            tooltip: 'Search',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const SearchScreen()),
+              );
+            },
+          ),
           IconButton(
             key: const Key('logoutButton'),
             icon: const Icon(Icons.logout),

@@ -77,6 +77,7 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(find.text('shukan'), findsOneWidget);
+        expect(find.byKey(const Key('searchButton')), findsOneWidget);
         expect(find.byKey(const Key('logoutButton')), findsOneWidget);
         expect(find.byKey(const Key('addListButton')), findsOneWidget);
 
@@ -219,6 +220,24 @@ void main() {
 
       // Back on HomeScreen
       expect(find.byType(ListDetailScreen), findsNothing);
+      expect(find.byType(HomeScreen), findsOneWidget);
+    });
+
+    testWidgets('tapping search button navigates to SearchScreen and back', (
+      tester,
+    ) async {
+      await tester.pumpWidget(createWidgetUnderTest());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('searchButton')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('searchQueryInput')), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Back'));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('searchQueryInput')), findsNothing);
       expect(find.byType(HomeScreen), findsOneWidget);
     });
 

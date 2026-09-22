@@ -36,3 +36,13 @@ final tasksForListProvider = StreamProvider.family<List<Task>, String>((
   final repository = ref.watch(taskRepositoryProvider);
   return repository.streamTasksForList(uid, listId);
 });
+
+/// Stream provider returning all tasks for the current user across all lists.
+final allTasksForCurrentUserProvider = StreamProvider<List<Task>>((ref) {
+  final uid = ref.watch(currentUidProvider);
+  if (uid == null) {
+    return Stream.value(const <Task>[]);
+  }
+  final repository = ref.watch(taskRepositoryProvider);
+  return repository.streamAllTasksForUser(uid);
+});
