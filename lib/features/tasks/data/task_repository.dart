@@ -86,6 +86,17 @@ class TaskRepository {
         .map((snapshot) => snapshot.docs.map(Task.fromFirestore).toList());
   }
 
+  /// Streams all active (non-soft-deleted) tasks for [uid] across all lists,
+  /// ordered newest first by [createdAt].
+  Stream<List<Task>> streamAllTasksForUser(String uid) {
+    return _tasksCollection
+        .where('uid', isEqualTo: uid)
+        .where('deletedAt', isNull: true)
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snapshot) => snapshot.docs.map(Task.fromFirestore).toList());
+  }
+
   static const Object _sentinel = Object();
 
   /// Performs a partial update on the task attributes.

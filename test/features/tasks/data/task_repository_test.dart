@@ -203,6 +203,116 @@ void main() {
       await subscription.cancel();
     });
 
+    test('streamAllTasksForUser returns all non-deleted tasks for uid across lists ordered by createdAt DESC', () async {
+      const uid = 'user-stream-all';
+
+      // 1. Task in list-A (earlier)
+      await fakeFirestore.collection('tasks').doc('all-t1').set({
+        'taskId': 'all-t1',
+        'uid': uid,
+        'listId': 'list-A',
+        'title': 'Task in List A',
+        'notes': '',
+        'url': '',
+        'priority': 'none',
+        'tagIds': [],
+        'dueDate': null,
+        'dueTime': null,
+        'earlyReminderMinutes': 0,
+        'repeatRule': 'none',
+        'repeatCustomConfig': null,
+        'order': 0,
+        'subtasks': [],
+        'createdAt': Timestamp.fromDate(DateTime(2026, 1, 1, 10, 0)),
+        'completedAt': null,
+        'deletedAt': null,
+      });
+
+      // 2. Task in list-B (later)
+      await fakeFirestore.collection('tasks').doc('all-t2').set({
+        'taskId': 'all-t2',
+        'uid': uid,
+        'listId': 'list-B',
+        'title': 'Task in List B',
+        'notes': '',
+        'url': '',
+        'priority': 'none',
+        'tagIds': [],
+        'dueDate': null,
+        'dueTime': null,
+        'earlyReminderMinutes': 0,
+        'repeatRule': 'none',
+        'repeatCustomConfig': null,
+        'order': 0,
+        'subtasks': [],
+        'createdAt': Timestamp.fromDate(DateTime(2026, 1, 1, 12, 0)),
+        'completedAt': null,
+        'deletedAt': null,
+      });
+
+      // 3. Soft-deleted task for same user
+      await fakeFirestore.collection('tasks').doc('all-t3').set({
+        'taskId': 'all-t3',
+        'uid': uid,
+        'listId': 'list-A',
+        'title': 'Deleted Task',
+        'notes': '',
+        'url': '',
+        'priority': 'none',
+        'tagIds': [],
+        'dueDate': null,
+        'dueTime': null,
+        'earlyReminderMinutes': 0,
+        'repeatRule': 'none',
+        'repeatCustomConfig': null,
+        'order': 0,
+        'subtasks': [],
+        'createdAt': Timestamp.fromDate(DateTime(2026, 1, 1, 11, 0)),
+        'completedAt': null,
+        'deletedAt': Timestamp.now(),
+      });
+
+      // 4. Task belonging to another user
+      await fakeFirestore.collection('tasks').doc('all-t4').set({
+        'taskId': 'all-t4',
+        'uid': 'different-user',
+        'listId': 'list-A',
+        'title': 'Other User Task',
+        'notes': '',
+        'url': '',
+        'priority': 'none',
+        'tagIds': [],
+        'dueDate': null,
+        'dueTime': null,
+        'earlyReminderMinutes': 0,
+        'repeatRule': 'none',
+        'repeatCustomConfig': null,
+        'order': 0,
+        'subtasks': [],
+        'createdAt': Timestamp.fromDate(DateTime(2026, 1, 1, 13, 0)),
+        'completedAt': null,
+        'deletedAt': null,
+      });
+
+      final emissions = <List<Task>>[];
+      final subscription = repository
+          .streamAllTasksForUser(uid)
+          .listen(emissions.add);
+
+      await pumpEventQueue();
+
+      expect(emissions.isNotEmpty, isTrue);
+      final tasks = emissions.last;
+      expect(tasks.length, equals(2));
+      // Descending by createdAt: all-t2 (12:00) then all-t1 (10:00)
+      expect(tasks[0].taskId, equals('all-t2'));
+      expect(tasks[0].title, equals('Task in List B'));
+      expect(tasks[1].taskId, equals('all-t1'));
+      expect(tasks[1].title, equals('Task in List A'));
+
+      await subscription.cancel();
+    });
+
     test('updateTask only changes the specified fields, leaves placeholder fields untouched', () async {
       final initialTask = await repository.createTask(
         uid: 'user-abc',

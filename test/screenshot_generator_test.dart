@@ -239,7 +239,9 @@ void main() {
       final image = await boundary.toImage(pixelRatio: 2.0);
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       final pngBytes = byteData!.buffer.asUint8List();
-      final file = File('$artifactDir/$filename');
+      final dir = Directory(artifactDir);
+      final targetDir = dir.existsSync() ? dir : Directory.systemTemp;
+      final file = File('${targetDir.path}/$filename');
       await file.writeAsBytes(pngBytes);
     });
   }
