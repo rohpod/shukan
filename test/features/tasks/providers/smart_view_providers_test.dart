@@ -9,6 +9,7 @@ import 'package:shukan/core/firebase/firebase_providers.dart';
 import 'package:shukan/features/auth/providers/auth_providers.dart';
 import 'package:shukan/features/tasks/data/task.dart';
 import 'package:shukan/features/tasks/domain/smart_view_models.dart';
+import 'package:shukan/features/tasks/domain/task_priority_filter.dart';
 import 'package:shukan/features/tasks/providers/smart_view_providers.dart';
 import 'package:shukan/features/tasks/providers/task_sort_providers.dart';
 
@@ -493,5 +494,58 @@ void main() {
         expect(states.last.hasError, isFalse);
       },
     );
+
+    test('smartViewTasksProvider filters by priority when set', () async {
+      final today = DateTime(2026, 10, 14, 10, 0);
+      final container = createContainer(overrideDate: today);
+
+      await fakeFirestore.collection('tasks').doc('t-high').set({
+        'taskId': 't-high',
+        'uid': uid,
+        'listId': listId,
+        'title': 'High Task',
+        'priority': 'high',
+        'dueDate': Timestamp.fromDate(DateTime(2026, 10, 14, 12, 0)),
+        'deletedAt': null,
+        'completedAt': null,
+      });
+
+      await fakeFirestore.collection('tasks').doc('t-low').set({
+        'taskId': 't-low',
+        'uid': uid,
+        'listId': listId,
+        'title': 'Low Task',
+        'priority': 'low',
+        'dueDate': Timestamp.fromDate(DateTime(2026, 10, 14, 13, 0)),
+        'deletedAt': null,
+        'completedAt': null,
+      });
+
+      final emitted = <List<Task>>[];
+      container.listen<AsyncValue<List<Task>>>(
+        smartViewTasksProvider(SmartViewType.today),
+        (_, next) {
+          if (next.hasValue) emitted.add(next.value!);
+        },
+        fireImmediately: true,
+      );
+
+      await pumpEventQueue();
+
+      // Default (All): both high and low emitted
+      expect(
+        emitted.last.map((t) => t.taskId).toSet(),
+        equals({'t-high', 't-low'}),
+      );
+
+      // Set priority filter to high
+      await container
+          .read(taskPriorityFilterProvider(SmartViewType.today.name).notifier)
+          .setFilter(TaskPriorityFilter.high);
+
+      await pumpEventQueue();
+
+      expect(emitted.last.map((t) => t.taskId).toList(), equals(['t-high']));
+    });
   });
 }

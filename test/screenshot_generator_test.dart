@@ -239,9 +239,7 @@ void main() {
       final image = await boundary.toImage(pixelRatio: 2.0);
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       final pngBytes = byteData!.buffer.asUint8List();
-      final dir = Directory(artifactDir);
-      final targetDir = dir.existsSync() ? dir : Directory.systemTemp;
-      final file = File('${targetDir.path}/$filename');
+      final file = File('$artifactDir/$filename');
       await file.writeAsBytes(pngBytes);
     });
   }
@@ -313,6 +311,9 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
+    await tester.ensureVisible(
+      find.byKey(const Key('toggleShowCompleted_today')),
+    );
     await tester.tap(find.byKey(const Key('toggleShowCompleted_today')));
     await snap(tester, repaintKey, 'smart_views_today_completed.png');
     await snap(tester, repaintKey, 'smart_views_today_all.png');
@@ -361,6 +362,9 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
+    await tester.ensureVisible(
+      find.byKey(const Key('toggleShowCompleted_scheduled')),
+    );
     await tester.tap(find.byKey(const Key('toggleShowCompleted_scheduled')));
     await snap(tester, repaintKey, 'smart_views_scheduled_all.png');
   });
@@ -416,7 +420,33 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
+    await tester.ensureVisible(
+      find.byKey(const Key('toggleShowCompleted_inbox')),
+    );
     await tester.tap(find.byKey(const Key('toggleShowCompleted_inbox')));
     await snap(tester, repaintKey, 'task_list_show_completed.png');
+  });
+
+  testWidgets('snap smart view - priority filter high', (tester) async {
+    setupTester(tester);
+    addTearDown(() => teardownTester(tester));
+
+    final repaintKey = GlobalKey();
+    await tester.pumpWidget(
+      buildApp(
+        home: const SmartViewDetailScreen(viewType: SmartViewType.today),
+        repaintKey: repaintKey,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(find.byKey(const Key('taskPriorityDropdown_today')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const Key('taskPriorityOption_today_high')).last,
+      warnIfMissed: false,
+    );
+    await tester.pumpAndSettle();
+    await snap(tester, repaintKey, 'smart_views_today_priority_high.png');
   });
 }
