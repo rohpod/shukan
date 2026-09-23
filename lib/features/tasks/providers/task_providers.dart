@@ -71,3 +71,27 @@ final allTasksForCurrentUserProvider = StreamProvider<List<Task>>((ref) {
   final repository = ref.watch(taskRepositoryProvider);
   return repository.streamAllTasksForUser(uid);
 });
+
+/// Provider mapping list IDs to the count of active (non-completed, non-soft-deleted) tasks.
+/// Derives counts from [allTasksForCurrentUserProvider] using a single Firestore listener.
+final activeTaskCountsByListProvider = Provider<Map<String, int>>((ref) {
+  final tasksAsync = ref.watch(allTasksForCurrentUserProvider);
+  final tasks = tasksAsync.value ?? const <Task>[];
+  final counts = <String, int>{};
+  for (final task in tasks) {
+    if (!task.isCompleted) {
+      counts[task.listId] = (counts[task.listId] ?? 0) + 1;
+    }
+  }
+  return counts;
+});
+
+/// Family provider returning the active (non-completed, non-soft-deleted) task count
+/// for a specific [listId].
+final activeTaskCountForListProvider = Provider.family<int, String>((
+  ref,
+  listId,
+) {
+  final counts = ref.watch(activeTaskCountsByListProvider);
+  return counts[listId] ?? 0;
+});

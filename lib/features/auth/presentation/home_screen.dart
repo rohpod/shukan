@@ -301,7 +301,7 @@ class HomeScreen extends ConsumerWidget {
                                                 .onSurfaceVariant,
                                     ),
                                     const Spacer(),
-                                    if (list.isDefault)
+                                    if (list.isDefault) ...[
                                       Container(
                                         padding: const EdgeInsets.symmetric(
                                           horizontal: 6,
@@ -324,6 +324,56 @@ class HomeScreen extends ConsumerWidget {
                                           ),
                                         ),
                                       ),
+                                      const SizedBox(width: 6),
+                                    ],
+                                    Consumer(
+                                      builder: (context, ref, _) {
+                                        final count = ref.watch(
+                                          activeTaskCountForListProvider(
+                                            list.listId,
+                                          ),
+                                        );
+                                        return Container(
+                                          key: Key(
+                                            'taskCountBadge_${list.listId}',
+                                          ),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 7,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: count > 0
+                                                ? Theme.of(context)
+                                                      .colorScheme
+                                                      .secondaryContainer
+                                                : Theme.of(context)
+                                                      .colorScheme
+                                                      .surfaceContainerHighest
+                                                      .withValues(alpha: 0.5),
+                                            borderRadius: BorderRadius.circular(
+                                              10,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            '$count',
+                                            key: Key(
+                                              'taskCountText_${list.listId}',
+                                            ),
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w600,
+                                              color: count > 0
+                                                  ? Theme.of(context)
+                                                        .colorScheme
+                                                        .onSecondaryContainer
+                                                  : Theme.of(context)
+                                                        .colorScheme
+                                                        .onSurfaceVariant,
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
                                   ],
                                 ),
                                 const Spacer(),

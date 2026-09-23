@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:firebase_auth_mocks/firebase_auth_mocks.dart';
 import 'package:flutter/material.dart';
@@ -283,5 +284,96 @@ void main() {
       expect(find.byType(TagBrowserScreen), findsOneWidget);
       expect(find.text('Tags'), findsWidgets);
     });
+
+    testWidgets('renders active task count badge on each list card', (
+      tester,
+    ) async {
+      await tester.pumpWidget(createWidgetUnderTest());
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(Key('taskCountBadge_$defaultListId')), findsOneWidget);
+      expect(find.byKey(Key('taskCountText_$defaultListId')), findsOneWidget);
+      expect(
+        tester
+            .widget<Text>(find.byKey(Key('taskCountText_$defaultListId')))
+            .data,
+        '0',
+      );
+
+      expect(find.byKey(Key('taskCountBadge_$customListId')), findsOneWidget);
+      expect(find.byKey(Key('taskCountText_$customListId')), findsOneWidget);
+      expect(
+        tester
+            .widget<Text>(find.byKey(Key('taskCountText_$customListId')))
+            .data,
+        '2',
+      );
+    });
+
+    testWidgets(
+      'active task count badge updates live when tasks are added, completed, and deleted',
+      (tester) async {
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        // Initial: Inbox has 0, Work has 2
+        expect(
+          tester
+              .widget<Text>(find.byKey(Key('taskCountText_$defaultListId')))
+              .data,
+          '0',
+        );
+        expect(
+          tester
+              .widget<Text>(find.byKey(Key('taskCountText_$customListId')))
+              .data,
+          '2',
+        );
+
+        // 1. Add task to Inbox
+        await fakeFirestore.collection('tasks').doc('t-new').set({
+          'taskId': 't-new',
+          'uid': uid,
+          'listId': defaultListId,
+          'title': 'New inbox task',
+          'deletedAt': null,
+          'completedAt': null,
+        });
+        await tester.pump();
+
+        expect(
+          tester
+              .widget<Text>(find.byKey(Key('taskCountText_$defaultListId')))
+              .data,
+          '1',
+        );
+
+        // 2. Complete task in Work list
+        await fakeFirestore.collection('tasks').doc('t1').update({
+          'completedAt': Timestamp.now(),
+        });
+        await tester.pump();
+
+        expect(
+          tester
+              .widget<Text>(find.byKey(Key('taskCountText_$customListId')))
+              .data,
+          '1',
+        );
+
+        // 3. Soft-delete task in Work list
+        await fakeFirestore.collection('tasks').doc('t2').update({
+          'deletedAt': Timestamp.now(),
+        });
+        await tester.pump();
+
+        expect(
+          tester
+              .widget<Text>(find.byKey(Key('taskCountText_$customListId')))
+              .data,
+          '0',
+        );
+      },
+    );
   });
 }

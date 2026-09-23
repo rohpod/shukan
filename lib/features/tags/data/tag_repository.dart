@@ -70,9 +70,7 @@ class TagRepository {
       }
     }
 
-    await _tagsCollection.doc(tagId).update({
-      'name': trimmedName,
-    });
+    await _tagsCollection.doc(tagId).update({'name': trimmedName});
   }
 
   /// Deletes a tag and batch-removes its reference from all matching tasks

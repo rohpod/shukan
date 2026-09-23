@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/providers/auth_providers.dart';
 import '../../lists/data/list.dart';
+import '../../lists/presentation/list_detail_screen.dart';
 import '../../lists/providers/list_providers.dart';
 import '../data/task.dart';
 import '../domain/smart_view_models.dart';
@@ -19,6 +20,7 @@ import 'widgets/task_priority_filter_selector.dart';
 import 'widgets/task_row_tag_chips.dart';
 import 'widgets/task_sort_selector.dart';
 import 'widgets/task_tag_filter_selector.dart';
+import 'quick_add_bar.dart';
 
 class SmartViewDetailScreen extends ConsumerStatefulWidget {
   final SmartViewType viewType;
@@ -37,6 +39,7 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
     String listId, {
     Task? task,
     DateTime? initialDueDate,
+    String? initialTitle,
   }) async {
     await showDialog<void>(
       context: context,
@@ -45,6 +48,7 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
         listId: task?.listId ?? listId,
         task: task,
         initialDueDate: initialDueDate,
+        initialTitle: initialTitle,
       ),
     );
   }
@@ -75,16 +79,24 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
     final sortOption = ref.watch(taskSortModeProvider(widget.viewType.name));
     final tagFilter = ref.watch(taskTagFilterProvider(widget.viewType.name));
     final defaultListId = ref.watch(defaultListIdProvider).value;
-    final listsAsync = ref.watch(listsForUserProvider);
-    final listNames = {
-      for (final l in (listsAsync.value ?? const <ListModel>[]))
-        l.listId: l.name,
-    };
-    final effectiveListId =
-        defaultListId ??
-        (listsAsync.value?.isNotEmpty == true
-            ? listsAsync.value!.first.listId
-            : 'inbox');
+    final lists = ref.watch(listsForUserProvider).value ?? const <ListModel>[];
+    final listNames = {for (final l in lists) l.listId: l.name};
+
+    ListModel? effectiveList;
+    if (lists.isNotEmpty) {
+      if (defaultListId != null) {
+        for (final l in lists) {
+          if (l.listId == defaultListId) {
+            effectiveList = l;
+            break;
+          }
+        }
+      }
+      effectiveList ??= lists.first;
+    }
+
+    final effectiveListId = effectiveList?.listId;
+    final destinationListName = effectiveList?.name;
 
     final currentDate = ref.watch(currentDateProvider);
 
@@ -94,26 +106,6 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
           widget.viewType.label,
           key: Key('smartViewTitle_${widget.viewType.name}'),
         ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        key: const Key('addSmartViewTaskButton'),
-        tooltip: 'New Task',
-        onPressed: () {
-          final now = ref.read(currentDateProvider);
-          final initialDate = widget.viewType == SmartViewType.today
-              ? SmartViewDateUtils.startOfDay(now)
-              : (widget.viewType == SmartViewType.thisWeek
-                    ? SmartViewDateUtils.startOfDay(now)
-                    : SmartViewDateUtils.startOfDay(now));
-
-          _openTaskDialog(
-            context,
-            uid,
-            effectiveListId,
-            initialDueDate: initialDate,
-          );
-        },
-        child: const Icon(Icons.add),
       ),
       body: Column(
         children: [
@@ -412,6 +404,54 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                 ),
               ),
             ),
+          ),
+          QuickAddBar(
+            uid: uid,
+            listId: effectiveListId,
+            hintText: destinationListName != null
+                ? 'Add task to $destinationListName...'
+                : null,
+            expandButtonKey: const Key('addSmartViewTaskButton'),
+            onExpand: effectiveListId == null
+                ? null
+                : (text) {
+                    final now = ref.read(currentDateProvider);
+                    final initialDate = widget.viewType == SmartViewType.today
+                        ? SmartViewDateUtils.startOfDay(now)
+                        : (widget.viewType == SmartViewType.thisWeek
+                              ? SmartViewDateUtils.startOfDay(now)
+                              : SmartViewDateUtils.startOfDay(now));
+
+                    _openTaskDialog(
+                      context,
+                      uid,
+                      effectiveListId,
+                      initialDueDate: initialDate,
+                      initialTitle: text,
+                    );
+                  },
+            onTaskCreated: (task) {
+              if (!context.mounted) return;
+              final listName = destinationListName ?? 'list';
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Added to $listName'),
+                  action: effectiveList != null
+                      ? SnackBarAction(
+                          label: 'View',
+                          onPressed: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) =>
+                                    ListDetailScreen(list: effectiveList!),
+                              ),
+                            );
+                          },
+                        )
+                      : null,
+                ),
+              );
+            },
           ),
         ],
       ),

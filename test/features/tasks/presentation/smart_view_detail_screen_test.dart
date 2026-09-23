@@ -8,10 +8,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shukan/core/firebase/firebase_providers.dart';
 import 'package:shukan/features/auth/providers/auth_providers.dart';
+import 'package:shukan/features/lists/data/list.dart';
+import 'package:shukan/features/lists/presentation/list_detail_screen.dart';
+import 'package:shukan/features/lists/providers/list_providers.dart';
 import 'package:shukan/features/tasks/data/task.dart';
 import 'package:shukan/features/tasks/domain/smart_view_models.dart';
 import 'package:shukan/features/tasks/presentation/smart_view_detail_screen.dart';
 import 'package:shukan/features/tasks/providers/smart_view_providers.dart';
+import 'package:shukan/features/tasks/providers/task_providers.dart';
 
 void main() {
   late MockFirebaseAuth mockAuth;
@@ -380,5 +384,95 @@ void main() {
       );
       expect(find.byKey(const Key('smartViewErrorText')), findsOneWidget);
     });
+
+    testWidgets(
+      'QuickAddBar is disabled without crashing while lists are still resolving',
+      (tester) async {
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              firebaseAuthProvider.overrideWithValue(mockAuth),
+              firestoreProvider.overrideWithValue(fakeFirestore),
+              currentUidProvider.overrideWithValue(uid),
+              listsForUserProvider.overrideWith(
+                (ref) => const Stream<List<ListModel>>.empty(),
+              ),
+              defaultListIdProvider.overrideWith(
+                (ref) => const Stream<String?>.empty(),
+              ),
+            ],
+            child: const MaterialApp(
+              home: SmartViewDetailScreen(viewType: SmartViewType.thisWeek),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        // Verify loading hint text
+        expect(find.text('Loading...'), findsOneWidget);
+
+        // Verify textfield is disabled
+        final textField = tester.widget<TextField>(
+          find.byKey(const Key('quickAddTextInput')),
+        );
+        expect(textField.enabled, isFalse);
+
+        // Verify submit button is disabled
+        final submitButton = tester.widget<IconButton>(
+          find.byKey(const Key('quickAddSubmitButton')),
+        );
+        expect(submitButton.onPressed, isNull);
+
+        // Verify expand button is disabled
+        final expandButton = tester.widget<IconButton>(
+          find.byKey(const Key('addSmartViewTaskButton')),
+        );
+        expect(expandButton.onPressed, isNull);
+      },
+    );
+
+    testWidgets(
+      'hint text reflects destination list name on smart view screens',
+      (tester) async {
+        await tester.pumpWidget(createWidgetUnderTest(SmartViewType.thisWeek));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Add task to Inbox...'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'creating date-less task from SmartViewDetailScreen shows SnackBar with working View action',
+      (tester) async {
+        await tester.pumpWidget(createWidgetUnderTest(SmartViewType.thisWeek));
+        await tester.pumpAndSettle();
+
+        // Enter date-less task title
+        await tester.enterText(
+          find.byKey(const Key('quickAddTextInput')),
+          'Buy groceries',
+        );
+        await tester.pumpAndSettle();
+
+        // First tap -> parse
+        await tester.tap(find.byKey(const Key('quickAddSubmitButton')));
+        await tester.pumpAndSettle();
+
+        // Second tap -> create
+        await tester.tap(find.byKey(const Key('quickAddSubmitButton')));
+        await tester.pumpAndSettle();
+
+        // Verify SnackBar appeared with "Added to Inbox" and "View" action
+        expect(find.text('Added to Inbox'), findsOneWidget);
+        expect(find.text('View'), findsOneWidget);
+
+        // Tap "View" action
+        await tester.tap(find.text('View'));
+        await tester.pumpAndSettle();
+
+        // Should navigate to ListDetailScreen for Inbox
+        expect(find.byType(ListDetailScreen), findsOneWidget);
+      },
+    );
   });
 }

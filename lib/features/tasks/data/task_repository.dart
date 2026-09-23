@@ -19,6 +19,8 @@ class TaskRepository {
     required String title,
     String notes = '',
     String url = '',
+    DateTime? dueDate,
+    String? dueTime,
   }) async {
     final listDoc = await _firestore.collection('lists').doc(listId).get();
     if (!listDoc.exists) {
@@ -38,8 +40,8 @@ class TaskRepository {
       'url': url.trim(),
       'priority': 'none',
       'tagIds': <String>[],
-      'dueDate': null,
-      'dueTime': null,
+      'dueDate': dueDate != null ? Timestamp.fromDate(dueDate) : null,
+      'dueTime': dueTime?.trim(),
       'earlyReminderMinutes': 0,
       'repeatRule': 'none',
       'repeatCustomConfig': null,
@@ -61,8 +63,8 @@ class TaskRepository {
       url: url.trim(),
       priority: 'none',
       tagIds: const [],
-      dueDate: null,
-      dueTime: null,
+      dueDate: dueDate,
+      dueTime: dueTime?.trim(),
       earlyReminderMinutes: 0,
       repeatRule: 'none',
       repeatCustomConfig: null,
