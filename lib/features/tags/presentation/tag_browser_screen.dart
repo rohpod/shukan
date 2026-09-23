@@ -68,7 +68,9 @@ class TagBrowserScreen extends ConsumerWidget {
               onPressed: () async {
                 if (!formKey.currentState!.validate()) return;
                 try {
-                  await ref.read(tagRepositoryProvider).renameTag(
+                  await ref
+                      .read(tagRepositoryProvider)
+                      .renameTag(
                         uid: uid,
                         tagId: entry.tagId,
                         newName: controller.text.trim(),
@@ -108,10 +110,7 @@ class TagBrowserScreen extends ConsumerWidget {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: Text('Delete "${entry.name}"?'),
-        content: Text(
-          warningText,
-          key: const Key('deleteTagWarningText'),
-        ),
+        content: Text(warningText, key: const Key('deleteTagWarningText')),
         actions: [
           TextButton(
             key: const Key('cancelDeleteTagButton'),
@@ -127,7 +126,9 @@ class TagBrowserScreen extends ConsumerWidget {
             onPressed: () async {
               try {
                 final prefs = ref.read(sharedPreferencesProvider);
-                await ref.read(tagRepositoryProvider).deleteTag(
+                await ref
+                    .read(tagRepositoryProvider)
+                    .deleteTag(
                       uid: uid,
                       tagId: entry.tagId,
                       preferences: prefs,
@@ -137,9 +138,7 @@ class TagBrowserScreen extends ConsumerWidget {
                 }
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Deleted tag "${entry.name}"'),
-                    ),
+                    SnackBar(content: Text('Deleted tag "${entry.name}"')),
                   );
                 }
               } catch (e) {
@@ -167,9 +166,7 @@ class TagBrowserScreen extends ConsumerWidget {
 
     return Scaffold(
       key: const Key('tagBrowserScreen'),
-      appBar: AppBar(
-        title: const Text('Tags'),
-      ),
+      appBar: AppBar(title: const Text('Tags')),
       body: entriesAsync.when(
         data: (entries) {
           if (entries.isEmpty) {
@@ -215,8 +212,9 @@ class TagBrowserScreen extends ConsumerWidget {
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
-                          color:
-                              Theme.of(context).colorScheme.onPrimaryContainer,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onPrimaryContainer,
                         ),
                       ),
                     ),
@@ -228,12 +226,8 @@ class TagBrowserScreen extends ConsumerWidget {
                         tooltip: 'Rename Tag',
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
-                        onPressed: () => _showRenameDialog(
-                          context,
-                          ref,
-                          entry,
-                          uid,
-                        ),
+                        onPressed: () =>
+                            _showRenameDialog(context, ref, entry, uid),
                       ),
                       const SizedBox(width: 8),
                       IconButton(
@@ -246,12 +240,8 @@ class TagBrowserScreen extends ConsumerWidget {
                         tooltip: 'Delete Tag',
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
-                        onPressed: () => _showDeleteDialog(
-                          context,
-                          ref,
-                          entry,
-                          uid,
-                        ),
+                        onPressed: () =>
+                            _showDeleteDialog(context, ref, entry, uid),
                       ),
                     ],
                   ],

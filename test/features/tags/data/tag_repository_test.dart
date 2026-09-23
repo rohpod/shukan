@@ -161,15 +161,20 @@ void main() {
 
       test('throws ArgumentError when renaming to duplicate name of another tag of same user', () async {
         await repository.createTag(uid: 'user-1', name: 'Work');
-        final tag2 = await repository.createTag(uid: 'user-1', name: 'Personal');
+        final tag2 = await repository.createTag(
+          uid: 'user-1',
+          name: 'Personal',
+        );
 
         await expectLater(
           repository.renameTag(uid: 'user-1', tagId: tag2, newName: 'work'),
-          throwsA(isA<ArgumentError>().having(
-            (e) => e.message,
-            'message',
-            contains('already exists'),
-          )),
+          throwsA(
+            isA<ArgumentError>().having(
+              (e) => e.message,
+              'message',
+              contains('already exists'),
+            ),
+          ),
         );
 
         await expectLater(
@@ -178,19 +183,22 @@ void main() {
         );
       });
 
-      test('allows renaming to duplicate name of a tag owned by another user', () async {
-        await repository.createTag(uid: 'other-user', name: 'Work');
-        final tag1 = await repository.createTag(uid: 'user-1', name: 'Job');
+      test(
+        'allows renaming to duplicate name of a tag owned by another user',
+        () async {
+          await repository.createTag(uid: 'other-user', name: 'Work');
+          final tag1 = await repository.createTag(uid: 'user-1', name: 'Job');
 
-        await repository.renameTag(
-          uid: 'user-1',
-          tagId: tag1,
-          newName: 'Work',
-        );
+          await repository.renameTag(
+            uid: 'user-1',
+            tagId: tag1,
+            newName: 'Work',
+          );
 
-        final doc = await fakeFirestore.collection('tags').doc(tag1).get();
-        expect(doc.data()!['name'], equals('Work'));
-      });
+          final doc = await fakeFirestore.collection('tags').doc(tag1).get();
+          expect(doc.data()!['name'], equals('Work'));
+        },
+      );
 
       test('throws ArgumentError on empty or whitespace name', () async {
         final tagId = await repository.createTag(uid: 'user-1', name: 'Work');
@@ -257,32 +265,41 @@ void main() {
         expect(t3Doc.data()!['tagIds'], equals([tagId]));
       });
 
-      test('handles chunked batches when matching tasks exceed batchChunkSize', () async {
-        const uid = 'user-1';
-        final tagId = await repository.createTag(uid: uid, name: 'Work');
+      test(
+        'handles chunked batches when matching tasks exceed batchChunkSize',
+        () async {
+          const uid = 'user-1';
+          final tagId = await repository.createTag(uid: uid, name: 'Work');
 
-        // Create 5 tasks
-        for (var i = 1; i <= 5; i++) {
-          await fakeFirestore.collection('tasks').doc('t$i').set({
-            'taskId': 't$i',
-            'uid': uid,
-            'title': 'Task $i',
-            'tagIds': [tagId, 'keep-me'],
-            'deletedAt': null,
-          });
-        }
+          // Create 5 tasks
+          for (var i = 1; i <= 5; i++) {
+            await fakeFirestore.collection('tasks').doc('t$i').set({
+              'taskId': 't$i',
+              'uid': uid,
+              'title': 'Task $i',
+              'tagIds': [tagId, 'keep-me'],
+              'deletedAt': null,
+            });
+          }
 
-        // Delete with batchChunkSize = 2 (forces 3 batch iterations: 2, 2, 1)
-        await repository.deleteTag(uid: uid, tagId: tagId, batchChunkSize: 2);
+          // Delete with batchChunkSize = 2 (forces 3 batch iterations: 2, 2, 1)
+          await repository.deleteTag(uid: uid, tagId: tagId, batchChunkSize: 2);
 
-        final tagDoc = await fakeFirestore.collection('tags').doc(tagId).get();
-        expect(tagDoc.exists, isFalse);
+          final tagDoc = await fakeFirestore
+              .collection('tags')
+              .doc(tagId)
+              .get();
+          expect(tagDoc.exists, isFalse);
 
-        for (var i = 1; i <= 5; i++) {
-          final doc = await fakeFirestore.collection('tasks').doc('t$i').get();
-          expect(doc.data()!['tagIds'], equals(['keep-me']));
-        }
-      });
+          for (var i = 1; i <= 5; i++) {
+            final doc = await fakeFirestore
+                .collection('tasks')
+                .doc('t$i')
+                .get();
+            expect(doc.data()!['tagIds'], equals(['keep-me']));
+          }
+        },
+      );
 
       test('deletes tag with zero tasks without errors', () async {
         const uid = 'user-1';
@@ -294,28 +311,38 @@ void main() {
         expect(tagDoc.exists, isFalse);
       });
 
-      test('cleans up persisted SharedPreferences tag filter selections', () async {
-        const uid = 'user-1';
-        final tagId = await repository.createTag(uid: uid, name: 'CleanTag');
-        SharedPreferences.setMockInitialValues({
-          'task_tag_filter_inbox': [tagId, 'other-tag'],
-          'task_tag_filter_today': [tagId],
-          'task_tag_filter_tag_$tagId': [tagId],
-          'unrelated_key': 'keep',
-        });
-        final prefs = await SharedPreferences.getInstance();
+      test(
+        'cleans up persisted SharedPreferences tag filter selections',
+        () async {
+          const uid = 'user-1';
+          final tagId = await repository.createTag(uid: uid, name: 'CleanTag');
+          SharedPreferences.setMockInitialValues({
+            'task_tag_filter_inbox': [tagId, 'other-tag'],
+            'task_tag_filter_today': [tagId],
+            'task_tag_filter_tag_$tagId': [tagId],
+            'unrelated_key': 'keep',
+          });
+          final prefs = await SharedPreferences.getInstance();
 
-        await repository.deleteTag(uid: uid, tagId: tagId, preferences: prefs);
+          await repository.deleteTag(
+            uid: uid,
+            tagId: tagId,
+            preferences: prefs,
+          );
 
-        // inbox had other-tag, so tagId was removed but other-tag kept
-        expect(prefs.getStringList('task_tag_filter_inbox'), equals(['other-tag']));
-        // today only had tagId, so key was removed entirely
-        expect(prefs.getStringList('task_tag_filter_today'), isNull);
-        // tag_<tagId> view filter key was removed entirely
-        expect(prefs.getStringList('task_tag_filter_tag_$tagId'), isNull);
-        // unrelated key preserved
-        expect(prefs.getString('unrelated_key'), equals('keep'));
-      });
+          // inbox had other-tag, so tagId was removed but other-tag kept
+          expect(
+            prefs.getStringList('task_tag_filter_inbox'),
+            equals(['other-tag']),
+          );
+          // today only had tagId, so key was removed entirely
+          expect(prefs.getStringList('task_tag_filter_today'), isNull);
+          // tag_<tagId> view filter key was removed entirely
+          expect(prefs.getStringList('task_tag_filter_tag_$tagId'), isNull);
+          // unrelated key preserved
+          expect(prefs.getString('unrelated_key'), equals('keep'));
+        },
+      );
     });
   });
 }

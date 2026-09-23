@@ -95,6 +95,35 @@ void main() {
       },
     );
 
+    test('createTask with dueDate and dueTime persists them correctly in entity and Firestore', () async {
+      const uid = 'user-123';
+      const listId = 'inbox-456';
+      final dueDate = DateTime(2026, 10, 15);
+      const dueTime = '17:00';
+
+      final task = await repository.createTask(
+        uid: uid,
+        listId: listId,
+        title: 'Submit assignment',
+        dueDate: dueDate,
+        dueTime: dueTime,
+      );
+
+      expect(task.title, equals('Submit assignment'));
+      expect(task.dueDate, equals(dueDate));
+      expect(task.dueTime, equals('17:00'));
+
+      final docSnapshot = await fakeFirestore
+          .collection('tasks')
+          .doc(task.taskId)
+          .get();
+      expect(docSnapshot.exists, isTrue);
+
+      final data = docSnapshot.data()!;
+      expect(data['dueDate'], equals(Timestamp.fromDate(dueDate)));
+      expect(data['dueTime'], equals('17:00'));
+    });
+
     test('streamTasksForList excludes soft-deleted tasks and filters by uid+listId correctly', () async {
       const uid = 'user-1';
       const listId = 'list-1';

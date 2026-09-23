@@ -170,19 +170,15 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        find.descendant(
-          of: find.byType(AppBar),
-          matching: find.text('#Work'),
-        ),
+        find.descendant(of: find.byType(AppBar), matching: find.text('#Work')),
         findsOneWidget,
       );
       expect(find.text('Live Task'), findsOneWidget);
 
       // Rename tag in Firestore
-      await fakeFirestore
-          .collection('tags')
-          .doc('tag-work')
-          .update({'name': 'Office'});
+      await fakeFirestore.collection('tags').doc('tag-work').update({
+        'name': 'Office',
+      });
       await tester.pumpAndSettle();
 
       // Title updates reactively

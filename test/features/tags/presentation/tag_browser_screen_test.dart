@@ -176,7 +176,10 @@ void main() {
     expect(find.text('Office'), findsOneWidget);
     expect(find.byKey(const Key('tagBrowserItem_tag-work')), findsOneWidget);
 
-    final updatedDoc = await fakeFirestore.collection('tags').doc('tag-work').get();
+    final updatedDoc = await fakeFirestore
+        .collection('tags')
+        .doc('tag-work')
+        .get();
     expect(updatedDoc.data()!['name'], equals('Office'));
   });
 
@@ -206,7 +209,10 @@ void main() {
       await tester.pumpWidget(createWidget(prefs: prefs));
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('tagBrowserItem_tag-urgent')), findsOneWidget);
+      expect(
+        find.byKey(const Key('tagBrowserItem_tag-urgent')),
+        findsOneWidget,
+      );
 
       // Tap delete button
       await tester.tap(find.byKey(const Key('deleteTagButton_tag-urgent')));
@@ -225,7 +231,10 @@ void main() {
       await tester.tap(find.byKey(const Key('cancelDeleteTagButton')));
       await tester.pumpAndSettle();
       expect(find.text('Delete "Urgent"?'), findsNothing);
-      expect(find.byKey(const Key('tagBrowserItem_tag-urgent')), findsOneWidget);
+      expect(
+        find.byKey(const Key('tagBrowserItem_tag-urgent')),
+        findsOneWidget,
+      );
 
       // Tap delete again and confirm
       await tester.tap(find.byKey(const Key('deleteTagButton_tag-urgent')));
@@ -245,7 +254,10 @@ void main() {
       expect(taskDoc.data()!['tagIds'], equals([]));
 
       // SharedPreferences updated
-      expect(prefs.getStringList('task_tag_filter_inbox'), equals(['other-tag']));
+      expect(
+        prefs.getStringList('task_tag_filter_inbox'),
+        equals(['other-tag']),
+      );
       expect(prefs.getStringList('task_tag_filter_tag_tag-urgent'), isNull);
     },
   );

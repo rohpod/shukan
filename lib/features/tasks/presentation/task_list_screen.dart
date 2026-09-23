@@ -15,6 +15,7 @@ import 'widgets/task_priority_filter_selector.dart';
 import 'widgets/task_row_tag_chips.dart';
 import 'widgets/task_sort_selector.dart';
 import 'widgets/task_tag_filter_selector.dart';
+import 'quick_add_bar.dart';
 
 class TaskListScreen extends ConsumerStatefulWidget {
   final String? listId;
@@ -33,11 +34,16 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
     String uid,
     String listId, {
     Task? task,
+    String? initialTitle,
   }) async {
     await showDialog<void>(
       context: context,
-      builder: (dialogContext) =>
-          TaskDialog(uid: uid, listId: listId, task: task),
+      builder: (dialogContext) => TaskDialog(
+        uid: uid,
+        listId: listId,
+        task: task,
+        initialTitle: initialTitle,
+      ),
     );
   }
 
@@ -89,12 +95,6 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      floatingActionButton: FloatingActionButton(
-        key: const Key('addTaskButton'),
-        tooltip: 'New Task',
-        onPressed: () => _showTaskDialog(context, uid, listId),
-        child: const Icon(Icons.add),
-      ),
       body: Column(
         children: [
           Padding(
@@ -403,6 +403,13 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
               error: (e, _) => Center(child: Text('Error loading tasks: $e')),
             ),
           ),
+          QuickAddBar(
+            uid: uid,
+            listId: listId,
+            expandButtonKey: const Key('addTaskButton'),
+            onExpand: (text) =>
+                _showTaskDialog(context, uid, listId, initialTitle: text),
+          ),
         ],
       ),
     );
@@ -622,6 +629,7 @@ class TaskDialog extends ConsumerStatefulWidget {
   final String listId;
   final Task? task;
   final DateTime? initialDueDate;
+  final String? initialTitle;
 
   const TaskDialog({
     super.key,
@@ -629,6 +637,7 @@ class TaskDialog extends ConsumerStatefulWidget {
     required this.listId,
     this.task,
     this.initialDueDate,
+    this.initialTitle,
   });
 
   @override
@@ -658,7 +667,9 @@ class _TaskDialogState extends ConsumerState<TaskDialog> {
   @override
   void initState() {
     super.initState();
-    _titleController = TextEditingController(text: widget.task?.title ?? '');
+    _titleController = TextEditingController(
+      text: widget.task?.title ?? widget.initialTitle ?? '',
+    );
     _notesController = TextEditingController(text: widget.task?.notes ?? '');
     _urlController = TextEditingController(text: widget.task?.url ?? '');
     _tagInputController = TextEditingController();
@@ -744,11 +755,11 @@ class _TaskDialogState extends ConsumerState<TaskDialog> {
               title: _titleController.text,
               notes: _notesController.text,
               url: _urlController.text,
+              dueDate: _dueDate,
+              dueTime: _dueTime,
             );
         if (_priority != 'none' ||
             _tagIds.isNotEmpty ||
-            _dueDate != null ||
-            _dueTime != null ||
             _earlyReminderMinutes != 0 ||
             _repeatRule != 'none') {
           await ref
@@ -757,8 +768,6 @@ class _TaskDialogState extends ConsumerState<TaskDialog> {
                 createdTask.taskId,
                 priority: _priority,
                 tagIds: _tagIds,
-                dueDate: _dueDate,
-                dueTime: _dueTime,
                 earlyReminderMinutes: _earlyReminderMinutes,
                 repeatRule: _repeatRule,
               );
