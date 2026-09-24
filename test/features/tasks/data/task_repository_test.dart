@@ -1,10 +1,25 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:shukan/core/notifications/notification_service.dart';
 import 'package:shukan/features/tasks/data/task.dart';
 import 'package:shukan/features/tasks/data/task_repository.dart';
 
+class MockNotificationService extends Mock implements NotificationService {}
+
 void main() {
+  setUpAll(() {
+    registerFallbackValue(
+      const Task(
+        taskId: 'dummy',
+        uid: 'dummy',
+        listId: 'dummy',
+        title: 'dummy',
+      ),
+    );
+  });
+
   late FakeFirebaseFirestore fakeFirestore;
   late TaskRepository repository;
 
@@ -1577,6 +1592,278 @@ void main() {
             expect(result, isEmpty);
           },
         );
+      });
+    });
+
+    group('Notification Lifecycle Hooks', () {
+      late MockNotificationService mockNotificationService;
+      late TaskRepository repoWithNotifications;
+
+      setUp(() {
+        mockNotificationService = MockNotificationService();
+        repoWithNotifications = TaskRepository(
+          fakeFirestore,
+          mockNotificationService,
+        );
+
+        when(() => mockNotificationService.scheduleForTask(any()))
+            .thenAnswer((_) async {});
+        when(() => mockNotificationService.cancelForTask(any()))
+            .thenAnswer((_) async {});
+      });
+
+      test(
+        'createTask with dueDate calls scheduleForTask on the created task',
+        () async {
+          final due = DateTime.now().add(const Duration(days: 1));
+          final task = await repoWithNotifications.createTask(
+            uid: 'user-123',
+            listId: 'inbox-456',
+            title: 'Scheduled Task',
+            dueDate: due,
+            dueTime: '10:00',
+          );
+
+          verify(
+            () => mockNotificationService.scheduleForTask(
+              any(
+                that: isA<Task>().having(
+                  (t) => t.taskId,
+                  'taskId',
+                  task.taskId,
+                ),
+              ),
+            ),
+          ).called(1);
+        },
+      );
+
+      test(
+        'createTask without dueDate does not call scheduleForTask',
+        () async {
+          await repoWithNotifications.createTask(
+            uid: 'user-123',
+            listId: 'inbox-456',
+            title: 'Unscheduled Task',
+          );
+
+          verifyNever(() => mockNotificationService.scheduleForTask(any()));
+        },
+      );
+
+      test('updateTask changing dueDate reschedules notification', () async {
+        final task = await repoWithNotifications.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Initial Task',
+        );
+        reset(mockNotificationService);
+        when(() => mockNotificationService.scheduleForTask(any()))
+            .thenAnswer((_) async {});
+
+        final newDue = DateTime.now().add(const Duration(days: 2));
+        await repoWithNotifications.updateTask(task.taskId, dueDate: newDue);
+
+        verify(
+          () => mockNotificationService.scheduleForTask(
+            any(
+              that: isA<Task>().having((t) => t.taskId, 'taskId', task.taskId),
+            ),
+          ),
+        ).called(1);
+      });
+
+      test(
+        'updateTask NOT touching due fields does not re-fetch or reschedule',
+        () async {
+          final task = await repoWithNotifications.createTask(
+            uid: 'user-123',
+            listId: 'inbox-456',
+            title: 'Initial Task',
+          );
+          reset(mockNotificationService);
+
+          await repoWithNotifications.updateTask(
+            task.taskId,
+            title: 'Updated Title',
+            notes: 'New notes',
+          );
+
+          verifyNever(() => mockNotificationService.scheduleForTask(any()));
+          verifyNever(() => mockNotificationService.cancelForTask(any()));
+        },
+      );
+
+      test('updateTask with clearDueDate cancels notification', () async {
+        final due = DateTime.now().add(const Duration(days: 1));
+        final task = await repoWithNotifications.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Due Task',
+          dueDate: due,
+        );
+        reset(mockNotificationService);
+        when(() => mockNotificationService.cancelForTask(any()))
+            .thenAnswer((_) async {});
+
+        await repoWithNotifications.updateTask(task.taskId, clearDueDate: true);
+
+        verify(() => mockNotificationService.cancelForTask(task.taskId))
+            .called(1);
+      });
+
+      test('toggleTaskCompleted(true) cancels notification', () async {
+        final due = DateTime.now().add(const Duration(days: 1));
+        final task = await repoWithNotifications.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Due Task',
+          dueDate: due,
+        );
+        reset(mockNotificationService);
+        when(() => mockNotificationService.cancelForTask(any()))
+            .thenAnswer((_) async {});
+
+        await repoWithNotifications.toggleTaskCompleted(
+          task.taskId,
+          isCompleted: true,
+        );
+
+        verify(() => mockNotificationService.cancelForTask(task.taskId))
+            .called(1);
+      });
+
+      test(
+        'toggleTaskCompleted(false) on task with dueDate reschedules',
+        () async {
+          final due = DateTime.now().add(const Duration(days: 1));
+          final task = await repoWithNotifications.createTask(
+            uid: 'user-123',
+            listId: 'inbox-456',
+            title: 'Due Task',
+            dueDate: due,
+          );
+          await repoWithNotifications.toggleTaskCompleted(
+            task.taskId,
+            isCompleted: true,
+          );
+          reset(mockNotificationService);
+          when(() => mockNotificationService.scheduleForTask(any()))
+              .thenAnswer((_) async {});
+
+          await repoWithNotifications.toggleTaskCompleted(
+            task.taskId,
+            isCompleted: false,
+          );
+
+          verify(
+            () => mockNotificationService.scheduleForTask(
+              any(
+                that: isA<Task>().having(
+                  (t) => t.taskId,
+                  'taskId',
+                  task.taskId,
+                ),
+              ),
+            ),
+          ).called(1);
+        },
+      );
+
+      test('softDeleteTask cancels notification', () async {
+        final due = DateTime.now().add(const Duration(days: 1));
+        final task = await repoWithNotifications.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Due Task',
+          dueDate: due,
+        );
+        reset(mockNotificationService);
+        when(() => mockNotificationService.cancelForTask(any()))
+            .thenAnswer((_) async {});
+
+        await repoWithNotifications.softDeleteTask(task.taskId);
+
+        verify(() => mockNotificationService.cancelForTask(task.taskId))
+            .called(1);
+      });
+
+      test('permanentlyDeleteTask cancels notification defensively', () async {
+        final due = DateTime.now().add(const Duration(days: 1));
+        final task = await repoWithNotifications.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Due Task',
+          dueDate: due,
+        );
+        reset(mockNotificationService);
+        when(() => mockNotificationService.cancelForTask(any()))
+            .thenAnswer((_) async {});
+
+        await repoWithNotifications.permanentlyDeleteTask(
+          uid: 'user-123',
+          taskId: task.taskId,
+        );
+
+        verify(() => mockNotificationService.cancelForTask(task.taskId))
+            .called(1);
+      });
+
+      test(
+        'restoreTask reschedules notification if task has a dueDate',
+        () async {
+          final due = DateTime.now().add(const Duration(days: 1));
+          final task = await repoWithNotifications.createTask(
+            uid: 'user-123',
+            listId: 'inbox-456',
+            title: 'Due Task',
+            dueDate: due,
+          );
+          await repoWithNotifications.softDeleteTask(task.taskId);
+          reset(mockNotificationService);
+          when(() => mockNotificationService.scheduleForTask(any()))
+              .thenAnswer((_) async {});
+
+          await repoWithNotifications.restoreTask(
+            uid: 'user-123',
+            taskId: task.taskId,
+          );
+
+          verify(
+            () => mockNotificationService.scheduleForTask(
+              any(
+                that: isA<Task>().having(
+                  (t) => t.taskId,
+                  'taskId',
+                  task.taskId,
+                ),
+              ),
+            ),
+          ).called(1);
+        },
+      );
+
+      test('notificationService failure does not prevent Firestore operation from succeeding', () async {
+        reset(mockNotificationService);
+        when(() => mockNotificationService.scheduleForTask(any()))
+            .thenThrow(Exception('Notification platform channel failed'));
+
+        final due = DateTime.now().add(const Duration(days: 1));
+        final task = await repoWithNotifications.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Resilient Task',
+          dueDate: due,
+        );
+
+        // Verify Firestore write succeeded despite notification failure
+        expect(task.taskId, isNotEmpty);
+        final docSnapshot = await fakeFirestore
+            .collection('tasks')
+            .doc(task.taskId)
+            .get();
+        expect(docSnapshot.exists, isTrue);
+        expect(docSnapshot.data()!['title'], equals('Resilient Task'));
       });
     });
   });
