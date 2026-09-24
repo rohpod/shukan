@@ -1,13 +1,15 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/firebase/firebase_providers.dart';
+import '../../../core/notifications/notification_service.dart';
 import '../../auth/providers/auth_providers.dart';
 import '../data/task.dart';
 import '../data/task_repository.dart';
 
 final taskRepositoryProvider = Provider<TaskRepository>((ref) {
   final firestore = ref.watch(firestoreProvider);
-  return TaskRepository(firestore);
+  final notificationService = ref.watch(notificationServiceProvider);
+  return TaskRepository(firestore, notificationService);
 });
 
 /// Streams the defaultListId from users/{uid}.

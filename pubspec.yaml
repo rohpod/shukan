@@ -48,6 +48,7 @@ dependencies:
   # Utilities
   uuid: ^4.6.0
   shared_preferences: ^2.5.4
+  flutter_timezone: ^5.1.0
 
 dev_dependencies:
   flutter_test:

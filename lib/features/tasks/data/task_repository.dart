@@ -2,12 +2,34 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../../core/notifications/notification_service.dart';
 import 'task.dart';
 
 class TaskRepository {
   final FirebaseFirestore _firestore;
+  final NotificationService? _notificationService;
 
-  TaskRepository(this._firestore);
+  TaskRepository(this._firestore, [this._notificationService]);
+
+  Future<void> _safeSchedule(Task task) async {
+    if (_notificationService == null) return;
+    try {
+      await _notificationService.scheduleForTask(task);
+    } catch (e, st) {
+      debugPrint(
+        'Failed to schedule notification for task ${task.taskId}: $e\n$st',
+      );
+    }
+  }
+
+  Future<void> _safeCancel(String taskId) async {
+    if (_notificationService == null) return;
+    try {
+      await _notificationService.cancelForTask(taskId);
+    } catch (e, st) {
+      debugPrint('Failed to cancel notification for task $taskId: $e\n$st');
+    }
+  }
 
   CollectionReference<Map<String, dynamic>> get _tasksCollection =>
       _firestore.collection('tasks');
@@ -54,7 +76,7 @@ class TaskRepository {
 
     await docRef.set(data);
 
-    return Task(
+    final task = Task(
       taskId: docRef.id,
       uid: uid,
       listId: listId,
@@ -74,6 +96,12 @@ class TaskRepository {
       completedAt: null,
       deletedAt: null,
     );
+
+    if (dueDate != null) {
+      await _safeSchedule(task);
+    }
+
+    return task;
   }
 
   /// Streams active (non-soft-deleted) tasks for a specific list belonging to [uid],
@@ -158,6 +186,29 @@ class TaskRepository {
     if (updates.isNotEmpty) {
       await _tasksCollection.doc(taskId).update(updates);
     }
+
+    final touchesDue =
+        clearDueDate ||
+        clearDueTime ||
+        !identical(dueDate, _sentinel) ||
+        !identical(dueTime, _sentinel) ||
+        earlyReminderMinutes != null;
+
+    if (touchesDue) {
+      final updatedDoc = await _tasksCollection.doc(taskId).get();
+      if (updatedDoc.exists && updatedDoc.data() != null) {
+        final updatedTask = Task.fromFirestore(updatedDoc);
+        if (!updatedTask.isDeleted &&
+            !updatedTask.isCompleted &&
+            updatedTask.dueDate != null) {
+          await _safeSchedule(updatedTask);
+        } else {
+          await _safeCancel(taskId);
+        }
+      } else {
+        await _safeCancel(taskId);
+      }
+    }
   }
 
   /// Updates the manual [order] attribute of a single task.
@@ -210,11 +261,24 @@ class TaskRepository {
     await _tasksCollection.doc(taskId).update({
       'completedAt': isCompleted ? FieldValue.serverTimestamp() : null,
     });
+
+    if (isCompleted) {
+      await _safeCancel(taskId);
+    } else {
+      final doc = await _tasksCollection.doc(taskId).get();
+      if (doc.exists && doc.data() != null) {
+        final task = Task.fromFirestore(doc);
+        if (!task.isDeleted && task.dueDate != null) {
+          await _safeSchedule(task);
+        }
+      }
+    }
   }
 
   /// Soft-deletes a task by setting its [deletedAt] field to the current timestamp.
   Future<void> softDeleteTask(String taskId) async {
     await _tasksCollection.doc(taskId).update({'deletedAt': Timestamp.now()});
+    await _safeCancel(taskId);
   }
 
   /// Streams soft-deleted tasks belonging to [uid], ordered descending by [deletedAt].
@@ -440,6 +504,14 @@ class TaskRepository {
     }
 
     await _tasksCollection.doc(taskId).update(updates);
+
+    final restoredDoc = await _tasksCollection.doc(taskId).get();
+    if (restoredDoc.exists && restoredDoc.data() != null) {
+      final restoredTask = Task.fromFirestore(restoredDoc);
+      if (!restoredTask.isCompleted && restoredTask.dueDate != null) {
+        await _safeSchedule(restoredTask);
+      }
+    }
   }
 
   /// Permanently hard-deletes a task document from Firestore.
@@ -459,6 +531,7 @@ class TaskRepository {
     }
 
     await _tasksCollection.doc(taskId).delete();
+    await _safeCancel(taskId);
   }
 
   /// Permanently deletes all soft-deleted tasks belonging to [uid].
