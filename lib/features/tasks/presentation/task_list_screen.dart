@@ -6,10 +6,12 @@ import '../../lists/providers/list_providers.dart';
 import '../../tags/providers/tag_providers.dart';
 import '../data/task.dart';
 import '../domain/task_constants.dart';
+import '../domain/task_priority_filter.dart';
 import '../domain/task_sort_options.dart';
 import '../providers/task_providers.dart';
 import '../providers/task_sort_providers.dart';
 import '../providers/task_tag_filter_providers.dart';
+import 'widgets/empty_state_view.dart';
 import 'widgets/show_completed_toggle.dart';
 import 'widgets/task_priority_filter_selector.dart';
 import 'widgets/task_row_tag_chips.dart';
@@ -92,6 +94,9 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
     final tasksAsync = ref.watch(sortedTasksForListProvider(listId));
     final sortOption = ref.watch(taskSortModeProvider(listId));
     final tagFilter = ref.watch(taskTagFilterProvider(listId));
+    final rawTasks =
+        ref.watch(tasksForListProvider(listId)).value ?? const <Task>[];
+    final unfilteredCount = rawTasks.length;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -119,12 +124,36 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
             child: tasksAsync.when(
               data: (tasks) {
                 if (tasks.isEmpty) {
-                  return const Center(
-                    child: Text(
-                      'No tasks yet',
-                      key: Key('noTasksText'),
-                      style: TextStyle(color: Colors.grey),
-                    ),
+                  if (unfilteredCount > 0) {
+                    final allCompleted = rawTasks.every((t) => t.isCompleted);
+                    return EmptyStateView(
+                      icon: Icons.filter_alt_off_outlined,
+                      message: 'No tasks match your filters',
+                      messageKey: const Key('noTasksText'),
+                      actionLabel: 'Clear filters',
+                      actionKey: Key('clearFiltersButton_$listId'),
+                      onAction: () {
+                        ref
+                            .read(taskPriorityFilterProvider(listId).notifier)
+                            .setFilter(TaskPriorityFilter.all);
+                        ref
+                            .read(taskTagFilterProvider(listId).notifier)
+                            .clearAll();
+                        ref
+                            .read(showCompletedTasksProvider(listId).notifier)
+                            .setShowCompleted(allCompleted);
+                      },
+                    );
+                  }
+
+                  return EmptyStateView(
+                    icon: Icons.inbox_outlined,
+                    message: 'No tasks yet',
+                    messageKey: const Key('noTasksText'),
+                    actionLabel: 'Add task',
+                    actionIcon: Icons.add,
+                    actionKey: const Key('emptyStateAddTaskButton'),
+                    onAction: () => _showTaskDialog(context, uid, listId),
                   );
                 }
 

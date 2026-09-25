@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../tasks/data/task.dart';
+import '../../tasks/domain/task_priority_filter.dart';
 import '../../tasks/domain/task_sort_options.dart';
+import '../../tasks/presentation/widgets/empty_state_view.dart';
 import '../../tasks/presentation/widgets/show_completed_toggle.dart';
 import '../../tasks/presentation/widgets/task_priority_filter_selector.dart';
 import '../../tasks/presentation/widgets/task_row_tag_chips.dart';
@@ -37,6 +39,10 @@ class _TagDetailScreenState extends ConsumerState<TagDetailScreen> {
     final tasksAsync = ref.watch(sortedTasksForTagDetailProvider(viewKey));
     final sortOption = ref.watch(taskSortModeProvider(viewKey));
     final tagFilter = ref.watch(taskTagFilterProvider(viewKey));
+    final unfilteredTasks =
+        ref.watch(rawTasksForTagProvider(widget.tagId)).value ??
+            const <Task>[];
+    final unfilteredCount = unfilteredTasks.length;
     final tagsAsync = ref.watch(tagsForCurrentUserProvider);
     final currentTag = tagsAsync.value
         ?.where((t) => t.tagId == widget.tagId)
@@ -70,12 +76,33 @@ class _TagDetailScreenState extends ConsumerState<TagDetailScreen> {
             child: tasksAsync.when(
               data: (tasks) {
                 if (tasks.isEmpty) {
-                  return const Center(
-                    child: Text(
-                      'No tasks found',
-                      key: Key('noTasksText'),
-                      style: TextStyle(color: Colors.grey),
-                    ),
+                  if (unfilteredCount > 0) {
+                    final allCompleted =
+                        unfilteredTasks.every((t) => t.isCompleted);
+                    return EmptyStateView(
+                      icon: Icons.filter_alt_off_outlined,
+                      message: 'No tasks match your filters',
+                      messageKey: const Key('noTasksText'),
+                      actionLabel: 'Clear filters',
+                      actionKey: Key('clearFiltersButton_$viewKey'),
+                      onAction: () {
+                        ref
+                            .read(taskPriorityFilterProvider(viewKey).notifier)
+                            .setFilter(TaskPriorityFilter.all);
+                        ref
+                            .read(taskTagFilterProvider(viewKey).notifier)
+                            .setSelectedTags({widget.tagId});
+                        ref
+                            .read(showCompletedTasksProvider(viewKey).notifier)
+                            .setShowCompleted(allCompleted);
+                      },
+                    );
+                  }
+
+                  return const EmptyStateView(
+                    icon: Icons.label_outline,
+                    message: 'No tasks found',
+                    messageKey: Key('noTasksText'),
                   );
                 }
 

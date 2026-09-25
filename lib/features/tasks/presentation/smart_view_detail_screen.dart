@@ -9,12 +9,14 @@ import '../../lists/presentation/list_detail_screen.dart';
 import '../../lists/providers/list_providers.dart';
 import '../data/task.dart';
 import '../domain/smart_view_models.dart';
+import '../domain/task_priority_filter.dart';
 import '../domain/task_sort_options.dart';
 import '../providers/smart_view_providers.dart';
 import '../providers/task_providers.dart';
 import '../providers/task_sort_providers.dart';
 import '../providers/task_tag_filter_providers.dart';
 import 'task_list_screen.dart';
+import 'widgets/empty_state_view.dart';
 import 'widgets/show_completed_toggle.dart';
 import 'widgets/task_priority_filter_selector.dart';
 import 'widgets/task_row_tag_chips.dart';
@@ -100,6 +102,12 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
 
     final currentDate = ref.watch(currentDateProvider);
 
+    final viewKey = widget.viewType.name;
+    final unfilteredTasks =
+        ref.watch(unfilteredSmartViewTasksProvider(widget.viewType)).value ??
+            const <Task>[];
+    final unfilteredCount = unfilteredTasks.length;
+
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -115,13 +123,13 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
               scrollDirection: Axis.horizontal,
               child: Row(
                 children: [
-                  TaskSortSelector(viewKey: widget.viewType.name),
+                  TaskSortSelector(viewKey: viewKey),
                   const SizedBox(width: 8),
-                  TaskPriorityFilterSelector(viewKey: widget.viewType.name),
+                  TaskPriorityFilterSelector(viewKey: viewKey),
                   const SizedBox(width: 8),
-                  ShowCompletedToggle(viewKey: widget.viewType.name),
+                  ShowCompletedToggle(viewKey: viewKey),
                   const SizedBox(width: 8),
-                  TaskTagFilterSelector(viewKey: widget.viewType.name),
+                  TaskTagFilterSelector(viewKey: viewKey),
                 ],
               ),
             ),
@@ -132,12 +140,70 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
               skipLoadingOnReload: true,
               data: (tasks) {
                 if (tasks.isEmpty) {
-                  return const Center(
-                    child: Text(
-                      'No tasks found',
-                      key: Key('noTasksText'),
-                      style: TextStyle(color: Colors.grey),
-                    ),
+                  if (unfilteredCount > 0) {
+                    final allCompleted =
+                        unfilteredTasks.every((t) => t.isCompleted);
+                    return EmptyStateView(
+                      icon: Icons.filter_alt_off_outlined,
+                      message: 'No tasks match your filters',
+                      messageKey: const Key('noTasksText'),
+                      actionLabel: 'Clear filters',
+                      actionKey: Key('clearFiltersButton_$viewKey'),
+                      onAction: () {
+                        ref
+                            .read(taskPriorityFilterProvider(viewKey).notifier)
+                            .setFilter(TaskPriorityFilter.all);
+                        ref
+                            .read(taskTagFilterProvider(viewKey).notifier)
+                            .clearAll();
+                        ref
+                            .read(showCompletedTasksProvider(viewKey).notifier)
+                            .setShowCompleted(allCompleted);
+                      },
+                    );
+                  }
+
+                  final IconData emptyIcon;
+                  final String emptyMessage;
+                  final bool canAdd = effectiveListId != null &&
+                      widget.viewType != SmartViewType.scheduled;
+
+                  switch (widget.viewType) {
+                    case SmartViewType.today:
+                      emptyIcon = Icons.today_outlined;
+                      emptyMessage = 'Nothing due today';
+                      break;
+                    case SmartViewType.thisWeek:
+                      emptyIcon = Icons.calendar_view_week_outlined;
+                      emptyMessage = 'No tasks scheduled this week';
+                      break;
+                    case SmartViewType.scheduled:
+                      emptyIcon = Icons.event_note_outlined;
+                      emptyMessage = 'No scheduled tasks';
+                      break;
+                  }
+
+                  return EmptyStateView(
+                    icon: emptyIcon,
+                    message: emptyMessage,
+                    messageKey: const Key('noTasksText'),
+                    actionLabel: canAdd ? 'Add task' : null,
+                    actionIcon: canAdd ? Icons.add : null,
+                    actionKey:
+                        canAdd ? const Key('emptyStateAddTaskButton') : null,
+                    onAction: canAdd
+                        ? () {
+                            final now = ref.read(currentDateProvider);
+                            final initialDate =
+                                SmartViewDateUtils.startOfDay(now);
+                            _openTaskDialog(
+                              context,
+                              uid,
+                              effectiveListId,
+                              initialDueDate: initialDate,
+                            );
+                          }
+                        : null,
                   );
                 }
 

@@ -6,6 +6,7 @@ import '../../lists/data/list.dart';
 import '../../lists/providers/list_providers.dart';
 import '../data/task.dart';
 import '../providers/task_providers.dart';
+import 'widgets/empty_state_view.dart';
 
 class RecentlyDeletedScreen extends ConsumerStatefulWidget {
   const RecentlyDeletedScreen({super.key});
@@ -196,24 +197,11 @@ class _RecentlyDeletedScreenState extends ConsumerState<RecentlyDeletedScreen> {
               child: ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 children: [
-                  SizedBox(height: MediaQuery.of(context).size.height * 0.3),
-                  const Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.delete_outline,
-                          size: 64,
-                          color: Colors.grey,
-                        ),
-                        SizedBox(height: 16),
-                        Text(
-                          'No recently deleted tasks',
-                          key: Key('noRecentlyDeletedTasksText'),
-                          style: TextStyle(fontSize: 16, color: Colors.grey),
-                        ),
-                      ],
-                    ),
+                  SizedBox(height: MediaQuery.of(context).size.height * 0.2),
+                  const EmptyStateView(
+                    icon: Icons.delete_outline,
+                    message: 'No recently deleted tasks',
+                    messageKey: Key('noRecentlyDeletedTasksText'),
                   ),
                 ],
               ),

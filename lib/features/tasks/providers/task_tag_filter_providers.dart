@@ -178,40 +178,66 @@ final tagBrowserEntriesProvider = Provider<AsyncValue<List<TagBrowserEntry>>>((
   return AsyncData(entries);
 });
 
-/// Family provider that streams tasks for TagDetailScreen matching the active tag filter.
-final tasksForTagDetailProvider = StreamProvider.family<List<Task>, String>((
+/// Family stream provider returning all tasks for [tagId] without completion or priority filters.
+/// Used to compute unfiltered task counts for TagDetailScreen.
+final rawTasksForTagProvider = StreamProvider.family<List<Task>, String>((
   ref,
-  viewKey,
+  tagId,
 ) {
   final uid = ref.watch(currentUidProvider);
   if (uid == null) {
     return Stream.value(const <Task>[]);
   }
 
+  final repository = ref.watch(taskRepositoryProvider);
+  return repository.streamTasksForTagIds(
+    uid: uid,
+    tagIds: [tagId],
+    onlyIncomplete: false,
+  );
+});
+
+/// Family provider that streams tasks for TagDetailScreen matching the active tag filter.
+final tasksForTagDetailProvider = StreamProvider.family<List<Task>, String>((
+  ref,
+  viewKey,
+) {
+  final tagId = viewKey.startsWith('tag_') ? viewKey.substring(4) : viewKey;
+  final rawAsync = ref.watch(rawTasksForTagProvider(tagId));
   final selectedTags = ref.watch(taskTagFilterProvider(viewKey));
   final showCompleted = ref.watch(showCompletedTasksProvider(viewKey));
   final priorityFilter = ref.watch(taskPriorityFilterProvider(viewKey));
-  final repository = ref.watch(taskRepositoryProvider);
 
   if (selectedTags.isEmpty) {
     return Stream.value(const <Task>[]);
   }
 
-  final baseStream = repository.streamTasksForTagIds(
-    uid: uid,
-    tagIds: selectedTags.toList(),
-    onlyIncomplete: !showCompleted,
-    priority: priorityFilter.firestoreValue,
+  return rawAsync.when(
+    data: (tasks) {
+      final filtered = tasks.where((t) {
+        if (!t.tagIds.any(selectedTags.contains)) return false;
+        if (!showCompleted && t.isCompleted) return false;
+        if (priorityFilter != TaskPriorityFilter.all &&
+            t.priority != priorityFilter.firestoreValue) {
+          return false;
+        }
+        return true;
+      }).toList();
+      return Stream.value(filtered);
+    },
+    loading: () => Stream<List<Task>>.fromFuture(
+      ref.watch(rawTasksForTagProvider(tagId).future).then((tasks) {
+        return tasks.where((t) {
+          if (!t.tagIds.any(selectedTags.contains)) return false;
+          if (!showCompleted && t.isCompleted) return false;
+          if (priorityFilter != TaskPriorityFilter.all &&
+              t.priority != priorityFilter.firestoreValue) {
+            return false;
+          }
+          return true;
+        }).toList();
+      }),
+    ),
+    error: (e, st) => Stream<List<Task>>.error(e, st),
   );
-
-  return baseStream.map((tasks) {
-    return tasks.where((t) {
-      if (!showCompleted && t.isCompleted) return false;
-      if (priorityFilter != TaskPriorityFilter.all &&
-          t.priority != priorityFilter.firestoreValue) {
-        return false;
-      }
-      return true;
-    }).toList();
-  });
 });
