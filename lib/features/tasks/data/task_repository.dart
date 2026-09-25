@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/notifications/notification_service.dart';
+import '../domain/task_recurrence_utils.dart';
 import 'task.dart';
 
 class TaskRepository {
@@ -253,11 +254,34 @@ class TaskRepository {
     await batch.commit();
   }
 
-  /// Marks a task completed or clears its completion status.
+  /// Marks a task completed, clears its completion status, or advances its due date if repeating.
   Future<void> toggleTaskCompleted(
     String taskId, {
     required bool isCompleted,
   }) async {
+    final doc = await _tasksCollection.doc(taskId).get();
+    if (!doc.exists || doc.data() == null) return;
+    final task = Task.fromFirestore(doc);
+
+    if (isCompleted &&
+        task.repeatRule != 'none' &&
+        task.repeatRule != 'custom') {
+      final baseDate = task.dueDate ?? DateTime.now();
+      final nextDueDate = computeNextDueDate(baseDate, task.repeatRule);
+
+      await _tasksCollection.doc(taskId).update({
+        'dueDate': Timestamp.fromDate(nextDueDate),
+        'completedAt': null,
+      });
+
+      final advancedTask = task.copyWith(
+        dueDate: nextDueDate,
+        completedAt: null,
+      );
+      await _safeSchedule(advancedTask);
+      return;
+    }
+
     await _tasksCollection.doc(taskId).update({
       'completedAt': isCompleted ? FieldValue.serverTimestamp() : null,
     });
@@ -265,12 +289,8 @@ class TaskRepository {
     if (isCompleted) {
       await _safeCancel(taskId);
     } else {
-      final doc = await _tasksCollection.doc(taskId).get();
-      if (doc.exists && doc.data() != null) {
-        final task = Task.fromFirestore(doc);
-        if (!task.isDeleted && task.dueDate != null) {
-          await _safeSchedule(task);
-        }
+      if (!task.isDeleted && task.dueDate != null) {
+        await _safeSchedule(task);
       }
     }
   }
