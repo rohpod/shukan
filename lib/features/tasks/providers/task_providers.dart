@@ -5,6 +5,7 @@ import '../../../core/notifications/notification_service.dart';
 import '../../auth/providers/auth_providers.dart';
 import '../data/task.dart';
 import '../data/task_repository.dart';
+export 'missed_tasks_providers.dart';
 
 final taskRepositoryProvider = Provider<TaskRepository>((ref) {
   final firestore = ref.watch(firestoreProvider);

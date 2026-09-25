@@ -9,8 +9,13 @@ import 'package:shukan/features/auth/presentation/home_screen.dart';
 import 'package:shukan/features/lists/presentation/list_detail_screen.dart';
 import 'package:shukan/features/tags/presentation/tag_browser_screen.dart';
 import 'package:shukan/features/tasks/presentation/recently_deleted_screen.dart';
+import 'package:timezone/data/latest_all.dart' as tz_data;
 
 void main() {
+  setUpAll(() {
+    tz_data.initializeTimeZones();
+  });
+
   late MockFirebaseAuth mockAuth;
   late FakeFirebaseFirestore fakeFirestore;
   const uid = 'test-user-id';
@@ -373,6 +378,36 @@ void main() {
               .data,
           '0',
         );
+      },
+    );
+
+    testWidgets(
+      'shows missed tasks banner when overdue tasks exist, and dismisses on tap',
+      (tester) async {
+        final yesterday = DateTime.now().subtract(const Duration(days: 1));
+        await fakeFirestore.collection('tasks').doc('t-overdue').set({
+          'taskId': 't-overdue',
+          'uid': uid,
+          'listId': customListId,
+          'title': 'Overdue Task',
+          'dueDate': Timestamp.fromDate(yesterday),
+          'deletedAt': null,
+          'completedAt': null,
+        });
+
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('missedTasksBanner')), findsOneWidget);
+        expect(find.text('1 task overdue'), findsOneWidget);
+
+        // Tap dismiss
+        await tester.tap(
+          find.byKey(const Key('missedTasksBannerDismissButton')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('missedTasksBanner')), findsNothing);
       },
     );
   });
