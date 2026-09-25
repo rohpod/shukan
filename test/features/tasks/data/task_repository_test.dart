@@ -1770,6 +1770,275 @@ void main() {
         },
       );
 
+      test('toggleTaskCompleted(true) on daily-repeat task advances dueDate by 1 day and reschedules', () async {
+        final due = DateTime(2026, 5, 10, 10, 0);
+        final task = await repoWithNotifications.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Daily Task',
+          dueDate: due,
+          dueTime: '10:00',
+        );
+        await repoWithNotifications.updateTask(
+          task.taskId,
+          repeatRule: 'daily',
+        );
+        reset(mockNotificationService);
+        when(() => mockNotificationService.scheduleForTask(any()))
+            .thenAnswer((_) async {});
+        when(() => mockNotificationService.cancelForTask(any()))
+            .thenAnswer((_) async {});
+
+        await repoWithNotifications.toggleTaskCompleted(
+          task.taskId,
+          isCompleted: true,
+        );
+
+        final doc = await fakeFirestore
+            .collection('tasks')
+            .doc(task.taskId)
+            .get();
+        final data = doc.data()!;
+        expect(data['completedAt'], isNull);
+        final updatedDue = (data['dueDate'] as Timestamp).toDate();
+        expect(updatedDue, equals(DateTime(2026, 5, 11, 10, 0)));
+
+        verify(
+          () => mockNotificationService.scheduleForTask(
+            any(
+              that: isA<Task>()
+                  .having((t) => t.taskId, 'taskId', task.taskId)
+                  .having(
+                    (t) => t.dueDate,
+                    'dueDate',
+                    DateTime(2026, 5, 11, 10, 0),
+                  )
+                  .having((t) => t.completedAt, 'completedAt', isNull),
+            ),
+          ),
+        ).called(1);
+        verifyNever(() => mockNotificationService.cancelForTask(task.taskId));
+      });
+
+      test('toggleTaskCompleted(true) on weekly-repeat task advances dueDate by 7 days and reschedules', () async {
+        final due = DateTime(2026, 5, 10, 10, 0);
+        final task = await repoWithNotifications.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Weekly Task',
+          dueDate: due,
+        );
+        await repoWithNotifications.updateTask(
+          task.taskId,
+          repeatRule: 'weekly',
+        );
+        reset(mockNotificationService);
+        when(() => mockNotificationService.scheduleForTask(any()))
+            .thenAnswer((_) async {});
+        when(() => mockNotificationService.cancelForTask(any()))
+            .thenAnswer((_) async {});
+
+        await repoWithNotifications.toggleTaskCompleted(
+          task.taskId,
+          isCompleted: true,
+        );
+
+        final doc = await fakeFirestore
+            .collection('tasks')
+            .doc(task.taskId)
+            .get();
+        final data = doc.data()!;
+        expect(data['completedAt'], isNull);
+        final updatedDue = (data['dueDate'] as Timestamp).toDate();
+        expect(updatedDue, equals(DateTime(2026, 5, 17, 10, 0)));
+
+        verify(
+          () => mockNotificationService.scheduleForTask(
+            any(
+              that: isA<Task>()
+                  .having((t) => t.taskId, 'taskId', task.taskId)
+                  .having(
+                    (t) => t.dueDate,
+                    'dueDate',
+                    DateTime(2026, 5, 17, 10, 0),
+                  )
+                  .having((t) => t.completedAt, 'completedAt', isNull),
+            ),
+          ),
+        ).called(1);
+        verifyNever(() => mockNotificationService.cancelForTask(task.taskId));
+      });
+
+      test('toggleTaskCompleted(true) on monthly-repeat task with clamping clamps to Feb 28', () async {
+        final due = DateTime(2026, 1, 31, 14, 0);
+        final task = await repoWithNotifications.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Monthly Clamped Task',
+          dueDate: due,
+        );
+        await repoWithNotifications.updateTask(
+          task.taskId,
+          repeatRule: 'monthly',
+        );
+        reset(mockNotificationService);
+        when(() => mockNotificationService.scheduleForTask(any()))
+            .thenAnswer((_) async {});
+        when(() => mockNotificationService.cancelForTask(any()))
+            .thenAnswer((_) async {});
+
+        await repoWithNotifications.toggleTaskCompleted(
+          task.taskId,
+          isCompleted: true,
+        );
+
+        final doc = await fakeFirestore
+            .collection('tasks')
+            .doc(task.taskId)
+            .get();
+        final data = doc.data()!;
+        expect(data['completedAt'], isNull);
+        final updatedDue = (data['dueDate'] as Timestamp).toDate();
+        expect(updatedDue, equals(DateTime(2026, 2, 28, 14, 0)));
+
+        verify(
+          () => mockNotificationService.scheduleForTask(
+            any(
+              that: isA<Task>()
+                  .having((t) => t.taskId, 'taskId', task.taskId)
+                  .having(
+                    (t) => t.dueDate,
+                    'dueDate',
+                    DateTime(2026, 2, 28, 14, 0),
+                  ),
+            ),
+          ),
+        ).called(1);
+        verifyNever(() => mockNotificationService.cancelForTask(task.taskId));
+      });
+
+      test('toggleTaskCompleted(true) on repeat task retains earlyReminderMinutes on rescheduled task', () async {
+        final due = DateTime(2026, 5, 10, 10, 0);
+        final task = await repoWithNotifications.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Early Reminder Repeat Task',
+          dueDate: due,
+        );
+        await repoWithNotifications.updateTask(
+          task.taskId,
+          repeatRule: 'daily',
+          earlyReminderMinutes: 30,
+        );
+        reset(mockNotificationService);
+        when(() => mockNotificationService.scheduleForTask(any()))
+            .thenAnswer((_) async {});
+        when(() => mockNotificationService.cancelForTask(any()))
+            .thenAnswer((_) async {});
+
+        await repoWithNotifications.toggleTaskCompleted(
+          task.taskId,
+          isCompleted: true,
+        );
+
+        verify(
+          () => mockNotificationService.scheduleForTask(
+            any(
+              that: isA<Task>()
+                  .having((t) => t.taskId, 'taskId', task.taskId)
+                  .having(
+                    (t) => t.earlyReminderMinutes,
+                    'earlyReminderMinutes',
+                    30,
+                  )
+                  .having(
+                    (t) => t.dueDate,
+                    'dueDate',
+                    DateTime(2026, 5, 11, 10, 0),
+                  ),
+            ),
+          ),
+        ).called(1);
+        verifyNever(() => mockNotificationService.cancelForTask(task.taskId));
+      });
+
+      test('toggleTaskCompleted(true) on repeatRule == custom completes normally and cancels notification', () async {
+        final due = DateTime.now().add(const Duration(days: 1));
+        final task = await repoWithNotifications.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Custom Repeat Task',
+          dueDate: due,
+        );
+        await repoWithNotifications.updateTask(
+          task.taskId,
+          repeatRule: 'custom',
+        );
+        reset(mockNotificationService);
+        when(() => mockNotificationService.cancelForTask(any()))
+            .thenAnswer((_) async {});
+
+        await repoWithNotifications.toggleTaskCompleted(
+          task.taskId,
+          isCompleted: true,
+        );
+
+        final doc = await fakeFirestore
+            .collection('tasks')
+            .doc(task.taskId)
+            .get();
+        final data = doc.data()!;
+        expect(data['completedAt'], isNotNull);
+
+        verify(() => mockNotificationService.cancelForTask(task.taskId))
+            .called(1);
+        verifyNever(() => mockNotificationService.scheduleForTask(any()));
+      });
+
+      test('toggleTaskCompleted(false) on task with repeatRule un-completes without advancing', () async {
+        final due = DateTime(2026, 5, 10, 10, 0);
+        final task = await repoWithNotifications.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Repeat Task',
+          dueDate: due,
+        );
+        await repoWithNotifications.updateTask(
+          task.taskId,
+          repeatRule: 'daily',
+        );
+        await fakeFirestore.collection('tasks').doc(task.taskId).update({
+          'completedAt': Timestamp.now(),
+        });
+        reset(mockNotificationService);
+        when(() => mockNotificationService.scheduleForTask(any()))
+            .thenAnswer((_) async {});
+
+        await repoWithNotifications.toggleTaskCompleted(
+          task.taskId,
+          isCompleted: false,
+        );
+
+        final doc = await fakeFirestore
+            .collection('tasks')
+            .doc(task.taskId)
+            .get();
+        final data = doc.data()!;
+        expect(data['completedAt'], isNull);
+        final currentDue = (data['dueDate'] as Timestamp).toDate();
+        expect(currentDue, equals(due));
+
+        verify(
+          () => mockNotificationService.scheduleForTask(
+            any(
+              that: isA<Task>()
+                  .having((t) => t.taskId, 'taskId', task.taskId)
+                  .having((t) => t.dueDate, 'dueDate', due),
+            ),
+          ),
+        ).called(1);
+      });
+
       test('softDeleteTask cancels notification', () async {
         final due = DateTime.now().add(const Duration(days: 1));
         final task = await repoWithNotifications.createTask(
