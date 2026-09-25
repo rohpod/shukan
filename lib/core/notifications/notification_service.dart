@@ -83,12 +83,15 @@ class NotificationService {
     }
   }
 
-  /// Schedules a notification for the given [task].
+  /// Schedules up to two notifications for the given [task]:
+  /// 1. Main notification firing exactly at [task.dueDate] + [task.dueTime]
+  ///    (or 9:00 AM local time if [task.dueTime] is omitted).
+  /// 2. Early reminder notification firing at the due time minus [task.earlyReminderMinutes]
+  ///    when [task.earlyReminderMinutes] > 0.
   ///
-  /// - If [task.dueDate] is null or the fire time is in the past, any existing
-  ///   notification for [task.taskId] is cancelled.
-  /// - If [task.dueTime] is omitted, defaults to 9:00 AM local time.
-  /// - Subtracts [task.earlyReminderMinutes] from the scheduled time.
+  /// - If [task.dueDate] is null, both notifications are cancelled.
+  /// - If a fire time is strictly in the past, its corresponding notification is cancelled.
+  /// - If [task.earlyReminderMinutes] <= 0, any early reminder notification is cancelled.
   /// - Uses [AndroidScheduleMode.exactAllowWhileIdle] on Android.
   Future<void> scheduleForTask(Task task, {DateTime? now}) async {
     if (kIsWeb) return;
@@ -98,20 +101,8 @@ class NotificationService {
       return;
     }
 
-    final fireTime = computeTaskFireTime(
-      dueDate: task.dueDate,
-      dueTime: task.dueTime,
-      earlyReminderMinutes: task.earlyReminderMinutes,
-      now: now,
-    );
-
-    if (fireTime == null) {
-      // Fire time is either missing or in the past: cancel any pending reminder.
-      await cancelForTask(task.taskId);
-      return;
-    }
-
-    final id = taskNotificationId(task.taskId);
+    final mainId = taskNotificationId(task.taskId);
+    final earlyId = taskEarlyReminderNotificationId(task.taskId);
 
     const AndroidNotificationDetails androidDetails =
         AndroidNotificationDetails(
@@ -135,22 +126,59 @@ class NotificationService {
       macOS: darwinDetails,
     );
 
-    await _plugin.zonedSchedule(
-      id: id,
-      title: task.title,
-      body: task.notes.isNotEmpty ? task.notes : null,
-      scheduledDate: fireTime,
-      notificationDetails: notificationDetails,
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      payload: task.taskId,
+    // 1. Schedule or cancel main notification (due date + time)
+    final mainFireTime = computeTaskFireTime(
+      dueDate: task.dueDate,
+      dueTime: task.dueTime,
+      now: now,
     );
+
+    if (mainFireTime != null) {
+      await _plugin.zonedSchedule(
+        id: mainId,
+        title: task.title,
+        body: task.notes.isNotEmpty ? task.notes : null,
+        scheduledDate: mainFireTime,
+        notificationDetails: notificationDetails,
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        payload: task.taskId,
+      );
+    } else {
+      await _plugin.cancel(id: mainId);
+    }
+
+    // 2. Schedule or cancel early reminder notification
+    if (task.earlyReminderMinutes > 0) {
+      final earlyFireTime = computeEarlyReminderFireTime(
+        dueDate: task.dueDate,
+        dueTime: task.dueTime,
+        earlyReminderMinutes: task.earlyReminderMinutes,
+        now: now,
+      );
+
+      if (earlyFireTime != null) {
+        await _plugin.zonedSchedule(
+          id: earlyId,
+          title: 'Upcoming: ${task.title}',
+          body: task.notes.isNotEmpty ? task.notes : null,
+          scheduledDate: earlyFireTime,
+          notificationDetails: notificationDetails,
+          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          payload: task.taskId,
+        );
+      } else {
+        await _plugin.cancel(id: earlyId);
+      }
+    } else {
+      await _plugin.cancel(id: earlyId);
+    }
   }
 
-  /// Cancels any scheduled notification for [taskId].
+  /// Cancels both the main and early-reminder scheduled notifications for [taskId].
   Future<void> cancelForTask(String taskId) async {
     if (kIsWeb) return;
-    final id = taskNotificationId(taskId);
-    await _plugin.cancel(id: id);
+    await _plugin.cancel(id: taskNotificationId(taskId));
+    await _plugin.cancel(id: taskEarlyReminderNotificationId(taskId));
   }
 }
 
