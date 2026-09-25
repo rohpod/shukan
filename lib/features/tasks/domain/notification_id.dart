@@ -8,3 +8,9 @@ int taskNotificationId(String taskId) {
   }
   return hash & 0x7FFFFFFF;
 }
+
+/// Pure utility function to compute a deterministic 31-bit integer notification ID
+/// for a task's early reminder from a Firestore String [taskId].
+int taskEarlyReminderNotificationId(String taskId) {
+  return taskNotificationId('early_$taskId');
+}

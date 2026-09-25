@@ -81,22 +81,24 @@ void main() {
       },
     );
 
-    test('subtracts earlyReminderMinutes from scheduled fire time', () {
-      tz.setLocalLocation(tz.getLocation('UTC'));
-      final dueDate = DateTime.utc(2026, 10, 15);
-      final now = DateTime.utc(2026, 10, 15, 8, 0);
+    test(
+      'computeTaskFireTime returns unshifted due time (10:00, not 9:30)',
+      () {
+        tz.setLocalLocation(tz.getLocation('UTC'));
+        final dueDate = DateTime.utc(2026, 10, 15);
+        final now = DateTime.utc(2026, 10, 15, 8, 0);
 
-      final fireTime = computeTaskFireTime(
-        dueDate: dueDate,
-        dueTime: '10:00',
-        earlyReminderMinutes: 30,
-        now: now,
-      );
+        final fireTime = computeTaskFireTime(
+          dueDate: dueDate,
+          dueTime: '10:00',
+          now: now,
+        );
 
-      expect(fireTime, isNotNull);
-      expect(fireTime!.hour, equals(9));
-      expect(fireTime.minute, equals(30));
-    });
+        expect(fireTime, isNotNull);
+        expect(fireTime!.hour, equals(10));
+        expect(fireTime.minute, equals(0));
+      },
+    );
 
     test(
       'returns null if computed fire time is in the past relative to now',
@@ -116,24 +118,22 @@ void main() {
       },
     );
 
-    test(
-      'returns null if earlyReminder subtracted fire time is in the past',
-      () {
-        tz.setLocalLocation(tz.getLocation('UTC'));
-        final dueDate = DateTime.utc(2026, 10, 15);
-        // Scheduled is 10:00, 30m early reminder means 09:30. Now is 09:31.
-        final now = DateTime.utc(2026, 10, 15, 9, 31);
+    test('returns non-null for main fire time at 09:31 when due at 10:00 (independent of 09:30 early reminder)', () {
+      tz.setLocalLocation(tz.getLocation('UTC'));
+      final dueDate = DateTime.utc(2026, 10, 15);
+      // Scheduled is 10:00. Now is 09:31. Main fire time is still in future.
+      final now = DateTime.utc(2026, 10, 15, 9, 31);
 
-        final fireTime = computeTaskFireTime(
-          dueDate: dueDate,
-          dueTime: '10:00',
-          earlyReminderMinutes: 30,
-          now: now,
-        );
+      final fireTime = computeTaskFireTime(
+        dueDate: dueDate,
+        dueTime: '10:00',
+        now: now,
+      );
 
-        expect(fireTime, isNull);
-      },
-    );
+      expect(fireTime, isNotNull);
+      expect(fireTime!.hour, equals(10));
+      expect(fireTime.minute, equals(0));
+    });
 
     test('DST sanity: preserves wall-clock time in winter (standard) and summer (daylight saving)', () {
       final nyLocation = tz.getLocation('America/New_York');
@@ -188,6 +188,97 @@ void main() {
       expect(fireTime.day, equals(1));
       expect(fireTime.hour, equals(14));
       expect(fireTime.minute, equals(0));
+    });
+  });
+
+  group('computeEarlyReminderFireTime', () {
+    test('returns null when dueDate is null', () {
+      final fireTime = computeEarlyReminderFireTime(
+        dueDate: null,
+        dueTime: '14:30',
+        earlyReminderMinutes: 30,
+        now: DateTime(2026, 1, 1, 10, 0),
+      );
+      expect(fireTime, isNull);
+    });
+
+    test('returns null when earlyReminderMinutes <= 0', () {
+      tz.setLocalLocation(tz.getLocation('UTC'));
+      final dueDate = DateTime.utc(2026, 10, 15);
+      final now = DateTime.utc(2026, 10, 15, 8, 0);
+
+      expect(
+        computeEarlyReminderFireTime(
+          dueDate: dueDate,
+          dueTime: '10:00',
+          earlyReminderMinutes: 0,
+          now: now,
+        ),
+        isNull,
+      );
+
+      expect(
+        computeEarlyReminderFireTime(
+          dueDate: dueDate,
+          dueTime: '10:00',
+          earlyReminderMinutes: -15,
+          now: now,
+        ),
+        isNull,
+      );
+    });
+
+    test('subtracts earlyReminderMinutes from scheduled due time', () {
+      tz.setLocalLocation(tz.getLocation('UTC'));
+      final dueDate = DateTime.utc(2026, 10, 15);
+      final now = DateTime.utc(2026, 10, 15, 8, 0);
+
+      final fireTime = computeEarlyReminderFireTime(
+        dueDate: dueDate,
+        dueTime: '10:00',
+        earlyReminderMinutes: 30,
+        now: now,
+      );
+
+      expect(fireTime, isNotNull);
+      expect(fireTime!.hour, equals(9));
+      expect(fireTime.minute, equals(30));
+    });
+
+    test(
+      'returns null if earlyReminder subtracted fire time is in the past',
+      () {
+        tz.setLocalLocation(tz.getLocation('UTC'));
+        final dueDate = DateTime.utc(2026, 10, 15);
+        // Scheduled is 10:00, 30m early reminder means 09:30. Now is 09:31.
+        final now = DateTime.utc(2026, 10, 15, 9, 31);
+
+        final fireTime = computeEarlyReminderFireTime(
+          dueDate: dueDate,
+          dueTime: '10:00',
+          earlyReminderMinutes: 30,
+          now: now,
+        );
+
+        expect(fireTime, isNull);
+      },
+    );
+
+    test('applies early reminder to 9:00 AM default for date-only tasks', () {
+      tz.setLocalLocation(tz.getLocation('UTC'));
+      final dueDate = DateTime.utc(2026, 10, 15);
+      final now = DateTime.utc(2026, 10, 15, 7, 0);
+
+      final fireTime = computeEarlyReminderFireTime(
+        dueDate: dueDate,
+        dueTime: null,
+        earlyReminderMinutes: 30,
+        now: now,
+      );
+
+      expect(fireTime, isNotNull);
+      expect(fireTime!.hour, equals(8));
+      expect(fireTime.minute, equals(30));
     });
   });
 }
