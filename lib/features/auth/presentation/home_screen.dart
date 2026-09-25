@@ -7,6 +7,7 @@ import '../../lists/providers/list_providers.dart';
 import '../../tags/presentation/tag_browser_screen.dart';
 import '../../search/presentation/search_screen.dart';
 import '../../tasks/domain/smart_view_models.dart';
+import '../../tasks/presentation/missed_tasks_banner.dart';
 import '../../tasks/presentation/recently_deleted_screen.dart';
 import '../../tasks/presentation/smart_view_detail_screen.dart';
 import '../../tasks/providers/smart_view_providers.dart';
@@ -242,6 +243,7 @@ class HomeScreen extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            const MissedTasksBanner(),
             _buildSmartViews(context, ref),
             Expanded(
               child: listsAsync.when(
