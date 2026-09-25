@@ -8,6 +8,7 @@ import '../../auth/providers/auth_providers.dart';
 import '../../tags/providers/tag_providers.dart';
 import '../../tasks/data/task.dart';
 import '../../tasks/presentation/task_list_screen.dart';
+import '../../tasks/presentation/widgets/empty_state_view.dart';
 import '../../tasks/providers/task_providers.dart';
 import '../providers/search_providers.dart';
 
@@ -248,12 +249,30 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                       }).toList();
 
                       if (matchingTasks.isEmpty) {
-                        return const Center(
-                          child: Text(
-                            'No matching tasks found',
-                            key: Key('noSearchResultsText'),
-                            style: TextStyle(color: Colors.grey),
-                          ),
+                        if (allTasks.isEmpty) {
+                          return const EmptyStateView(
+                            icon: Icons.search_off_outlined,
+                            message: 'No tasks found',
+                            messageKey: Key('noSearchResultsText'),
+                          );
+                        }
+
+                        return EmptyStateView(
+                          icon: Icons.filter_alt_off_outlined,
+                          message: 'No matching tasks found',
+                          messageKey: const Key('noSearchResultsText'),
+                          actionLabel: 'Clear search',
+                          actionIcon: Icons.clear,
+                          actionKey: const Key('clearSearchFiltersButton'),
+                          onAction: () {
+                            _searchController.clear();
+                            _debounceTimer?.cancel();
+                            ref.read(searchQueryProvider.notifier).setQuery('');
+                            ref
+                                .read(searchCompletionFilterProvider.notifier)
+                                .setFilter(SearchCompletionFilter.active);
+                            setState(() {});
+                          },
                         );
                       }
 

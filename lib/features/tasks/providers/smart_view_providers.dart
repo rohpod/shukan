@@ -115,84 +115,120 @@ extension FirstEventTimeoutExtension<T> on Stream<T> {
   }
 }
 
+/// Family provider that streams all non-deleted tasks for a specific [SmartViewType]
+/// without completion, priority, or tag filters applied. Used for unfiltered task counts.
+final unfilteredSmartViewTasksProvider =
+    StreamProvider.family<List<Task>, SmartViewType>((ref, viewType) {
+      final uid = ref.watch(currentUidProvider);
+      if (uid == null) {
+        return Stream.value(const <Task>[]);
+      }
+
+      final repository = ref.watch(taskRepositoryProvider);
+      final currentDate = ref.watch(currentDateProvider);
+      final timeoutDuration = ref.watch(smartViewTimeoutProvider);
+
+      final DateTime? startDueDate;
+      final DateTime? endDueDate;
+
+      switch (viewType) {
+        case SmartViewType.today:
+          startDueDate = null;
+          endDueDate = SmartViewDateUtils.endOfDay(currentDate);
+          break;
+        case SmartViewType.thisWeek:
+          startDueDate = SmartViewDateUtils.startOfWeek(currentDate);
+          endDueDate = SmartViewDateUtils.endOfWeek(currentDate);
+          break;
+        case SmartViewType.scheduled:
+          startDueDate = null;
+          endDueDate = null;
+          break;
+      }
+
+      final baseStream = repository.streamTasksWithDueDate(
+        uid: uid,
+        startDueDate: startDueDate,
+        endDueDate: endDueDate,
+        onlyIncomplete: false,
+      );
+
+      final mappedStream = baseStream.map((tasks) {
+        final startOfToday = SmartViewDateUtils.startOfDay(currentDate);
+        return tasks.where((t) {
+          // In Today view, overdue tasks (dueDate < startOfToday) must only ever be incomplete.
+          // Completed past tasks are never overdue and must not appear in Today view under any filter.
+          if (viewType == SmartViewType.today &&
+              t.dueDate != null &&
+              t.dueDate!.isBefore(startOfToday)) {
+            if (t.isCompleted) return false;
+          }
+
+          return true;
+        }).toList();
+      });
+
+      return mappedStream.timeoutFirstEvent(
+        timeoutDuration,
+        message:
+            'This is taking longer than expected — check your connection or try again',
+      );
+    });
+
 /// Family provider that streams tasks for a specific [SmartViewType].
 ///
-/// Implements server-side filtering on `dueDate` range/inequality and `completedAt == null`
-/// (for incomplete-only mode), with in-memory filtering fallback for complete-only mode.
+/// Filters [unfilteredSmartViewTasksProvider] in-memory by completion toggle,
+/// priority filter, and tag filter without issuing extra Firestore queries.
 final smartViewTasksProvider = StreamProvider.family<List<Task>, SmartViewType>(
   (ref, viewType) {
-    final uid = ref.watch(currentUidProvider);
-    if (uid == null) {
-      return Stream.value(const <Task>[]);
-    }
-
-    final repository = ref.watch(taskRepositoryProvider);
-    final currentDate = ref.watch(currentDateProvider);
+    final unfilteredAsync = ref.watch(
+      unfilteredSmartViewTasksProvider(viewType),
+    );
     final showCompleted = ref.watch(showCompletedTasksProvider(viewType.name));
     final priorityFilter = ref.watch(taskPriorityFilterProvider(viewType.name));
     final tagFilter = ref.watch(taskTagFilterProvider(viewType.name));
-    final timeoutDuration = ref.watch(smartViewTimeoutProvider);
 
-    final DateTime? startDueDate;
-    final DateTime? endDueDate;
+    return unfilteredAsync.when(
+      data: (tasks) {
+        final filtered = tasks.where((t) {
+          if (!showCompleted && t.isCompleted) {
+            return false;
+          }
 
-    switch (viewType) {
-      case SmartViewType.today:
-        startDueDate = null;
-        endDueDate = SmartViewDateUtils.endOfDay(currentDate);
-        break;
-      case SmartViewType.thisWeek:
-        startDueDate = SmartViewDateUtils.startOfWeek(currentDate);
-        endDueDate = SmartViewDateUtils.endOfWeek(currentDate);
-        break;
-      case SmartViewType.scheduled:
-        startDueDate = null;
-        endDueDate = null;
-        break;
-    }
+          if (priorityFilter != TaskPriorityFilter.all &&
+              t.priority != priorityFilter.firestoreValue) {
+            return false;
+          }
 
-    final onlyIncomplete = !showCompleted;
+          if (tagFilter.isNotEmpty && !t.tagIds.any(tagFilter.contains)) {
+            return false;
+          }
 
-    final baseStream = repository.streamTasksWithDueDate(
-      uid: uid,
-      startDueDate: startDueDate,
-      endDueDate: endDueDate,
-      onlyIncomplete: onlyIncomplete,
-      priority: priorityFilter.firestoreValue,
-      tagIds: tagFilter.isNotEmpty ? tagFilter.toList() : null,
-    );
+          return true;
+        }).toList();
+        return Stream.value(filtered);
+      },
+      loading: () => Stream<List<Task>>.fromFuture(
+        ref.watch(unfilteredSmartViewTasksProvider(viewType).future).then((tasks) {
+          return tasks.where((t) {
+            if (!showCompleted && t.isCompleted) {
+              return false;
+            }
 
-    final mappedStream = baseStream.map((tasks) {
-      final startOfToday = SmartViewDateUtils.startOfDay(currentDate);
-      return tasks.where((t) {
-        if (!showCompleted && t.isCompleted) {
-          return false;
-        }
+            if (priorityFilter != TaskPriorityFilter.all &&
+                t.priority != priorityFilter.firestoreValue) {
+              return false;
+            }
 
-        if (priorityFilter != TaskPriorityFilter.all &&
-            t.priority != priorityFilter.firestoreValue) {
-          return false;
-        }
+            if (tagFilter.isNotEmpty && !t.tagIds.any(tagFilter.contains)) {
+              return false;
+            }
 
-        if (tagFilter.isNotEmpty && !t.tagIds.any(tagFilter.contains)) {
-          return false;
-        }
-
-        // In Today view, overdue tasks (dueDate < startOfToday) must only ever be incomplete.
-        // Completed past tasks are never overdue and must not appear in Today view under any filter.
-        if (viewType == SmartViewType.today &&
-            t.dueDate != null &&
-            t.dueDate!.isBefore(startOfToday)) {
-          if (t.isCompleted) return false;
-        }
-
-        return true;
-      }).toList();
-    });
-
-    return mappedStream.timeoutFirstEvent(
-      timeoutDuration,
-      message: 'This is taking longer than expected — check your connection or try again',
+            return true;
+          }).toList();
+        }),
+      ),
+      error: (e, st) => Stream<List<Task>>.error(e, st),
     );
   },
 );

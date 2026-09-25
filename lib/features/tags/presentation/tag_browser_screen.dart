@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/providers/auth_providers.dart';
+import '../../tasks/presentation/widgets/empty_state_view.dart';
 import '../../tasks/providers/task_sort_providers.dart';
 import '../../tasks/providers/task_tag_filter_providers.dart';
 import '../providers/tag_providers.dart';
@@ -170,12 +171,10 @@ class TagBrowserScreen extends ConsumerWidget {
       body: entriesAsync.when(
         data: (entries) {
           if (entries.isEmpty) {
-            return const Center(
-              child: Text(
-                'No tags in use',
-                key: Key('noTagsText'),
-                style: TextStyle(color: Colors.grey, fontSize: 16),
-              ),
+            return const EmptyStateView(
+              icon: Icons.label_outline,
+              message: 'No tags in use',
+              messageKey: Key('noTagsText'),
             );
           }
 
