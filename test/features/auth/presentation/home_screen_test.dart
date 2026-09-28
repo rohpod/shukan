@@ -259,19 +259,114 @@ void main() {
       expect(mockAuth.currentUser, isNull);
     });
 
+    testWidgets('recently deleted list card is hidden when count is 0', (
+      tester,
+    ) async {
+      await tester.pumpWidget(createWidgetUnderTest());
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('listCard_recently_deleted')), findsNothing);
+      expect(find.byKey(const Key('listTile_recently_deleted')), findsNothing);
+      expect(find.byKey(const Key('listName_recently_deleted')), findsNothing);
+    });
+
     testWidgets(
-      'tapping recently deleted button navigates to RecentlyDeletedScreen',
+      'recently deleted list card is visible, renders last in grid when count > 0, and tapping navigates to RecentlyDeletedScreen',
       (tester) async {
+        await fakeFirestore.collection('tasks').doc('t-deleted').set({
+          'taskId': 't-deleted',
+          'uid': uid,
+          'listId': customListId,
+          'title': 'Deleted Task',
+          'deletedAt': Timestamp.now(),
+        });
+
         await tester.pumpWidget(createWidgetUnderTest());
         await tester.pumpAndSettle();
 
-        expect(find.byKey(const Key('recentlyDeletedButton')), findsOneWidget);
+        expect(
+          find.byKey(const Key('listCard_recently_deleted')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('listTile_recently_deleted')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('listName_recently_deleted')),
+          findsOneWidget,
+        );
+        expect(find.text('Recently Deleted'), findsWidgets);
 
-        await tester.tap(find.byKey(const Key('recentlyDeletedButton')));
+        expect(
+          find.byKey(const Key('taskCountBadge_recently_deleted')),
+          findsOneWidget,
+        );
+        expect(
+          tester
+              .widget<Text>(
+                find.byKey(const Key('taskCountText_recently_deleted')),
+              )
+              .data,
+          '1',
+        );
+
+        final gridCards = tester
+            .widgetList<Card>(
+              find.descendant(
+                of: find.byType(GridView),
+                matching: find.byType(Card),
+              ),
+            )
+            .toList();
+        expect(gridCards.isNotEmpty, isTrue);
+        expect(
+          gridCards.last.key,
+          equals(const Key('listTile_recently_deleted')),
+        );
+
+        await tester.tap(find.byKey(const Key('listCard_recently_deleted')));
         await tester.pumpAndSettle();
 
         expect(find.byType(RecentlyDeletedScreen), findsOneWidget);
-        expect(find.text('Recently Deleted'), findsWidgets);
+        expect(find.text('Deleted Task'), findsOneWidget);
+
+        await tester.tap(find.byTooltip('Back'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(RecentlyDeletedScreen), findsNothing);
+        expect(find.byType(HomeScreen), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'recently deleted list card disappears reactively when count drops to 0',
+      (tester) async {
+        await fakeFirestore.collection('tasks').doc('t-deleted').set({
+          'taskId': 't-deleted',
+          'uid': uid,
+          'listId': customListId,
+          'title': 'Deleted Task',
+          'deletedAt': Timestamp.now(),
+        });
+
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('listCard_recently_deleted')),
+          findsOneWidget,
+        );
+
+        await fakeFirestore.collection('tasks').doc('t-deleted').update({
+          'deletedAt': null,
+        });
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('listCard_recently_deleted')),
+          findsNothing,
+        );
       },
     );
 

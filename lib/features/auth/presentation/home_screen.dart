@@ -172,6 +172,7 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final uid = ref.watch(currentUidProvider);
     final listsAsync = ref.watch(listsForUserProvider);
+    final recentlyDeletedCount = ref.watch(recentlyDeletedCountProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -186,28 +187,6 @@ class HomeScreen extends ConsumerWidget {
                 MaterialPageRoute<void>(
                   builder: (_) => const TagBrowserScreen(),
                 ),
-              );
-            },
-          ),
-          Consumer(
-            builder: (context, ref, child) {
-              final count = ref.watch(recentlyDeletedCountProvider);
-              return IconButton(
-                key: const Key('recentlyDeletedButton'),
-                icon: count > 0
-                    ? Badge.count(
-                        count: count,
-                        child: const Icon(Icons.delete_outline),
-                      )
-                    : const Icon(Icons.delete_outline),
-                tooltip: 'Recently Deleted',
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const RecentlyDeletedScreen(),
-                    ),
-                  );
-                },
               );
             },
           ),
@@ -248,7 +227,11 @@ class HomeScreen extends ConsumerWidget {
             Expanded(
               child: listsAsync.when(
                 data: (lists) {
-                  if (lists.isEmpty) {
+                  final showRecentlyDeleted = recentlyDeletedCount > 0;
+                  final totalItemCount =
+                      lists.length + (showRecentlyDeleted ? 1 : 0);
+
+                  if (totalItemCount == 0) {
                     return const Center(
                       child: Text('No lists found', key: Key('noListsText')),
                     );
@@ -263,178 +246,15 @@ class HomeScreen extends ConsumerWidget {
                           crossAxisSpacing: 12,
                           mainAxisSpacing: 12,
                         ),
-                    itemCount: lists.length,
+                    itemCount: totalItemCount,
                     itemBuilder: (context, index) {
-                      final list = lists[index];
-
-                      return Card(
-                        key: Key('listTile_${list.listId}'),
-                        clipBehavior: Clip.antiAlias,
-                        elevation: 1.5,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: InkWell(
-                          key: Key('listCard_${list.listId}'),
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder: (_) => ListDetailScreen(list: list),
-                              ),
-                            );
-                          },
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Icon(
-                                      list.isDefault
-                                          ? Icons.inbox
-                                          : Icons.folder_outlined,
-                                      color: list.isDefault
-                                          ? Theme.of(context)
-                                                .colorScheme
-                                                .primary
-                                          : Theme.of(context)
-                                                .colorScheme
-                                                .onSurfaceVariant,
-                                    ),
-                                    const Spacer(),
-                                    if (list.isDefault) ...[
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 6,
-                                          vertical: 2,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .primaryContainer
-                                              .withValues(alpha: 0.5),
-                                          borderRadius: BorderRadius.circular(
-                                            4,
-                                          ),
-                                        ),
-                                        child: const Text(
-                                          'DEFAULT',
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 6),
-                                    ],
-                                    Consumer(
-                                      builder: (context, ref, _) {
-                                        final count = ref.watch(
-                                          activeTaskCountForListProvider(
-                                            list.listId,
-                                          ),
-                                        );
-                                        return Container(
-                                          key: Key(
-                                            'taskCountBadge_${list.listId}',
-                                          ),
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 7,
-                                            vertical: 2,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: count > 0
-                                                ? Theme.of(context)
-                                                      .colorScheme
-                                                      .secondaryContainer
-                                                : Theme.of(context)
-                                                      .colorScheme
-                                                      .surfaceContainerHighest
-                                                      .withValues(alpha: 0.5),
-                                            borderRadius: BorderRadius.circular(
-                                              10,
-                                            ),
-                                          ),
-                                          child: Text(
-                                            '$count',
-                                            key: Key(
-                                              'taskCountText_${list.listId}',
-                                            ),
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w600,
-                                              color: count > 0
-                                                  ? Theme.of(context)
-                                                        .colorScheme
-                                                        .onSecondaryContainer
-                                                  : Theme.of(context)
-                                                        .colorScheme
-                                                        .onSurfaceVariant,
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  ],
-                                ),
-                                const Spacer(),
-                                Text(
-                                  list.name,
-                                  key: Key('listName_${list.listId}'),
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: 8),
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.end,
-                                  children: [
-                                    IconButton(
-                                      key: Key(
-                                        'renameListButton_${list.listId}',
-                                      ),
-                                      icon: const Icon(
-                                        Icons.edit_outlined,
-                                        size: 18,
-                                      ),
-                                      tooltip: 'Rename List',
-                                      padding: EdgeInsets.zero,
-                                      constraints: const BoxConstraints(),
-                                      onPressed: () =>
-                                          _showRenameDialog(context, ref, list),
-                                    ),
-                                    if (!list.isDefault && uid != null) ...[
-                                      const SizedBox(width: 12),
-                                      IconButton(
-                                        key: Key(
-                                          'deleteListButton_${list.listId}',
-                                        ),
-                                        icon: const Icon(
-                                          Icons.delete_outline,
-                                          size: 18,
-                                          color: Colors.redAccent,
-                                        ),
-                                        tooltip: 'Delete List',
-                                        padding: EdgeInsets.zero,
-                                        constraints: const BoxConstraints(),
-                                        onPressed: () => _showDeleteDialog(
-                                          context,
-                                          ref,
-                                          list,
-                                          uid,
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
+                      if (index < lists.length) {
+                        final list = lists[index];
+                        return _buildUserListCard(context, ref, list, uid);
+                      }
+                      return _buildRecentlyDeletedCard(
+                        context,
+                        recentlyDeletedCount,
                       );
                     },
                   );
@@ -449,6 +269,198 @@ class HomeScreen extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildCountBadge({
+    required BuildContext context,
+    required int count,
+    required Key badgeKey,
+    required Key textKey,
+  }) {
+    return Container(
+      key: badgeKey,
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: count > 0
+            ? Theme.of(context).colorScheme.secondaryContainer
+            : Theme.of(context).colorScheme.surfaceContainerHighest
+                  .withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        '$count',
+        key: textKey,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: count > 0
+              ? Theme.of(context).colorScheme.onSecondaryContainer
+              : Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildListCardFrame({
+    required BuildContext context,
+    required Key tileKey,
+    required Key cardKey,
+    required VoidCallback onTap,
+    required Widget leadingIcon,
+    Widget? tag,
+    required Widget countBadge,
+    required String title,
+    required Key titleKey,
+    Widget? actions,
+  }) {
+    return Card(
+      key: tileKey,
+      clipBehavior: Clip.antiAlias,
+      elevation: 1.5,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: InkWell(
+        key: cardKey,
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  leadingIcon,
+                  const Spacer(),
+                  if (tag != null) ...[tag, const SizedBox(width: 6)],
+                  countBadge,
+                ],
+              ),
+              const Spacer(),
+              Text(
+                title,
+                key: titleKey,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 8),
+              actions ?? const SizedBox(height: 18),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUserListCard(
+    BuildContext context,
+    WidgetRef ref,
+    ListModel list,
+    String? uid,
+  ) {
+    final theme = Theme.of(context);
+    return _buildListCardFrame(
+      context: context,
+      tileKey: Key('listTile_${list.listId}'),
+      cardKey: Key('listCard_${list.listId}'),
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => ListDetailScreen(list: list)),
+        );
+      },
+      leadingIcon: Icon(
+        list.isDefault ? Icons.inbox : Icons.folder_outlined,
+        color: list.isDefault
+            ? theme.colorScheme.primary
+            : theme.colorScheme.onSurfaceVariant,
+      ),
+      tag: list.isDefault
+          ? Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primaryContainer.withValues(
+                  alpha: 0.5,
+                ),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: const Text(
+                'DEFAULT',
+                style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+              ),
+            )
+          : null,
+      countBadge: Consumer(
+        builder: (context, ref, _) {
+          final count = ref.watch(activeTaskCountForListProvider(list.listId));
+          return _buildCountBadge(
+            context: context,
+            count: count,
+            badgeKey: Key('taskCountBadge_${list.listId}'),
+            textKey: Key('taskCountText_${list.listId}'),
+          );
+        },
+      ),
+      title: list.name,
+      titleKey: Key('listName_${list.listId}'),
+      actions: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          IconButton(
+            key: Key('renameListButton_${list.listId}'),
+            icon: const Icon(Icons.edit_outlined, size: 18),
+            tooltip: 'Rename List',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            onPressed: () => _showRenameDialog(context, ref, list),
+          ),
+          if (!list.isDefault && uid != null) ...[
+            const SizedBox(width: 12),
+            IconButton(
+              key: Key('deleteListButton_${list.listId}'),
+              icon: const Icon(
+                Icons.delete_outline,
+                size: 18,
+                color: Colors.redAccent,
+              ),
+              tooltip: 'Delete List',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              onPressed: () => _showDeleteDialog(context, ref, list, uid),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecentlyDeletedCard(BuildContext context, int count) {
+    return _buildListCardFrame(
+      context: context,
+      tileKey: const Key('listTile_recently_deleted'),
+      cardKey: const Key('listCard_recently_deleted'),
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => const RecentlyDeletedScreen(),
+          ),
+        );
+      },
+      leadingIcon: Icon(
+        Icons.delete_outline,
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+      ),
+      countBadge: _buildCountBadge(
+        context: context,
+        count: count,
+        badgeKey: const Key('taskCountBadge_recently_deleted'),
+        textKey: const Key('taskCountText_recently_deleted'),
+      ),
+      title: 'Recently Deleted',
+      titleKey: const Key('listName_recently_deleted'),
+      actions: null,
     );
   }
 
