@@ -40,8 +40,7 @@ class _TagDetailScreenState extends ConsumerState<TagDetailScreen> {
     final sortOption = ref.watch(taskSortModeProvider(viewKey));
     final tagFilter = ref.watch(taskTagFilterProvider(viewKey));
     final unfilteredTasks =
-        ref.watch(rawTasksForTagProvider(widget.tagId)).value ??
-            const <Task>[];
+        ref.watch(rawTasksForTagProvider(widget.tagId)).value ?? const <Task>[];
     final unfilteredCount = unfilteredTasks.length;
     final tagsAsync = ref.watch(tagsForCurrentUserProvider);
     final currentTag = tagsAsync.value
@@ -77,8 +76,9 @@ class _TagDetailScreenState extends ConsumerState<TagDetailScreen> {
               data: (tasks) {
                 if (tasks.isEmpty) {
                   if (unfilteredCount > 0) {
-                    final allCompleted =
-                        unfilteredTasks.every((t) => t.isCompleted);
+                    final allCompleted = unfilteredTasks.every(
+                      (t) => t.isCompleted,
+                    );
                     return EmptyStateView(
                       icon: Icons.filter_alt_off_outlined,
                       message: 'No tasks match your filters',
