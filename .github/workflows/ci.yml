@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, dev]
+  push:
+    branches: [main, dev]
+
+jobs:
+  build-and-test:
+    name: build-and-test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.2'
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate stub firebase_options.dart
+        run: |
+          cat << 'EOF' > lib/firebase_options.dart
+          // File generated as CI stub.
+          // ignore_for_file: type=lint
+          import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
+          import 'package:flutter/foundation.dart'
+              show defaultTargetPlatform, kIsWeb, TargetPlatform;
+
+          class DefaultFirebaseOptions {
+            static FirebaseOptions get currentPlatform {
+              if (kIsWeb) {
+                return web;
+              }
+              switch (defaultTargetPlatform) {
+                case TargetPlatform.android:
+                  throw UnsupportedError(
+                    'DefaultFirebaseOptions have not been configured for android - '
+                    'you can reconfigure this by running the FlutterFire CLI again.',
+                  );
+                case TargetPlatform.iOS:
+                  throw UnsupportedError(
+                    'DefaultFirebaseOptions have not been configured for ios - '
+                    'you can reconfigure this by running the FlutterFire CLI again.',
+                  );
+                case TargetPlatform.macOS:
+                  throw UnsupportedError(
+                    'DefaultFirebaseOptions have not been configured for macos - '
+                    'you can reconfigure this by running the FlutterFire CLI again.',
+                  );
+                case TargetPlatform.windows:
+                  throw UnsupportedError(
+                    'DefaultFirebaseOptions have not been configured for windows - '
+                    'you can reconfigure this by running the FlutterFire CLI again.',
+                  );
+                case TargetPlatform.linux:
+                  throw UnsupportedError(
+                    'DefaultFirebaseOptions have not been configured for linux - '
+                    'you can reconfigure this by running the FlutterFire CLI again.',
+                  );
+                default:
+                  throw UnsupportedError(
+                    'DefaultFirebaseOptions are not supported for this platform.',
+                  );
+              }
+            }
+
+            static const FirebaseOptions web = FirebaseOptions(
+              apiKey: 'dummy-api-key',
+              appId: '1:1234567890:web:dummy',
+              messagingSenderId: '1234567890',
+              projectId: 'shukan-ci',
+              authDomain: 'shukan-ci.firebaseapp.com',
+              storageBucket: 'shukan-ci.firebasestorage.app',
+              measurementId: 'G-DUMMY',
+            );
+          }
+          EOF
+
+      - name: Verify code formatting
+        run: dart format --output=none --set-exit-if-changed .
+
+      - name: Analyze code
+        run: flutter analyze
+
+      - name: Run tests
+        run: flutter test
+
+      - name: Build web
+        run: flutter build web

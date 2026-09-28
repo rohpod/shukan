@@ -15,7 +15,6 @@ import 'package:shukan/features/tasks/presentation/smart_view_detail_screen.dart
 import 'package:shukan/features/tasks/presentation/task_list_screen.dart';
 import 'package:shukan/features/tasks/presentation/widgets/empty_state_view.dart';
 import 'package:shukan/features/tasks/providers/smart_view_providers.dart';
-import 'package:shukan/features/tasks/providers/task_sort_providers.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -49,7 +48,10 @@ void main() {
     });
   });
 
-  Widget wrapWithScope(Widget child, {List<dynamic> extraOverrides = const []}) {
+  Widget wrapWithScope(
+    Widget child, {
+    List<dynamic> extraOverrides = const [],
+  }) {
     return ProviderScope(
       overrides: [
         firebaseAuthProvider.overrideWithValue(mockAuth),
@@ -65,12 +67,17 @@ void main() {
     testWidgets(
       'renders genuinely empty state when list has 0 tasks, with "Add task" button',
       (tester) async {
-        await tester.pumpWidget(wrapWithScope(const TaskListScreen(listId: listId)));
+        await tester.pumpWidget(
+          wrapWithScope(const TaskListScreen(listId: listId)),
+        );
         await tester.pumpAndSettle();
 
         expect(find.byIcon(Icons.inbox_outlined), findsOneWidget);
         expect(find.text('No tasks yet'), findsOneWidget);
-        expect(find.byKey(const Key('emptyStateAddTaskButton')), findsOneWidget);
+        expect(
+          find.byKey(const Key('emptyStateAddTaskButton')),
+          findsOneWidget,
+        );
         expect(find.byKey(const Key('noTasksText')), findsOneWidget);
 
         // Tap Add task button opens TaskDialog
@@ -110,7 +117,9 @@ void main() {
           'order': 1,
         });
 
-        await tester.pumpWidget(wrapWithScope(const TaskListScreen(listId: listId)));
+        await tester.pumpWidget(
+          wrapWithScope(const TaskListScreen(listId: listId)),
+        );
         await tester.pumpAndSettle();
 
         // Tasks exist, but hidden because completion toggle is false -> filtered to zero!
@@ -134,13 +143,18 @@ void main() {
       'Today view: genuinely empty shows "Nothing due today" and "Add task" button',
       (tester) async {
         await tester.pumpWidget(
-          wrapWithScope(const SmartViewDetailScreen(viewType: SmartViewType.today)),
+          wrapWithScope(
+            const SmartViewDetailScreen(viewType: SmartViewType.today),
+          ),
         );
         await tester.pumpAndSettle();
 
         expect(find.byIcon(Icons.today_outlined), findsOneWidget);
         expect(find.text('Nothing due today'), findsOneWidget);
-        expect(find.byKey(const Key('emptyStateAddTaskButton')), findsOneWidget);
+        expect(
+          find.byKey(const Key('emptyStateAddTaskButton')),
+          findsOneWidget,
+        );
 
         await tester.tap(find.byKey(const Key('emptyStateAddTaskButton')));
         await tester.pumpAndSettle();
@@ -153,13 +167,18 @@ void main() {
       'This Week view: genuinely empty shows "No tasks scheduled this week" and "Add task" button',
       (tester) async {
         await tester.pumpWidget(
-          wrapWithScope(const SmartViewDetailScreen(viewType: SmartViewType.thisWeek)),
+          wrapWithScope(
+            const SmartViewDetailScreen(viewType: SmartViewType.thisWeek),
+          ),
         );
         await tester.pumpAndSettle();
 
         expect(find.byIcon(Icons.calendar_view_week_outlined), findsOneWidget);
         expect(find.text('No tasks scheduled this week'), findsOneWidget);
-        expect(find.byKey(const Key('emptyStateAddTaskButton')), findsOneWidget);
+        expect(
+          find.byKey(const Key('emptyStateAddTaskButton')),
+          findsOneWidget,
+        );
       },
     );
 
@@ -167,7 +186,9 @@ void main() {
       'Scheduled view: genuinely empty shows "No scheduled tasks" with NO "Add task" button',
       (tester) async {
         await tester.pumpWidget(
-          wrapWithScope(const SmartViewDetailScreen(viewType: SmartViewType.scheduled)),
+          wrapWithScope(
+            const SmartViewDetailScreen(viewType: SmartViewType.scheduled),
+          ),
         );
         await tester.pumpAndSettle();
 
@@ -194,13 +215,18 @@ void main() {
         });
 
         await tester.pumpWidget(
-          wrapWithScope(const SmartViewDetailScreen(viewType: SmartViewType.today)),
+          wrapWithScope(
+            const SmartViewDetailScreen(viewType: SmartViewType.today),
+          ),
         );
         await tester.pumpAndSettle();
 
         expect(find.byIcon(Icons.filter_alt_off_outlined), findsOneWidget);
         expect(find.text('No tasks match your filters'), findsOneWidget);
-        expect(find.byKey(const Key('clearFiltersButton_today')), findsOneWidget);
+        expect(
+          find.byKey(const Key('clearFiltersButton_today')),
+          findsOneWidget,
+        );
 
         // Tap Clear filters -> sets showCompleted to true
         await tester.tap(find.byKey(const Key('clearFiltersButton_today')));
@@ -215,31 +241,30 @@ void main() {
     const tagId = 'tag-school';
     const tagName = 'school';
 
-    testWidgets(
-      'renders genuinely empty state when no tasks have this tag',
-      (tester) async {
-        await fakeFirestore.collection('tags').doc(tagId).set({
-          'tagId': tagId,
-          'uid': uid,
-          'name': tagName,
-        });
+    testWidgets('renders genuinely empty state when no tasks have this tag', (
+      tester,
+    ) async {
+      await fakeFirestore.collection('tags').doc(tagId).set({
+        'tagId': tagId,
+        'uid': uid,
+        'name': tagName,
+      });
 
-        await tester.pumpWidget(
-          wrapWithScope(const TagDetailScreen(tagId: tagId, tagName: tagName)),
-        );
-        await tester.pumpAndSettle();
+      await tester.pumpWidget(
+        wrapWithScope(const TagDetailScreen(tagId: tagId, tagName: tagName)),
+      );
+      await tester.pumpAndSettle();
 
-        expect(
-          find.descendant(
-            of: find.byType(EmptyStateView),
-            matching: find.byIcon(Icons.label_outline),
-          ),
-          findsOneWidget,
-        );
-        expect(find.text('No tasks found'), findsOneWidget);
-        expect(find.byKey(const Key('emptyStateAddTaskButton')), findsNothing);
-      },
-    );
+      expect(
+        find.descendant(
+          of: find.byType(EmptyStateView),
+          matching: find.byIcon(Icons.label_outline),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('No tasks found'), findsOneWidget);
+      expect(find.byKey(const Key('emptyStateAddTaskButton')), findsNothing);
+    });
 
     testWidgets(
       'renders filtered-to-zero when tag tasks are completed and hidden by default, tapping "Clear filters" reveals them',
@@ -268,9 +293,14 @@ void main() {
 
         expect(find.byIcon(Icons.filter_alt_off_outlined), findsOneWidget);
         expect(find.text('No tasks match your filters'), findsOneWidget);
-        expect(find.byKey(const Key('clearFiltersButton_tag_tag-school')), findsOneWidget);
+        expect(
+          find.byKey(const Key('clearFiltersButton_tag_tag-school')),
+          findsOneWidget,
+        );
 
-        await tester.tap(find.byKey(const Key('clearFiltersButton_tag_tag-school')));
+        await tester.tap(
+          find.byKey(const Key('clearFiltersButton_tag_tag-school')),
+        );
         await tester.pumpAndSettle();
 
         expect(find.text('School Homework Done'), findsOneWidget);
@@ -313,13 +343,19 @@ void main() {
         expect(find.text('Read a book'), findsOneWidget);
 
         // Search for something that doesn't match
-        await tester.enterText(find.byKey(const Key('searchQueryInput')), 'quantum physics');
+        await tester.enterText(
+          find.byKey(const Key('searchQueryInput')),
+          'quantum physics',
+        );
         await tester.pump(const Duration(milliseconds: 350));
         await tester.pumpAndSettle();
 
         expect(find.byIcon(Icons.filter_alt_off_outlined), findsOneWidget);
         expect(find.text('No matching tasks found'), findsOneWidget);
-        expect(find.byKey(const Key('clearSearchFiltersButton')), findsOneWidget);
+        expect(
+          find.byKey(const Key('clearSearchFiltersButton')),
+          findsOneWidget,
+        );
 
         // Tap Clear search
         await tester.tap(find.byKey(const Key('clearSearchFiltersButton')));
@@ -332,26 +368,31 @@ void main() {
   });
 
   group('RecentlyDeletedScreen & TagBrowserScreen Empty State Tests', () {
-    testWidgets('RecentlyDeletedScreen renders EmptyStateView with delete_outline icon', (
-      tester,
-    ) async {
-      await tester.pumpWidget(wrapWithScope(const RecentlyDeletedScreen()));
-      await tester.pumpAndSettle();
+    testWidgets(
+      'RecentlyDeletedScreen renders EmptyStateView with delete_outline icon',
+      (tester) async {
+        await tester.pumpWidget(wrapWithScope(const RecentlyDeletedScreen()));
+        await tester.pumpAndSettle();
 
-      expect(find.byIcon(Icons.delete_outline), findsOneWidget);
-      expect(find.text('No recently deleted tasks'), findsOneWidget);
-      expect(find.byKey(const Key('noRecentlyDeletedTasksText')), findsOneWidget);
-    });
+        expect(find.byIcon(Icons.delete_outline), findsOneWidget);
+        expect(find.text('No recently deleted tasks'), findsOneWidget);
+        expect(
+          find.byKey(const Key('noRecentlyDeletedTasksText')),
+          findsOneWidget,
+        );
+      },
+    );
 
-    testWidgets('TagBrowserScreen renders EmptyStateView with label_outline icon', (
-      tester,
-    ) async {
-      await tester.pumpWidget(wrapWithScope(const TagBrowserScreen()));
-      await tester.pumpAndSettle();
+    testWidgets(
+      'TagBrowserScreen renders EmptyStateView with label_outline icon',
+      (tester) async {
+        await tester.pumpWidget(wrapWithScope(const TagBrowserScreen()));
+        await tester.pumpAndSettle();
 
-      expect(find.byIcon(Icons.label_outline), findsOneWidget);
-      expect(find.text('No tags in use'), findsOneWidget);
-      expect(find.byKey(const Key('noTagsText')), findsOneWidget);
-    });
+        expect(find.byIcon(Icons.label_outline), findsOneWidget);
+        expect(find.text('No tags in use'), findsOneWidget);
+        expect(find.byKey(const Key('noTagsText')), findsOneWidget);
+      },
+    );
   });
 }

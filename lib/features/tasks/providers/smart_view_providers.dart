@@ -170,8 +170,7 @@ final unfilteredSmartViewTasksProvider =
 
       return mappedStream.timeoutFirstEvent(
         timeoutDuration,
-        message:
-            'This is taking longer than expected — check your connection or try again',
+        message: 'This is taking longer than expected — check your connection or try again',
       );
     });
 
@@ -209,7 +208,9 @@ final smartViewTasksProvider = StreamProvider.family<List<Task>, SmartViewType>(
         return Stream.value(filtered);
       },
       loading: () => Stream<List<Task>>.fromFuture(
-        ref.watch(unfilteredSmartViewTasksProvider(viewType).future).then((tasks) {
+        ref.watch(unfilteredSmartViewTasksProvider(viewType).future).then((
+          tasks,
+        ) {
           return tasks.where((t) {
             if (!showCompleted && t.isCompleted) {
               return false;

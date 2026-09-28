@@ -30,20 +30,13 @@ class EmptyStateView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              size: 64,
-              color: Colors.grey,
-            ),
+            Icon(icon, size: 64, color: Colors.grey),
             const SizedBox(height: 16),
             Text(
               message,
               key: messageKey,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 16,
-                color: Colors.grey,
-              ),
+              style: const TextStyle(fontSize: 16, color: Colors.grey),
             ),
             if (actionLabel != null && onAction != null) ...[
               const SizedBox(height: 16),

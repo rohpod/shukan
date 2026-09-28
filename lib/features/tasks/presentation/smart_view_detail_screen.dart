@@ -105,7 +105,7 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
     final viewKey = widget.viewType.name;
     final unfilteredTasks =
         ref.watch(unfilteredSmartViewTasksProvider(widget.viewType)).value ??
-            const <Task>[];
+        const <Task>[];
     final unfilteredCount = unfilteredTasks.length;
 
     return Scaffold(
@@ -141,8 +141,9 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
               data: (tasks) {
                 if (tasks.isEmpty) {
                   if (unfilteredCount > 0) {
-                    final allCompleted =
-                        unfilteredTasks.every((t) => t.isCompleted);
+                    final allCompleted = unfilteredTasks.every(
+                      (t) => t.isCompleted,
+                    );
                     return EmptyStateView(
                       icon: Icons.filter_alt_off_outlined,
                       message: 'No tasks match your filters',
@@ -165,7 +166,8 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
 
                   final IconData emptyIcon;
                   final String emptyMessage;
-                  final bool canAdd = effectiveListId != null &&
+                  final bool canAdd =
+                      effectiveListId != null &&
                       widget.viewType != SmartViewType.scheduled;
 
                   switch (widget.viewType) {
@@ -189,13 +191,15 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                     messageKey: const Key('noTasksText'),
                     actionLabel: canAdd ? 'Add task' : null,
                     actionIcon: canAdd ? Icons.add : null,
-                    actionKey:
-                        canAdd ? const Key('emptyStateAddTaskButton') : null,
+                    actionKey: canAdd
+                        ? const Key('emptyStateAddTaskButton')
+                        : null,
                     onAction: canAdd
                         ? () {
                             final now = ref.read(currentDateProvider);
-                            final initialDate =
-                                SmartViewDateUtils.startOfDay(now);
+                            final initialDate = SmartViewDateUtils.startOfDay(
+                              now,
+                            );
                             _openTaskDialog(
                               context,
                               uid,
