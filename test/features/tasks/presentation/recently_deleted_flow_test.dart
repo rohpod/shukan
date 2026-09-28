@@ -81,12 +81,15 @@ void main() {
       expect(find.text('Flow Task'), findsNothing);
       expect(find.text('Deleted "Flow Task"'), findsOneWidget);
 
-      // 4. Tap Recently Deleted button in AppBar
-      final recentlyDeletedButton = find.byKey(
-        const Key('recentlyDeletedButton'),
+      // 4. Return to HomeScreen and tap Recently Deleted card in grid
+      await tester.tap(find.byTooltip('Back'));
+      await tester.pumpAndSettle();
+
+      final recentlyDeletedCard = find.byKey(
+        const Key('listCard_recentlyDeleted'),
       );
-      expect(recentlyDeletedButton, findsOneWidget);
-      await tester.tap(recentlyDeletedButton);
+      expect(recentlyDeletedCard, findsOneWidget);
+      await tester.tap(recentlyDeletedCard);
       await tester.pumpAndSettle();
 
       // 5. Verify RecentlyDeletedScreen is open and task is shown!
@@ -102,8 +105,11 @@ void main() {
       expect(find.text('Flow Task'), findsNothing);
       expect(find.text('Restored "Flow Task"'), findsOneWidget);
 
-      // 7. Go back to list
-      Navigator.of(tester.element(find.byType(RecentlyDeletedScreen))).pop();
+      // 7. Go back to HomeScreen, re-enter Inbox list
+      await tester.tap(find.byTooltip('Back'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('listCard_$inboxListId')));
       await tester.pumpAndSettle();
 
       // Verify task is back in the active list!
