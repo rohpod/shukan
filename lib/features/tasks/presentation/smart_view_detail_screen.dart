@@ -430,25 +430,18 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                                       persist: false,
                                       dismissDirection:
                                           DismissDirection.startToEnd,
-                                      content: Text(
-                                        'Deleted "${task.title}"',
-                                      ),
+                                      content: Text('Deleted "${task.title}"'),
                                       action: SnackBarAction(
-                                        key: const Key(
-                                          'undoDeleteTaskButton',
-                                        ),
+                                        key: const Key('undoDeleteTaskButton'),
                                         label: 'Undo',
                                         onPressed: () async {
                                           try {
                                             await ref
-                                                .read(
-                                                  taskRepositoryProvider,
-                                                )
+                                                .read(taskRepositoryProvider)
                                                 .restoreTask(
                                                   uid: uid,
                                                   taskId: task.taskId,
-                                                  defaultListId:
-                                                      defaultListId,
+                                                  defaultListId: defaultListId,
                                                 );
                                           } catch (e) {
                                             if (!mounted) return;

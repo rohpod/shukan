@@ -377,9 +377,7 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                                           onPressed: () async {
                                             try {
                                               await ref
-                                                  .read(
-                                                    taskRepositoryProvider,
-                                                  )
+                                                  .read(taskRepositoryProvider)
                                                   .restoreTask(
                                                     uid: uid,
                                                     taskId: task.taskId,

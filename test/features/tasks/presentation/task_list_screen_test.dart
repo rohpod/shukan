@@ -695,52 +695,51 @@ void main() {
       },
     );
 
-    testWidgets(
-      'soft delete Undo SnackBar auto-dismisses after 5 seconds',
-      (tester) async {
-        const taskId = 'task-undo-timeout';
-        await fakeFirestore.collection('tasks').doc(taskId).set({
-          'taskId': taskId,
-          'uid': uid,
-          'listId': listId,
-          'title': 'Task to timeout',
-          'notes': '',
-          'url': '',
-          'priority': 'none',
-          'tagIds': <String>[],
-          'dueDate': null,
-          'dueTime': null,
-          'earlyReminderMinutes': 0,
-          'repeatRule': 'none',
-          'repeatCustomConfig': null,
-          'order': 0,
-          'subtasks': <Map<String, dynamic>>[],
-          'createdAt': Timestamp.now(),
-          'completedAt': null,
-          'deletedAt': null,
-        });
+    testWidgets('soft delete Undo SnackBar auto-dismisses after 5 seconds', (
+      tester,
+    ) async {
+      const taskId = 'task-undo-timeout';
+      await fakeFirestore.collection('tasks').doc(taskId).set({
+        'taskId': taskId,
+        'uid': uid,
+        'listId': listId,
+        'title': 'Task to timeout',
+        'notes': '',
+        'url': '',
+        'priority': 'none',
+        'tagIds': <String>[],
+        'dueDate': null,
+        'dueTime': null,
+        'earlyReminderMinutes': 0,
+        'repeatRule': 'none',
+        'repeatCustomConfig': null,
+        'order': 0,
+        'subtasks': <Map<String, dynamic>>[],
+        'createdAt': Timestamp.now(),
+        'completedAt': null,
+        'deletedAt': null,
+      });
 
-        await tester.pumpWidget(createWidgetUnderTest(customListId: listId));
-        await tester.pumpAndSettle();
+      await tester.pumpWidget(createWidgetUnderTest(customListId: listId));
+      await tester.pumpAndSettle();
 
-        expect(find.text('Task to timeout'), findsOneWidget);
+      expect(find.text('Task to timeout'), findsOneWidget);
 
-        // Tap delete
-        await tester.tap(find.byKey(const Key('deleteTaskButton_$taskId')));
-        await tester.pumpAndSettle();
+      // Tap delete
+      await tester.tap(find.byKey(const Key('deleteTaskButton_$taskId')));
+      await tester.pumpAndSettle();
 
-        // Verify SnackBar is shown
-        expect(find.text('Deleted "Task to timeout"'), findsOneWidget);
-        expect(find.byKey(const Key('undoDeleteTaskButton')), findsOneWidget);
+      // Verify SnackBar is shown
+      expect(find.text('Deleted "Task to timeout"'), findsOneWidget);
+      expect(find.byKey(const Key('undoDeleteTaskButton')), findsOneWidget);
 
-        // Advance 5 seconds and settle
-        await tester.pump(const Duration(seconds: 5));
-        await tester.pumpAndSettle();
+      // Advance 5 seconds and settle
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
 
-        // Verify SnackBar is dismissed
-        expect(find.text('Deleted "Task to timeout"'), findsNothing);
-      },
-    );
+      // Verify SnackBar is dismissed
+      expect(find.text('Deleted "Task to timeout"'), findsNothing);
+    });
 
     testWidgets(
       'soft delete Undo SnackBar is dismissed by start-to-end swipe before timeout',
@@ -846,7 +845,8 @@ void main() {
         await fakeFirestore.collection('tasks').doc(taskId).update({
           'deletedAt': Timestamp.now(),
         });
-        await tester.pump(); // Rebuilds TaskListScreen: row Element is unmounted!
+        await tester
+            .pump(); // Rebuilds TaskListScreen: row Element is unmounted!
 
         expect(find.text('Task unmounted'), findsNothing);
 
