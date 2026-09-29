@@ -321,6 +321,45 @@ void main() {
       expect(find.text('Task to delete'), findsOneWidget);
     });
 
+    testWidgets('delete task undo SnackBar auto-dismisses after 5 seconds', (
+      tester,
+    ) async {
+      final today = DateTime(2026, 10, 14, 10, 0);
+
+      await fakeFirestore.collection('tasks').doc('t-del-timeout').set({
+        'taskId': 't-del-timeout',
+        'uid': uid,
+        'listId': defaultListId,
+        'title': 'Task to delete timeout',
+        'dueDate': Timestamp.fromDate(DateTime(2026, 10, 14)),
+        'deletedAt': null,
+        'completedAt': null,
+      });
+
+      await tester.pumpWidget(
+        createWidgetUnderTest(SmartViewType.today, overrideDate: today),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Task to delete timeout'), findsOneWidget);
+
+      // Tap delete button
+      await tester.tap(find.byKey(const Key('deleteTaskButton_t-del-timeout')));
+      await tester.pumpAndSettle();
+
+      // Verify task removed and SnackBar with Undo is shown
+      expect(find.text('Task to delete timeout'), findsNothing);
+      expect(find.text('Deleted "Task to delete timeout"'), findsOneWidget);
+      expect(find.byKey(const Key('undoDeleteTaskButton')), findsOneWidget);
+
+      // Advance 5 seconds and settle
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+
+      // Verify SnackBar is dismissed
+      expect(find.text('Deleted "Task to delete timeout"'), findsNothing);
+    });
+
     testWidgets('FAB opens TaskDialog with initial dueDate pre-populated', (
       tester,
     ) async {
