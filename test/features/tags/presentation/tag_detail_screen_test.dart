@@ -202,4 +202,56 @@ void main() {
       expect(find.text('No tasks found'), findsOneWidget);
     },
   );
+
+  testWidgets(
+    'deleting a task shows Undo SnackBar and tapping Undo restores the task',
+    (tester) async {
+      await fakeFirestore.collection('lists').doc('inbox').set({
+        'listId': 'inbox',
+        'uid': uid,
+        'name': 'Inbox',
+        'createdAt': Timestamp.now(),
+      });
+
+      await fakeFirestore.collection('tasks').doc('t-tag-del').set({
+        'taskId': 't-tag-del',
+        'uid': uid,
+        'title': 'Task To Delete',
+        'tagIds': ['tag-work'],
+        'listId': 'inbox',
+        'deletedAt': null,
+        'completedAt': null,
+        'createdAt': Timestamp.now(),
+      });
+
+      final prefs = await SharedPreferences.getInstance();
+      await tester.pumpWidget(
+        createWidget(tagId: 'tag-work', tagName: 'Work', prefs: prefs),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Task To Delete'), findsOneWidget);
+
+      // Tap delete button
+      await tester.tap(find.byKey(const Key('deleteTaskButton_t-tag-del')));
+      await tester.pumpAndSettle();
+
+      // Task is soft deleted
+      var doc = await fakeFirestore.collection('tasks').doc('t-tag-del').get();
+      expect(doc.data()!['deletedAt'], isNotNull);
+
+      // SnackBar with Undo is shown
+      expect(find.text('Deleted "Task To Delete"'), findsOneWidget);
+      expect(find.byKey(const Key('undoDeleteTaskButton')), findsOneWidget);
+
+      // Tap Undo
+      await tester.tap(find.byKey(const Key('undoDeleteTaskButton')));
+      await tester.pumpAndSettle();
+
+      // Task is restored in Firestore and visible again
+      doc = await fakeFirestore.collection('tasks').doc('t-tag-del').get();
+      expect(doc.data()!['deletedAt'], isNull);
+      expect(find.text('Task To Delete'), findsOneWidget);
+    },
+  );
 }

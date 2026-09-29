@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/ui/feedback_snackbar.dart';
 import '../../auth/providers/auth_providers.dart';
 import '../../lists/providers/list_providers.dart';
 import '../../tags/providers/tag_providers.dart';
@@ -51,14 +52,23 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
   }
 
   Future<void> _showMoveTaskDialog(BuildContext context, Task task) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final taskRepo = ref.read(taskRepositoryProvider);
+    final originalListId = task.listId;
+
     final targetListName = await showDialog<String>(
       context: context,
       builder: (dialogContext) => _MoveTaskDialog(task: task),
     );
 
     if (targetListName != null && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Task moved to "$targetListName"')),
+      showFeedbackSnackBar(
+        messenger,
+        'Task moved to "$targetListName"',
+        actionLabel: 'Undo',
+        actionKey: const Key('undoMoveTasksButton'),
+        onAction: () => taskRepo.moveTaskToList(task.taskId, originalListId),
+        actionErrorPrefix: 'Failed to undo move',
       );
     }
   }
@@ -413,56 +423,34 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                                 onPressed: isSelectionMode
                                     ? null
                                     : () async {
+                                        final messenger = scaffoldMessenger;
+                                        final taskRepo = ref.read(
+                                          taskRepositoryProvider,
+                                        );
                                         try {
-                                          await ref
-                                              .read(taskRepositoryProvider)
-                                              .softDeleteTask(task.taskId);
+                                          await taskRepo.softDeleteTask(
+                                            task.taskId,
+                                          );
                                           if (!mounted) return;
-                                          scaffoldMessenger.clearSnackBars();
-                                          scaffoldMessenger.showSnackBar(
-                                            SnackBar(
-                                              duration: const Duration(
-                                                seconds: 5,
-                                              ),
-                                              persist: false,
-                                              dismissDirection:
-                                                  DismissDirection.startToEnd,
-                                              content: Text(
-                                                'Deleted "${task.title}"',
-                                              ),
-                                              action: SnackBarAction(
-                                                key: const Key(
-                                                  'undoDeleteTaskButton',
-                                                ),
-                                                label: 'Undo',
-                                                onPressed: () async {
-                                                  try {
-                                                    await ref
-                                                        .read(
-                                                          taskRepositoryProvider,
-                                                        )
-                                                        .restoreTask(
-                                                          uid: uid,
-                                                          taskId: task.taskId,
-                                                          defaultListId: listId,
-                                                        );
-                                                  } catch (e) {
-                                                    if (!mounted) return;
-                                                    scaffoldMessenger.showSnackBar(
-                                                      SnackBar(
-                                                        content: Text(
-                                                          'Failed to undo deletion: $e',
-                                                        ),
-                                                      ),
-                                                    );
-                                                  }
-                                                },
-                                              ),
+                                          showFeedbackSnackBar(
+                                            messenger,
+                                            'Deleted "${task.title}"',
+                                            actionLabel: 'Undo',
+                                            actionKey: const Key(
+                                              'undoDeleteTaskButton',
                                             ),
+                                            onAction: () =>
+                                                taskRepo.restoreTask(
+                                                  uid: uid,
+                                                  taskId: task.taskId,
+                                                  defaultListId: listId,
+                                                ),
+                                            actionErrorPrefix:
+                                                'Failed to undo deletion',
                                           );
                                         } catch (e) {
                                           if (!mounted) return;
-                                          scaffoldMessenger.showSnackBar(
+                                          messenger.showSnackBar(
                                             SnackBar(
                                               content: Text(
                                                 'Failed to delete task: $e',

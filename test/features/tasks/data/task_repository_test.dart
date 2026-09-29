@@ -909,6 +909,257 @@ void main() {
       });
     });
 
+    group('restoreTasks', () {
+      test(
+        'clears deletedAt on all given tasks and leaves others untouched',
+        () async {
+          final t1 = await repository.createTask(
+            uid: 'user-123',
+            listId: 'inbox-456',
+            title: 'Task 1',
+          );
+          final t2 = await repository.createTask(
+            uid: 'user-123',
+            listId: 'inbox-456',
+            title: 'Task 2',
+          );
+          final t3 = await repository.createTask(
+            uid: 'user-123',
+            listId: 'inbox-456',
+            title: 'Task 3',
+          );
+
+          await repository.softDeleteTasks([t1.taskId, t2.taskId, t3.taskId]);
+
+          await repository.restoreTasks(
+            uid: 'user-123',
+            taskIds: [t1.taskId, t2.taskId],
+          );
+
+          final doc1 = await fakeFirestore
+              .collection('tasks')
+              .doc(t1.taskId)
+              .get();
+          final doc2 = await fakeFirestore
+              .collection('tasks')
+              .doc(t2.taskId)
+              .get();
+          final doc3 = await fakeFirestore
+              .collection('tasks')
+              .doc(t3.taskId)
+              .get();
+
+          expect(doc1.data()!['deletedAt'], isNull);
+          expect(doc2.data()!['deletedAt'], isNull);
+          expect(doc3.data()!['deletedAt'], isNotNull);
+        },
+      );
+
+      test('empty list is a no-op', () async {
+        final t = await repository.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Deleted Task',
+        );
+        await repository.softDeleteTask(t.taskId);
+
+        await repository.restoreTasks(uid: 'user-123', taskIds: []);
+
+        final doc = await fakeFirestore.collection('tasks').doc(t.taskId).get();
+        expect(doc.data()!['deletedAt'], isNotNull);
+      });
+
+      test('already-active tasks are skipped', () async {
+        final t1 = await repository.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Active Task',
+        );
+        final t2 = await repository.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Deleted Task',
+        );
+        await repository.softDeleteTask(t2.taskId);
+
+        await repository.restoreTasks(
+          uid: 'user-123',
+          taskIds: [t1.taskId, t2.taskId],
+        );
+
+        final doc1 = await fakeFirestore
+            .collection('tasks')
+            .doc(t1.taskId)
+            .get();
+        final doc2 = await fakeFirestore
+            .collection('tasks')
+            .doc(t2.taskId)
+            .get();
+
+        expect(doc1.data()!['deletedAt'], isNull);
+        expect(doc2.data()!['deletedAt'], isNull);
+      });
+
+      test(
+        'reassigns to the fallback list when the original list is gone',
+        () async {
+          await fakeFirestore.collection('lists').doc('temp-list').set({
+            'listId': 'temp-list',
+            'uid': 'user-123',
+            'name': 'Temp',
+            'isDefault': false,
+          });
+
+          final task = await repository.createTask(
+            uid: 'user-123',
+            listId: 'temp-list',
+            title: 'Orphan Task',
+          );
+          await repository.softDeleteTask(task.taskId);
+
+          // Delete the temporary list
+          await fakeFirestore.collection('lists').doc('temp-list').delete();
+
+          await repository.restoreTasks(
+            uid: 'user-123',
+            taskIds: [task.taskId],
+            defaultListId: 'inbox-456',
+          );
+
+          final doc = await fakeFirestore
+              .collection('tasks')
+              .doc(task.taskId)
+              .get();
+          expect(doc.data()!['deletedAt'], isNull);
+          expect(doc.data()!['listId'], equals('inbox-456'));
+        },
+      );
+
+      test(
+        'reassigns to users/{uid}.defaultListId when defaultListId is null',
+        () async {
+          await fakeFirestore.collection('lists').doc('temp-list-2').set({
+            'listId': 'temp-list-2',
+            'uid': 'user-123',
+            'name': 'Temp 2',
+            'isDefault': false,
+          });
+          await fakeFirestore.collection('users').doc('user-123').set({
+            'uid': 'user-123',
+            'defaultListId': 'inbox-456',
+          });
+
+          final task = await repository.createTask(
+            uid: 'user-123',
+            listId: 'temp-list-2',
+            title: 'User Default Task',
+          );
+          await repository.softDeleteTask(task.taskId);
+
+          await fakeFirestore.collection('lists').doc('temp-list-2').delete();
+
+          await repository.restoreTasks(
+            uid: 'user-123',
+            taskIds: [task.taskId],
+          );
+
+          final doc = await fakeFirestore
+              .collection('tasks')
+              .doc(task.taskId)
+              .get();
+          expect(doc.data()!['deletedAt'], isNull);
+          expect(doc.data()!['listId'], equals('inbox-456'));
+        },
+      );
+
+      test(
+        'throws ArgumentError and writes nothing when a task is missing',
+        () async {
+          final task = await repository.createTask(
+            uid: 'user-123',
+            listId: 'inbox-456',
+            title: 'Task 1',
+          );
+          await repository.softDeleteTask(task.taskId);
+
+          await expectLater(
+            repository.restoreTasks(
+              uid: 'user-123',
+              taskIds: [task.taskId, 'missing-task-id'],
+            ),
+            throwsA(
+              isA<ArgumentError>().having(
+                (e) => e.message,
+                'message',
+                contains('Task not found: missing-task-id'),
+              ),
+            ),
+          );
+
+          final doc = await fakeFirestore
+              .collection('tasks')
+              .doc(task.taskId)
+              .get();
+          expect(doc.data()!['deletedAt'], isNotNull);
+        },
+      );
+
+      test('throws ArgumentError and writes nothing when task belongs to another user', () async {
+        // Task belongs to user-abc
+        final task = await repository.createTask(
+          uid: 'user-abc',
+          listId: 'list-xyz',
+          title: 'Other User Task',
+        );
+        await repository.softDeleteTask(task.taskId);
+
+        await expectLater(
+          repository.restoreTasks(uid: 'user-123', taskIds: [task.taskId]),
+          throwsA(
+            isA<ArgumentError>().having(
+              (e) => e.message,
+              'message',
+              contains('Task does not belong to user: ${task.taskId}'),
+            ),
+          ),
+        );
+
+        final doc = await fakeFirestore
+            .collection('tasks')
+            .doc(task.taskId)
+            .get();
+        expect(doc.data()!['deletedAt'], isNotNull);
+      });
+
+      test('handles 505 tasks in chunks', () async {
+        final taskIds = <String>[];
+        for (var chunkStart = 0; chunkStart < 505; chunkStart += 500) {
+          final batch = fakeFirestore.batch();
+          final chunkEnd = (chunkStart + 500 < 505) ? chunkStart + 500 : 505;
+          for (var i = chunkStart; i < chunkEnd; i++) {
+            final id = 'task-restore-bulk-$i';
+            taskIds.add(id);
+            batch.set(fakeFirestore.collection('tasks').doc(id), {
+              'taskId': id,
+              'uid': 'user-123',
+              'listId': 'inbox-456',
+              'title': 'Task $i',
+              'deletedAt': Timestamp.now(),
+            });
+          }
+          await batch.commit();
+        }
+
+        await repository.restoreTasks(uid: 'user-123', taskIds: taskIds);
+
+        final snapshot = await fakeFirestore.collection('tasks').get();
+        expect(snapshot.docs.length, equals(505));
+        for (final doc in snapshot.docs) {
+          expect(doc.data()['deletedAt'], isNull);
+        }
+      });
+    });
+
     group('Subtasks', () {
       test('addSubtask appends new subtask with uuid, trimmed title, and false completed', () async {
         final task = await repository.createTask(
@@ -2406,6 +2657,61 @@ void main() {
           ).called(1);
         },
       );
+
+      test('restoreTasks reschedules notifications only for incomplete tasks with a dueDate', () async {
+        final due = DateTime.now().add(const Duration(days: 1));
+        final t1 = await repoWithNotifications.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Task With Due Date',
+          dueDate: due,
+        );
+        final t2 = await repoWithNotifications.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Task No Due Date',
+        );
+        final t3 = await repoWithNotifications.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Completed Task With Due Date',
+          dueDate: due,
+        );
+        await repoWithNotifications.toggleTaskCompleted(
+          t3.taskId,
+          isCompleted: true,
+        );
+
+        await repoWithNotifications.softDeleteTasks([
+          t1.taskId,
+          t2.taskId,
+          t3.taskId,
+        ]);
+        reset(mockNotificationService);
+        when(() => mockNotificationService.scheduleForTask(any()))
+            .thenAnswer((_) async {});
+
+        await repoWithNotifications.restoreTasks(
+          uid: 'user-123',
+          taskIds: [t1.taskId, t2.taskId, t3.taskId],
+        );
+
+        verify(
+          () => mockNotificationService.scheduleForTask(
+            any(that: isA<Task>().having((t) => t.taskId, 'taskId', t1.taskId)),
+          ),
+        ).called(1);
+        verifyNever(
+          () => mockNotificationService.scheduleForTask(
+            any(that: isA<Task>().having((t) => t.taskId, 'taskId', t2.taskId)),
+          ),
+        );
+        verifyNever(
+          () => mockNotificationService.scheduleForTask(
+            any(that: isA<Task>().having((t) => t.taskId, 'taskId', t3.taskId)),
+          ),
+        );
+      });
 
       test('notificationService failure does not prevent Firestore operation from succeeding', () async {
         reset(mockNotificationService);

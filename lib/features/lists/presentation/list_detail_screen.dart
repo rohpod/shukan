@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/firebase/firebase_providers.dart';
+import '../../../core/ui/feedback_snackbar.dart';
+import '../../auth/providers/auth_providers.dart';
 import '../../export/export_service.dart';
 import '../../tasks/data/task.dart';
 import '../../tasks/presentation/move_tasks_dialog.dart';
 import '../../tasks/presentation/task_list_screen.dart';
 import '../../tasks/providers/task_providers.dart';
 import '../../tasks/providers/task_selection_providers.dart';
+import '../../tasks/providers/task_sort_providers.dart';
 import '../data/list.dart';
 
 class ListDetailScreen extends ConsumerWidget {
@@ -58,6 +61,7 @@ class ListDetailScreen extends ConsumerWidget {
     WidgetRef ref,
     List<Task> selectedTasks,
   ) async {
+    final messenger = ScaffoldMessenger.of(context);
     final count = selectedTasks.length;
     final titleText = count == 1 ? 'Delete 1 task?' : 'Delete $count tasks?';
 
@@ -83,22 +87,33 @@ class ListDetailScreen extends ConsumerWidget {
 
     if (confirmed != true) return;
 
+    final taskRepo = ref.read(taskRepositoryProvider);
+    final uid = ref.read(currentUidProvider);
     final taskIds = selectedTasks.map((t) => t.taskId).toList();
+
     try {
-      await ref.read(taskRepositoryProvider).softDeleteTasks(taskIds);
+      await taskRepo.softDeleteTasks(taskIds);
       ref.read(taskSelectionProvider(list.listId).notifier).clear();
       ref.read(isTaskSelectionModeActiveProvider(list.listId).notifier).exit();
-      if (context.mounted) {
-        final message = count == 1 ? '1 task deleted' : '$count tasks deleted';
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(message)));
-      }
+      final message = count == 1 ? '1 task deleted' : '$count tasks deleted';
+      showFeedbackSnackBar(
+        messenger,
+        message,
+        actionLabel: 'Undo',
+        actionKey: const Key('undoBatchDeleteButton'),
+        onAction: uid == null
+            ? null
+            : () => taskRepo.restoreTasks(
+                uid: uid,
+                taskIds: taskIds,
+                defaultListId: list.listId,
+              ),
+        actionErrorPrefix: 'Failed to undo deletion',
+      );
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Failed to delete tasks: $e')));
-      }
+      messenger.showSnackBar(
+        SnackBar(content: Text('Failed to delete tasks: $e')),
+      );
     }
   }
 
@@ -107,6 +122,7 @@ class ListDetailScreen extends ConsumerWidget {
     WidgetRef ref,
     List<Task> selectedTasks,
   ) async {
+    final messenger = ScaffoldMessenger.of(context);
     final count = selectedTasks.length;
     final targetList = await showDialog<ListModel>(
       context: context,
@@ -116,25 +132,28 @@ class ListDetailScreen extends ConsumerWidget {
 
     if (targetList == null) return;
 
+    final taskRepo = ref.read(taskRepositoryProvider);
     final taskIds = selectedTasks.map((t) => t.taskId).toList();
+
     try {
-      await ref
-          .read(taskRepositoryProvider)
-          .moveTasksToList(taskIds, targetList.listId);
+      await taskRepo.moveTasksToList(taskIds, targetList.listId);
       ref.read(taskSelectionProvider(list.listId).notifier).clear();
       ref.read(isTaskSelectionModeActiveProvider(list.listId).notifier).exit();
-      if (context.mounted) {
-        final message = count == 1
-            ? '1 task moved to "${targetList.name}"'
-            : '$count tasks moved to "${targetList.name}"';
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(message)));
-      }
+      final message = count == 1
+          ? '1 task moved to "${targetList.name}"'
+          : '$count tasks moved to "${targetList.name}"';
+      showFeedbackSnackBar(
+        messenger,
+        message,
+        actionLabel: 'Undo',
+        actionKey: const Key('undoMoveTasksButton'),
+        onAction: () => taskRepo.moveTasksToList(taskIds, list.listId),
+        actionErrorPrefix: 'Failed to undo move',
+      );
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Failed to move tasks: $e')));
-      }
+      messenger.showSnackBar(
+        SnackBar(content: Text('Failed to move tasks: $e')),
+      );
     }
   }
 
@@ -144,6 +163,8 @@ class ListDetailScreen extends ConsumerWidget {
     final isSelectionActive = ref.watch(
       isSelectionModeActiveProvider(list.listId),
     );
+    final sortedTasksAsync = ref.watch(sortedTasksForListProvider(list.listId));
+    final hasTasksToSelect = sortedTasksAsync.value?.isNotEmpty ?? false;
 
     return PopScope(
       canPop: !isSelectionActive,
@@ -199,17 +220,18 @@ class ListDetailScreen extends ConsumerWidget {
             : AppBar(
                 title: Text(list.name, key: const Key('listDetailTitle')),
                 actions: [
-                  IconButton(
-                    key: const Key('editTasksButton'),
-                    icon: const Icon(Icons.edit_outlined),
-                    tooltip: 'Edit tasks',
-                    onPressed: () => ref
-                        .read(
-                          isTaskSelectionModeActiveProvider(list.listId)
-                              .notifier,
-                        )
-                        .enter(),
-                  ),
+                  if (hasTasksToSelect)
+                    IconButton(
+                      key: const Key('editTasksButton'),
+                      icon: const Icon(Icons.edit_outlined),
+                      tooltip: 'Edit tasks',
+                      onPressed: () => ref
+                          .read(
+                            isTaskSelectionModeActiveProvider(list.listId)
+                                .notifier,
+                          )
+                          .enter(),
+                    ),
                   IconButton(
                     key: const Key('exportListButton'),
                     icon: const Icon(Icons.file_download_outlined),

@@ -819,5 +819,363 @@ void main() {
         expect(find.byKey(const Key('editTasksButton')), findsOneWidget);
       },
     );
+
+    testWidgets(
+      'edit button is hidden when list has no tasks, and appears when task is added',
+      (tester) async {
+        // Delete t1 seeded in setUp
+        await fakeFirestore.collection('tasks').doc('t1').delete();
+
+        final list = ListModel(
+          listId: listId,
+          uid: uid,
+          name: 'Work Projects',
+          isDefault: false,
+        );
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              firebaseAuthProvider.overrideWithValue(mockAuth),
+              firestoreProvider.overrideWithValue(fakeFirestore),
+              taskRepositoryProvider.overrideWithValue(
+                TaskRepository(fakeFirestore),
+              ),
+            ],
+            child: MaterialApp(home: ListDetailScreen(list: list)),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Edit button should be hidden for empty list
+        expect(find.byKey(const Key('editTasksButton')), findsNothing);
+
+        // Add a task to Firestore
+        await fakeFirestore.collection('tasks').doc('t-new').set({
+          'taskId': 't-new',
+          'uid': uid,
+          'listId': listId,
+          'title': 'New Task',
+          'deletedAt': null,
+        });
+        await tester.pumpAndSettle();
+
+        // Edit button should now appear
+        expect(find.byKey(const Key('editTasksButton')), findsOneWidget);
+      },
+    );
+
+    testWidgets('edit button is hidden when filters hide all tasks', (
+      tester,
+    ) async {
+      await fakeFirestore.collection('tasks').doc('t1').update({
+        'priority': 'low',
+      });
+
+      final list = ListModel(
+        listId: listId,
+        uid: uid,
+        name: 'Work Projects',
+        isDefault: false,
+      );
+
+      late ProviderContainer container;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            firebaseAuthProvider.overrideWithValue(mockAuth),
+            firestoreProvider.overrideWithValue(fakeFirestore),
+            taskRepositoryProvider.overrideWithValue(
+              TaskRepository(fakeFirestore),
+            ),
+          ],
+          child: Consumer(
+            builder: (context, ref, child) {
+              container = ProviderScope.containerOf(context);
+              return MaterialApp(home: ListDetailScreen(list: list));
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Edit button is visible initially
+      expect(find.byKey(const Key('editTasksButton')), findsOneWidget);
+
+      // Filter for high priority (which hides the low priority task)
+      await container
+          .read(taskPriorityFilterProvider(listId).notifier)
+          .setFilter(TaskPriorityFilter.high);
+      await tester.pumpAndSettle();
+
+      // Edit button is now hidden
+      expect(find.byKey(const Key('editTasksButton')), findsNothing);
+    });
+
+    testWidgets(
+      'batch delete shows Undo action and tapping Undo restores all deleted tasks',
+      (tester) async {
+        await fakeFirestore.collection('tasks').doc('t2').set({
+          'taskId': 't2',
+          'uid': uid,
+          'listId': listId,
+          'title': 'Task 2',
+          'deletedAt': null,
+        });
+
+        final list = ListModel(
+          listId: listId,
+          uid: uid,
+          name: 'Work Projects',
+          isDefault: false,
+        );
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              firebaseAuthProvider.overrideWithValue(mockAuth),
+              firestoreProvider.overrideWithValue(fakeFirestore),
+              taskRepositoryProvider.overrideWithValue(
+                TaskRepository(fakeFirestore),
+              ),
+            ],
+            child: MaterialApp(home: ListDetailScreen(list: list)),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Select t1 and t2
+        await tester.longPress(find.byKey(const Key('taskItem_t1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('taskItem_t2')));
+        await tester.pumpAndSettle();
+        expect(find.text('2 selected'), findsOneWidget);
+
+        // Delete
+        await tester.tap(find.byKey(const Key('selectionDeleteButton')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('confirmBatchDeleteButton')));
+        await tester.pumpAndSettle();
+
+        // Verify soft-deleted
+        var doc1 = await fakeFirestore.collection('tasks').doc('t1').get();
+        var doc2 = await fakeFirestore.collection('tasks').doc('t2').get();
+        expect(doc1.data()!['deletedAt'], isNotNull);
+        expect(doc2.data()!['deletedAt'], isNotNull);
+
+        // Verify SnackBar and Undo action
+        expect(find.text('2 tasks deleted'), findsOneWidget);
+        expect(find.byKey(const Key('undoBatchDeleteButton')), findsOneWidget);
+
+        // Tap Undo
+        await tester.tap(find.byKey(const Key('undoBatchDeleteButton')));
+        await tester.pumpAndSettle();
+
+        // Both tasks restored
+        doc1 = await fakeFirestore.collection('tasks').doc('t1').get();
+        doc2 = await fakeFirestore.collection('tasks').doc('t2').get();
+        expect(doc1.data()!['deletedAt'], isNull);
+        expect(doc2.data()!['deletedAt'], isNull);
+        expect(find.text('Deploy project'), findsOneWidget);
+        expect(find.text('Task 2'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'batch move shows Undo action and tapping Undo moves tasks back to source list',
+      (tester) async {
+        await fakeFirestore.collection('lists').doc('dest-list').set({
+          'listId': 'dest-list',
+          'uid': uid,
+          'name': 'Personal List',
+          'isDefault': false,
+        });
+
+        await fakeFirestore.collection('tasks').doc('t2').set({
+          'taskId': 't2',
+          'uid': uid,
+          'listId': listId,
+          'title': 'Task 2',
+          'deletedAt': null,
+        });
+
+        final list = ListModel(
+          listId: listId,
+          uid: uid,
+          name: 'Work Projects',
+          isDefault: false,
+        );
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              firebaseAuthProvider.overrideWithValue(mockAuth),
+              firestoreProvider.overrideWithValue(fakeFirestore),
+              taskRepositoryProvider.overrideWithValue(
+                TaskRepository(fakeFirestore),
+              ),
+            ],
+            child: MaterialApp(home: ListDetailScreen(list: list)),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Select t1 and t2
+        await tester.longPress(find.byKey(const Key('taskItem_t1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('taskItem_t2')));
+        await tester.pumpAndSettle();
+
+        // Tap move
+        await tester.tap(find.byKey(const Key('selectionMoveButton')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('moveTargetList_dest-list')));
+        await tester.pumpAndSettle();
+
+        // Verify moved
+        var doc1 = await fakeFirestore.collection('tasks').doc('t1').get();
+        var doc2 = await fakeFirestore.collection('tasks').doc('t2').get();
+        expect(doc1.data()!['listId'], equals('dest-list'));
+        expect(doc2.data()!['listId'], equals('dest-list'));
+
+        // Verify SnackBar and Undo action
+        expect(find.text('2 tasks moved to "Personal List"'), findsOneWidget);
+        expect(find.byKey(const Key('undoMoveTasksButton')), findsOneWidget);
+
+        // Tap Undo
+        await tester.tap(find.byKey(const Key('undoMoveTasksButton')));
+        await tester.pumpAndSettle();
+
+        // Both tasks moved back to source listId
+        doc1 = await fakeFirestore.collection('tasks').doc('t1').get();
+        doc2 = await fakeFirestore.collection('tasks').doc('t2').get();
+        expect(doc1.data()!['listId'], equals(listId));
+        expect(doc2.data()!['listId'], equals(listId));
+      },
+    );
+
+    testWidgets('batch move Undo shows error snackbar when moving back fails', (
+      tester,
+    ) async {
+      await fakeFirestore.collection('lists').doc('dest-list').set({
+        'listId': 'dest-list',
+        'uid': uid,
+        'name': 'Personal List',
+        'isDefault': false,
+      });
+
+      final list = ListModel(
+        listId: listId,
+        uid: uid,
+        name: 'Work Projects',
+        isDefault: false,
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            firebaseAuthProvider.overrideWithValue(mockAuth),
+            firestoreProvider.overrideWithValue(fakeFirestore),
+            taskRepositoryProvider.overrideWithValue(
+              TaskRepository(fakeFirestore),
+            ),
+          ],
+          child: MaterialApp(home: ListDetailScreen(list: list)),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.longPress(find.byKey(const Key('taskItem_t1')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('selectionMoveButton')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('moveTargetList_dest-list')));
+      await tester.pumpAndSettle();
+
+      // Delete the original source list so move back fails
+      await fakeFirestore.collection('lists').doc(listId).delete();
+
+      // Tap Undo
+      await tester.tap(find.byKey(const Key('undoMoveTasksButton')));
+      await tester.pumpAndSettle();
+
+      // Verify failure snackbar appears
+      expect(
+        find.textContaining(
+          'Failed to undo move: Invalid argument(s): List not found: $listId',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets(
+      'tapping batch delete Undo after popping ListDetailScreen does not throw',
+      (tester) async {
+        final list = ListModel(
+          listId: listId,
+          uid: uid,
+          name: 'Work Projects',
+          isDefault: false,
+        );
+
+        final navigatorKey = GlobalKey<NavigatorState>();
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              firebaseAuthProvider.overrideWithValue(mockAuth),
+              firestoreProvider.overrideWithValue(fakeFirestore),
+              taskRepositoryProvider.overrideWithValue(
+                TaskRepository(fakeFirestore),
+              ),
+            ],
+            child: MaterialApp(
+              navigatorKey: navigatorKey,
+              home: Scaffold(
+                body: Builder(
+                  builder: (context) => ElevatedButton(
+                    key: const Key('openScreenButton'),
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => ListDetailScreen(list: list),
+                      ),
+                    ),
+                    child: const Text('Open Screen'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Open ListDetailScreen
+        await tester.tap(find.byKey(const Key('openScreenButton')));
+        await tester.pumpAndSettle();
+
+        // Select and delete t1
+        await tester.longPress(find.byKey(const Key('taskItem_t1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('selectionDeleteButton')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('confirmBatchDeleteButton')));
+        await tester.pumpAndSettle();
+
+        // Pop ListDetailScreen while the SnackBar is visible on root ScaffoldMessenger
+        navigatorKey.currentState!.pop();
+        await tester.pumpAndSettle();
+
+        expect(find.byType(ListDetailScreen), findsNothing);
+        expect(find.byKey(const Key('undoBatchDeleteButton')), findsOneWidget);
+
+        // Tap Undo on root ScaffoldMessenger
+        await tester.tap(find.byKey(const Key('undoBatchDeleteButton')));
+        await tester.pumpAndSettle();
+
+        // Verify task was restored without throwing any disposed ref exception
+        final doc = await fakeFirestore.collection('tasks').doc('t1').get();
+        expect(doc.data()!['deletedAt'], isNull);
+      },
+    );
   });
 }

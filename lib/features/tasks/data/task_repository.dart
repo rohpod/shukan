@@ -560,6 +560,123 @@ class TaskRepository {
     }
   }
 
+  /// Restores multiple soft-deleted tasks belonging to [uid].
+  ///
+  /// - Throws [ArgumentError] if any task does not exist or does not belong to [uid]
+  ///   before performing any writes.
+  /// - Skips tasks whose `deletedAt` is already null.
+  /// - If a task's list no longer exists, reassigns it to [defaultListId] (or resolved from users/{uid}).
+  /// - Commits updates in batches of max 500 operations.
+  /// - Re-reads restored tasks and reschedules notifications for incomplete tasks with due dates.
+  Future<void> restoreTasks({
+    required String uid,
+    required List<String> taskIds,
+    String? defaultListId,
+  }) async {
+    if (taskIds.isEmpty) return;
+
+    final taskDocs = await Future.wait(
+      taskIds.map((id) => _tasksCollection.doc(id).get()),
+    );
+    for (var i = 0; i < taskIds.length; i++) {
+      final doc = taskDocs[i];
+      if (!doc.exists) {
+        throw ArgumentError('Task not found: ${taskIds[i]}');
+      }
+      final data = doc.data()!;
+      if (data['uid'] != uid) {
+        throw ArgumentError('Task does not belong to user: ${taskIds[i]}');
+      }
+    }
+
+    final tasksToRestore = <DocumentSnapshot<Map<String, dynamic>>>[];
+    for (final doc in taskDocs) {
+      final data = doc.data()!;
+      if (data['deletedAt'] != null) {
+        tasksToRestore.add(doc);
+      }
+    }
+    if (tasksToRestore.isEmpty) return;
+
+    final distinctListIds = <String>{};
+    for (final doc in tasksToRestore) {
+      final listId = doc.data()?['listId'] as String?;
+      if (listId != null && listId.isNotEmpty) {
+        distinctListIds.add(listId);
+      }
+    }
+
+    final listValidity = <String, bool>{};
+    for (final listId in distinctListIds) {
+      final listDoc = await _firestore.collection('lists').doc(listId).get();
+      listValidity[listId] = listDoc.exists && listDoc.data()?['uid'] == uid;
+    }
+
+    String? userDefaultListId;
+    bool hasFetchedUserDefaultList = false;
+
+    Future<String?> resolveTargetListId(String? currentListId) async {
+      final listExists =
+          currentListId != null &&
+          currentListId.isNotEmpty &&
+          (listValidity[currentListId] ?? false);
+
+      if (listExists) {
+        return currentListId;
+      }
+
+      if (defaultListId != null && defaultListId.isNotEmpty) {
+        return defaultListId;
+      }
+
+      if (!hasFetchedUserDefaultList) {
+        final userDoc = await _firestore.collection('users').doc(uid).get();
+        userDefaultListId = userDoc.data()?['defaultListId'] as String?;
+        hasFetchedUserDefaultList = true;
+      }
+      return userDefaultListId;
+    }
+
+    final updatesList = <MapEntry<String, Map<String, dynamic>>>[];
+    for (final doc in tasksToRestore) {
+      final data = doc.data()!;
+      final currentListId = data['listId'] as String?;
+      final targetListId = await resolveTargetListId(currentListId);
+
+      final updates = <String, dynamic>{'deletedAt': null};
+      if (targetListId != null && targetListId != currentListId) {
+        updates['listId'] = targetListId;
+      }
+      updatesList.add(MapEntry(doc.id, updates));
+    }
+
+    const batchSize = 500;
+    for (var i = 0; i < updatesList.length; i += batchSize) {
+      final end = (i + batchSize < updatesList.length)
+          ? i + batchSize
+          : updatesList.length;
+      final chunk = updatesList.sublist(i, end);
+      final batch = _firestore.batch();
+      for (final entry in chunk) {
+        batch.update(_tasksCollection.doc(entry.key), entry.value);
+      }
+      await batch.commit();
+    }
+
+    final restoredTaskIds = updatesList.map((e) => e.key).toList();
+    final restoredDocs = await Future.wait(
+      restoredTaskIds.map((id) => _tasksCollection.doc(id).get()),
+    );
+    for (final doc in restoredDocs) {
+      if (doc.exists && doc.data() != null) {
+        final restoredTask = Task.fromFirestore(doc);
+        if (!restoredTask.isCompleted && restoredTask.dueDate != null) {
+          await _safeSchedule(restoredTask);
+        }
+      }
+    }
+  }
+
   /// Permanently hard-deletes a task document from Firestore.
   ///
   /// Defense-in-depth:
