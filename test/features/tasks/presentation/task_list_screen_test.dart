@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:firebase_auth_mocks/firebase_auth_mocks.dart';
@@ -12,6 +14,18 @@ import 'package:shukan/features/tasks/presentation/task_list_screen.dart';
 import 'package:shukan/features/tasks/providers/task_providers.dart';
 
 class MockTaskRepository extends Mock implements TaskRepository {}
+
+class _DelayedSoftDeleteTaskRepository extends TaskRepository {
+  _DelayedSoftDeleteTaskRepository(super.firestore);
+
+  final Completer<void> completer = Completer<void>();
+
+  @override
+  Future<void> softDeleteTask(String taskId) async {
+    await completer.future;
+    await super.softDeleteTask(taskId);
+  }
+}
 
 void main() {
   late MockFirebaseAuth mockAuth;
@@ -678,6 +692,171 @@ void main() {
         expect(find.text('Task to undo'), findsOneWidget);
         final doc = await fakeFirestore.collection('tasks').doc(taskId).get();
         expect(doc.data()!['deletedAt'], isNull);
+      },
+    );
+
+    testWidgets(
+      'soft delete Undo SnackBar auto-dismisses after 5 seconds',
+      (tester) async {
+        const taskId = 'task-undo-timeout';
+        await fakeFirestore.collection('tasks').doc(taskId).set({
+          'taskId': taskId,
+          'uid': uid,
+          'listId': listId,
+          'title': 'Task to timeout',
+          'notes': '',
+          'url': '',
+          'priority': 'none',
+          'tagIds': <String>[],
+          'dueDate': null,
+          'dueTime': null,
+          'earlyReminderMinutes': 0,
+          'repeatRule': 'none',
+          'repeatCustomConfig': null,
+          'order': 0,
+          'subtasks': <Map<String, dynamic>>[],
+          'createdAt': Timestamp.now(),
+          'completedAt': null,
+          'deletedAt': null,
+        });
+
+        await tester.pumpWidget(createWidgetUnderTest(customListId: listId));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Task to timeout'), findsOneWidget);
+
+        // Tap delete
+        await tester.tap(find.byKey(const Key('deleteTaskButton_$taskId')));
+        await tester.pumpAndSettle();
+
+        // Verify SnackBar is shown
+        expect(find.text('Deleted "Task to timeout"'), findsOneWidget);
+        expect(find.byKey(const Key('undoDeleteTaskButton')), findsOneWidget);
+
+        // Advance 5 seconds and settle
+        await tester.pump(const Duration(seconds: 5));
+        await tester.pumpAndSettle();
+
+        // Verify SnackBar is dismissed
+        expect(find.text('Deleted "Task to timeout"'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'soft delete Undo SnackBar is dismissed by start-to-end swipe before timeout',
+      (tester) async {
+        const taskId = 'task-undo-swipe';
+        await fakeFirestore.collection('tasks').doc(taskId).set({
+          'taskId': taskId,
+          'uid': uid,
+          'listId': listId,
+          'title': 'Task to swipe',
+          'notes': '',
+          'url': '',
+          'priority': 'none',
+          'tagIds': <String>[],
+          'dueDate': null,
+          'dueTime': null,
+          'earlyReminderMinutes': 0,
+          'repeatRule': 'none',
+          'repeatCustomConfig': null,
+          'order': 0,
+          'subtasks': <Map<String, dynamic>>[],
+          'createdAt': Timestamp.now(),
+          'completedAt': null,
+          'deletedAt': null,
+        });
+
+        await tester.pumpWidget(createWidgetUnderTest(customListId: listId));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Task to swipe'), findsOneWidget);
+
+        // Tap delete
+        await tester.tap(find.byKey(const Key('deleteTaskButton_$taskId')));
+        await tester.pumpAndSettle();
+
+        // SnackBar shown
+        expect(find.text('Deleted "Task to swipe"'), findsOneWidget);
+
+        // Incidental swipe to the left does NOT dismiss it
+        await tester.fling(
+          find.text('Deleted "Task to swipe"'),
+          const Offset(-500, 0),
+          1000,
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Deleted "Task to swipe"'), findsOneWidget);
+
+        // Deliberate start-to-end swipe (positive dx) DOES dismiss it
+        await tester.fling(
+          find.text('Deleted "Task to swipe"'),
+          const Offset(500, 0),
+          1000,
+        );
+        await tester.pumpAndSettle();
+
+        // Verify SnackBar dismissed immediately before 5 seconds
+        expect(find.text('Deleted "Task to swipe"'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'soft delete Undo SnackBar appears even if row Element unmounts during softDeleteTask',
+      (tester) async {
+        const taskId = 'task-undo-unmount';
+        await fakeFirestore.collection('tasks').doc(taskId).set({
+          'taskId': taskId,
+          'uid': uid,
+          'listId': listId,
+          'title': 'Task unmounted',
+          'notes': '',
+          'url': '',
+          'priority': 'none',
+          'tagIds': <String>[],
+          'dueDate': null,
+          'dueTime': null,
+          'earlyReminderMinutes': 0,
+          'repeatRule': 'none',
+          'repeatCustomConfig': null,
+          'order': 0,
+          'subtasks': <Map<String, dynamic>>[],
+          'createdAt': Timestamp.now(),
+          'completedAt': null,
+          'deletedAt': null,
+        });
+
+        final delayedRepo = _DelayedSoftDeleteTaskRepository(fakeFirestore);
+
+        await tester.pumpWidget(
+          createWidgetUnderTest(
+            customListId: listId,
+            taskRepository: delayedRepo,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Task unmounted'), findsOneWidget);
+
+        // Tap delete
+        await tester.tap(find.byKey(const Key('deleteTaskButton_$taskId')));
+        await tester.pump(); // Starts softDeleteTask, awaiting completer
+
+        // Simulate live Firestore stream updating and rebuilding list while softDeleteTask is awaiting
+        await fakeFirestore.collection('tasks').doc(taskId).update({
+          'deletedAt': Timestamp.now(),
+        });
+        await tester.pump(); // Rebuilds TaskListScreen: row Element is unmounted!
+
+        expect(find.text('Task unmounted'), findsNothing);
+
+        // Complete the pending softDeleteTask
+        delayedRepo.completer.complete();
+        await tester.pump(); // Resumes after softDeleteTask await
+
+        // Verify SnackBar still appears despite row Element being unmounted
+        expect(find.text('Deleted "Task unmounted"'), findsOneWidget);
+        expect(find.byKey(const Key('undoDeleteTaskButton')), findsOneWidget);
       },
     );
   });

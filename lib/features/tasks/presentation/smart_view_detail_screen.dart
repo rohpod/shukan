@@ -69,6 +69,7 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
     final uid = ref.watch(currentUidProvider);
     if (uid == null) {
       return Scaffold(
@@ -421,29 +422,48 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                                   await ref
                                       .read(taskRepositoryProvider)
                                       .softDeleteTask(task.taskId);
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context)
-                                        .clearSnackBars();
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                          'Deleted "${task.title}"',
+                                  if (!mounted) return;
+                                  scaffoldMessenger.clearSnackBars();
+                                  scaffoldMessenger.showSnackBar(
+                                    SnackBar(
+                                      duration: const Duration(seconds: 5),
+                                      persist: false,
+                                      dismissDirection:
+                                          DismissDirection.startToEnd,
+                                      content: Text(
+                                        'Deleted "${task.title}"',
+                                      ),
+                                      action: SnackBarAction(
+                                        key: const Key(
+                                          'undoDeleteTaskButton',
                                         ),
-                                        action: SnackBarAction(
-                                          label: 'Undo',
-                                          onPressed: () async {
+                                        label: 'Undo',
+                                        onPressed: () async {
+                                          try {
                                             await ref
-                                                .read(taskRepositoryProvider)
+                                                .read(
+                                                  taskRepositoryProvider,
+                                                )
                                                 .restoreTask(
                                                   uid: uid,
                                                   taskId: task.taskId,
-                                                  defaultListId: defaultListId,
+                                                  defaultListId:
+                                                      defaultListId,
                                                 );
-                                          },
-                                        ),
+                                          } catch (e) {
+                                            if (!mounted) return;
+                                            scaffoldMessenger.showSnackBar(
+                                              SnackBar(
+                                                content: Text(
+                                                  'Failed to undo deletion: $e',
+                                                ),
+                                              ),
+                                            );
+                                          }
+                                        },
                                       ),
-                                    );
-                                  }
+                                    ),
+                                  );
                                 },
                               ),
                             ],
