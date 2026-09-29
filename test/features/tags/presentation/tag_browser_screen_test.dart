@@ -303,4 +303,100 @@ void main() {
 
     expect(find.byKey(const Key('tagBrowserItem_tag-unused')), findsOneWidget);
   });
+
+  testWidgets(
+    'renaming a tag shows snackbar with trimmed name; cancelling or no-op rename shows none',
+    (tester) async {
+      await fakeFirestore.collection('tags').doc('tag-design').set({
+        'tagId': 'tag-design',
+        'uid': uid,
+        'name': 'Design',
+        'createdAt': DateTime.now(),
+      });
+      await fakeFirestore.collection('tasks').doc('t-design').set({
+        'taskId': 't-design',
+        'uid': uid,
+        'title': 'Design Mockup',
+        'tagIds': ['tag-design'],
+        'deletedAt': null,
+      });
+
+      final prefs = await SharedPreferences.getInstance();
+      await tester.pumpWidget(createWidget(prefs: prefs));
+      await tester.pumpAndSettle();
+
+      // Cancel rename test
+      await tester.tap(find.byKey(const Key('renameTagButton_tag-design')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('cancelRenameTagButton')));
+      await tester.pumpAndSettle();
+      expect(find.byType(SnackBar), findsNothing);
+
+      // No-op rename test: same name with whitespace
+      await tester.tap(find.byKey(const Key('renameTagButton_tag-design')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('renameTagInput')),
+        '  Design  ',
+      );
+      await tester.tap(find.byKey(const Key('confirmRenameTagButton')));
+      await tester.pumpAndSettle();
+      expect(find.byType(SnackBar), findsNothing);
+
+      // Valid rename with surrounding whitespace
+      await tester.tap(find.byKey(const Key('renameTagButton_tag-design')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('renameTagInput')),
+        '  UI/UX  ',
+      );
+      await tester.tap(find.byKey(const Key('confirmRenameTagButton')));
+      await tester.pumpAndSettle();
+
+      // Verify snackbar has trimmed name and no action button
+      expect(find.text('Renamed tag to "UI/UX"'), findsOneWidget);
+      expect(find.byType(SnackBarAction), findsNothing);
+    },
+  );
+
+  testWidgets('duplicate tag rename shows error and NO success snackbar', (
+    tester,
+  ) async {
+    await fakeFirestore.collection('tags').doc('tag-dev').set({
+      'tagId': 'tag-dev',
+      'uid': uid,
+      'name': 'Dev',
+      'createdAt': DateTime.now(),
+    });
+    await fakeFirestore.collection('tags').doc('tag-qa').set({
+      'tagId': 'tag-qa',
+      'uid': uid,
+      'name': 'QA',
+      'createdAt': DateTime.now(),
+    });
+    await fakeFirestore.collection('tasks').doc('t-dev').set({
+      'taskId': 't-dev',
+      'uid': uid,
+      'title': 'Code Review',
+      'tagIds': ['tag-dev', 'tag-qa'],
+      'deletedAt': null,
+    });
+
+    final prefs = await SharedPreferences.getInstance();
+    await tester.pumpWidget(createWidget(prefs: prefs));
+    await tester.pumpAndSettle();
+
+    // Try renaming Dev to QA (duplicate)
+    await tester.tap(find.byKey(const Key('renameTagButton_tag-dev')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('renameTagInput')), 'QA');
+    await tester.tap(find.byKey(const Key('confirmRenameTagButton')));
+    await tester.pumpAndSettle();
+
+    // Error shown in dialog, dialog stays open
+    expect(find.text('A tag with this name already exists'), findsOneWidget);
+    // NO success snackbar
+    expect(find.textContaining('Renamed tag to'), findsNothing);
+    expect(find.byType(SnackBar), findsNothing);
+  });
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/ui/feedback_snackbar.dart';
 import '../../auth/providers/auth_providers.dart';
 import '../../tasks/presentation/widgets/empty_state_view.dart';
 import '../../tasks/providers/task_sort_providers.dart';
@@ -19,6 +20,7 @@ class TagBrowserScreen extends ConsumerWidget {
     TagBrowserEntry entry,
     String uid,
   ) async {
+    final messenger = ScaffoldMessenger.of(context);
     final controller = TextEditingController(text: entry.name);
     final formKey = GlobalKey<FormState>();
     String? serverError;
@@ -68,17 +70,25 @@ class TagBrowserScreen extends ConsumerWidget {
               key: const Key('confirmRenameTagButton'),
               onPressed: () async {
                 if (!formKey.currentState!.validate()) return;
+                final newName = controller.text.trim();
+                if (newName == entry.name) {
+                  if (dialogContext.mounted) {
+                    Navigator.of(dialogContext).pop();
+                  }
+                  return;
+                }
                 try {
                   await ref
                       .read(tagRepositoryProvider)
                       .renameTag(
                         uid: uid,
                         tagId: entry.tagId,
-                        newName: controller.text.trim(),
+                        newName: newName,
                       );
                   if (dialogContext.mounted) {
                     Navigator.of(dialogContext).pop();
                   }
+                  showFeedbackSnackBar(messenger, 'Renamed tag to "$newName"');
                 } on ArgumentError catch (e) {
                   setDialogState(() {
                     serverError = e.message.toString();
