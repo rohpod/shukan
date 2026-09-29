@@ -6,7 +6,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shukan/core/firebase/firebase_providers.dart';
 import 'package:shukan/features/lists/data/list.dart';
 import 'package:shukan/features/lists/presentation/list_detail_screen.dart';
+import 'package:shukan/features/tasks/data/task_repository.dart';
+import 'package:shukan/features/tasks/domain/task_priority_filter.dart';
 import 'package:shukan/features/tasks/presentation/task_list_screen.dart';
+import 'package:shukan/features/tasks/providers/task_providers.dart';
+import 'package:shukan/features/tasks/providers/task_sort_providers.dart';
 
 void main() {
   late MockFirebaseAuth mockAuth;
@@ -158,6 +162,662 @@ void main() {
         'Failed to export list: Exception: Disk full or download blocked',
       ),
       findsOneWidget,
+    );
+  });
+
+  group('Batch selection and multi-task actions', () {
+    testWidgets(
+      'long-press enters selection mode, tap toggles, and deselecting last exits',
+      (tester) async {
+        await fakeFirestore.collection('tasks').doc('t2').set({
+          'taskId': 't2',
+          'uid': uid,
+          'listId': listId,
+          'title': 'Write unit tests',
+          'deletedAt': null,
+        });
+
+        final list = ListModel(
+          listId: listId,
+          uid: uid,
+          name: 'Work Projects',
+          isDefault: false,
+        );
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              firebaseAuthProvider.overrideWithValue(mockAuth),
+              firestoreProvider.overrideWithValue(fakeFirestore),
+              taskRepositoryProvider.overrideWithValue(
+                TaskRepository(fakeFirestore),
+              ),
+            ],
+            child: MaterialApp(home: ListDetailScreen(list: list)),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Initially normal AppBar
+        expect(find.byKey(const Key('listDetailTitle')), findsOneWidget);
+        expect(find.byKey(const Key('selectionCountTitle')), findsNothing);
+
+        // Long press first task row
+        await tester.longPress(find.byKey(const Key('taskItem_t1')));
+        await tester.pumpAndSettle();
+
+        // Selection mode active
+        expect(find.byKey(const Key('listDetailTitle')), findsNothing);
+        expect(find.byKey(const Key('selectionCloseButton')), findsOneWidget);
+        expect(find.byKey(const Key('selectionMoveButton')), findsOneWidget);
+        expect(find.byKey(const Key('selectionDeleteButton')), findsOneWidget);
+        expect(find.byKey(const Key('selectionCountTitle')), findsOneWidget);
+        expect(find.text('1 selected'), findsOneWidget);
+
+        // Tap second task row to toggle it into selection
+        await tester.tap(find.byKey(const Key('taskItem_t2')));
+        await tester.pumpAndSettle();
+        expect(find.text('2 selected'), findsOneWidget);
+
+        // Tap second task row again to deselect it
+        await tester.tap(find.byKey(const Key('taskItem_t2')));
+        await tester.pumpAndSettle();
+        expect(find.text('1 selected'), findsOneWidget);
+
+        // Tap first task row to deselect the last selected task -> exits mode
+        await tester.tap(find.byKey(const Key('taskItem_t1')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('listDetailTitle')), findsOneWidget);
+        expect(find.byKey(const Key('selectionCountTitle')), findsNothing);
+      },
+    );
+
+    testWidgets('selectionCloseButton exits selection mode', (tester) async {
+      final list = ListModel(
+        listId: listId,
+        uid: uid,
+        name: 'Work Projects',
+        isDefault: false,
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            firebaseAuthProvider.overrideWithValue(mockAuth),
+            firestoreProvider.overrideWithValue(fakeFirestore),
+            taskRepositoryProvider.overrideWithValue(
+              TaskRepository(fakeFirestore),
+            ),
+          ],
+          child: MaterialApp(home: ListDetailScreen(list: list)),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.longPress(find.byKey(const Key('taskItem_t1')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('selectionCountTitle')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('selectionCloseButton')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('selectionCountTitle')), findsNothing);
+      expect(find.byKey(const Key('listDetailTitle')), findsOneWidget);
+    });
+
+    testWidgets(
+      'while selecting, row buttons are disabled, drag handle hidden, and tapping does not open edit dialog',
+      (tester) async {
+        final list = ListModel(
+          listId: listId,
+          uid: uid,
+          name: 'Work Projects',
+          isDefault: false,
+        );
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              firebaseAuthProvider.overrideWithValue(mockAuth),
+              firestoreProvider.overrideWithValue(fakeFirestore),
+              taskRepositoryProvider.overrideWithValue(
+                TaskRepository(fakeFirestore),
+              ),
+            ],
+            child: MaterialApp(home: ListDetailScreen(list: list)),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Enter selection mode
+        await tester.longPress(find.byKey(const Key('taskItem_t1')));
+        await tester.pumpAndSettle();
+
+        // Verify row buttons disabled
+        final moveBtn = tester.widget<IconButton>(
+          find.byKey(const Key('moveTaskButton_t1')),
+        );
+        final editBtn = tester.widget<IconButton>(
+          find.byKey(const Key('editTaskButton_t1')),
+        );
+        final delBtn = tester.widget<IconButton>(
+          find.byKey(const Key('deleteTaskButton_t1')),
+        );
+        expect(moveBtn.onPressed, isNull);
+        expect(editBtn.onPressed, isNull);
+        expect(delBtn.onPressed, isNull);
+
+        // Verify drag handle is hidden
+        expect(find.byKey(const Key('taskDragHandle_t1')), findsNothing);
+
+        // Tap row -> toggles selection instead of opening edit dialog
+        await tester.tap(find.byKey(const Key('taskItem_t1')));
+        await tester.pumpAndSettle();
+        expect(find.text('Edit Task'), findsNothing);
+
+        // Now outside selection mode, tap row opens edit dialog
+        await tester.tap(find.byKey(const Key('taskItem_t1')));
+        await tester.pumpAndSettle();
+        expect(find.text('Edit Task'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'delete flow: shows confirmation dialog, Cancel keeps tasks, Confirm soft-deletes and exits',
+      (tester) async {
+        await fakeFirestore.collection('tasks').doc('t2').set({
+          'taskId': 't2',
+          'uid': uid,
+          'listId': listId,
+          'title': 'Task 2',
+          'deletedAt': null,
+        });
+
+        final list = ListModel(
+          listId: listId,
+          uid: uid,
+          name: 'Work Projects',
+          isDefault: false,
+        );
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              firebaseAuthProvider.overrideWithValue(mockAuth),
+              firestoreProvider.overrideWithValue(fakeFirestore),
+              taskRepositoryProvider.overrideWithValue(
+                TaskRepository(fakeFirestore),
+              ),
+            ],
+            child: MaterialApp(home: ListDetailScreen(list: list)),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // 1. Single selection: verify singular wording
+        await tester.longPress(find.byKey(const Key('taskItem_t1')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('selectionDeleteButton')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Delete 1 task?'), findsOneWidget);
+        expect(
+          find.text('Tasks will be moved to Recently Deleted.'),
+          findsOneWidget,
+        );
+
+        // Tap Cancel
+        await tester.tap(find.byKey(const Key('cancelBatchDeleteButton')));
+        await tester.pumpAndSettle();
+
+        // Selection still active
+        expect(find.text('1 selected'), findsOneWidget);
+
+        // 2. Multi selection: select t2 as well
+        await tester.tap(find.byKey(const Key('taskItem_t2')));
+        await tester.pumpAndSettle();
+        expect(find.text('2 selected'), findsOneWidget);
+
+        await tester.tap(find.byKey(const Key('selectionDeleteButton')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Delete 2 tasks?'), findsOneWidget);
+
+        // Tap Confirm
+        await tester.tap(find.byKey(const Key('confirmBatchDeleteButton')));
+        await tester.pumpAndSettle();
+
+        // Soft-deleted in Firestore
+        final doc1 = await fakeFirestore.collection('tasks').doc('t1').get();
+        final doc2 = await fakeFirestore.collection('tasks').doc('t2').get();
+        expect(doc1.data()!['deletedAt'], isNotNull);
+        expect(doc2.data()!['deletedAt'], isNotNull);
+
+        // Exited selection mode and shows SnackBar
+        expect(find.byKey(const Key('selectionCountTitle')), findsNothing);
+        expect(find.text('2 tasks deleted'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'move flow: excludes current list, moves selected tasks, and exits selection mode',
+      (tester) async {
+        await fakeFirestore.collection('lists').doc('dest-list').set({
+          'listId': 'dest-list',
+          'uid': uid,
+          'name': 'Personal List',
+          'isDefault': false,
+        });
+
+        final list = ListModel(
+          listId: listId,
+          uid: uid,
+          name: 'Work Projects',
+          isDefault: false,
+        );
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              firebaseAuthProvider.overrideWithValue(mockAuth),
+              firestoreProvider.overrideWithValue(fakeFirestore),
+              taskRepositoryProvider.overrideWithValue(
+                TaskRepository(fakeFirestore),
+              ),
+            ],
+            child: MaterialApp(home: ListDetailScreen(list: list)),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.longPress(find.byKey(const Key('taskItem_t1')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('selectionMoveButton')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Move 1 task to list'), findsOneWidget);
+        expect(find.byKey(Key('moveTargetList_$listId')), findsNothing);
+        expect(
+          find.byKey(const Key('moveTargetList_dest-list')),
+          findsOneWidget,
+        );
+
+        await tester.tap(find.byKey(const Key('moveTargetList_dest-list')));
+        await tester.pumpAndSettle();
+
+        final doc = await fakeFirestore.collection('tasks').doc('t1').get();
+        expect(doc.data()!['listId'], equals('dest-list'));
+
+        expect(find.byKey(const Key('selectionCountTitle')), findsNothing);
+        expect(find.text('1 task moved to "Personal List"'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'move flow edge case: shows "No other lists available" when no other lists exist',
+      (tester) async {
+        final list = ListModel(
+          listId: listId,
+          uid: uid,
+          name: 'Work Projects',
+          isDefault: false,
+        );
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              firebaseAuthProvider.overrideWithValue(mockAuth),
+              firestoreProvider.overrideWithValue(fakeFirestore),
+              taskRepositoryProvider.overrideWithValue(
+                TaskRepository(fakeFirestore),
+              ),
+            ],
+            child: MaterialApp(home: ListDetailScreen(list: list)),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.longPress(find.byKey(const Key('taskItem_t1')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('selectionMoveButton')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('No other lists available'), findsOneWidget);
+
+        await tester.tap(find.byKey(const Key('cancelMoveTaskButton')));
+        await tester.pumpAndSettle();
+        expect(find.text('1 selected'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'back navigation clears selection first and pops only when not selecting',
+      (tester) async {
+        final list = ListModel(
+          listId: listId,
+          uid: uid,
+          name: 'Work Projects',
+          isDefault: false,
+        );
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              firebaseAuthProvider.overrideWithValue(mockAuth),
+              firestoreProvider.overrideWithValue(fakeFirestore),
+              taskRepositoryProvider.overrideWithValue(
+                TaskRepository(fakeFirestore),
+              ),
+            ],
+            child: MaterialApp(
+              home: Builder(
+                builder: (context) => ElevatedButton(
+                  key: const Key('openScreenButton'),
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => ListDetailScreen(list: list),
+                    ),
+                  ),
+                  child: const Text('Open Screen'),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Navigate to ListDetailScreen
+        await tester.tap(find.byKey(const Key('openScreenButton')));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(ListDetailScreen), findsOneWidget);
+
+        // Enter selection mode
+        await tester.longPress(find.byKey(const Key('taskItem_t1')));
+        await tester.pumpAndSettle();
+        expect(find.text('1 selected'), findsOneWidget);
+
+        // Trigger system back
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+
+        // Selection should be cleared, but still on ListDetailScreen
+        expect(find.text('1 selected'), findsNothing);
+        expect(find.byType(ListDetailScreen), findsOneWidget);
+        expect(find.byKey(const Key('listDetailTitle')), findsOneWidget);
+
+        // Second system back pops the screen
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+
+        expect(find.byType(ListDetailScreen), findsNothing);
+        expect(find.byKey(const Key('openScreenButton')), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'task removed from stream while selected prunes from selection',
+      (tester) async {
+        await fakeFirestore.collection('tasks').doc('t2').set({
+          'taskId': 't2',
+          'uid': uid,
+          'listId': listId,
+          'title': 'Task 2',
+          'deletedAt': null,
+        });
+
+        final list = ListModel(
+          listId: listId,
+          uid: uid,
+          name: 'Work Projects',
+          isDefault: false,
+        );
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              firebaseAuthProvider.overrideWithValue(mockAuth),
+              firestoreProvider.overrideWithValue(fakeFirestore),
+              taskRepositoryProvider.overrideWithValue(
+                TaskRepository(fakeFirestore),
+              ),
+            ],
+            child: MaterialApp(home: ListDetailScreen(list: list)),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Select t1 and t2
+        await tester.longPress(find.byKey(const Key('taskItem_t1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('taskItem_t2')));
+        await tester.pumpAndSettle();
+        expect(find.text('2 selected'), findsOneWidget);
+
+        // Delete t1 from Firestore stream
+        await fakeFirestore.collection('tasks').doc('t1').delete();
+        await tester.pumpAndSettle();
+
+        // t1 is pruned, count drops to 1
+        expect(find.text('1 selected'), findsOneWidget);
+
+        // Delete t2 from Firestore stream
+        await fakeFirestore.collection('tasks').doc('t2').delete();
+        await tester.pumpAndSettle();
+
+        // Selection mode exited
+        expect(find.byKey(const Key('selectionCountTitle')), findsNothing);
+        expect(find.byKey(const Key('listDetailTitle')), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'selected tasks hidden by a filter change are dropped from the selection and count',
+      (tester) async {
+        await fakeFirestore.collection('tasks').doc('t2').set({
+          'taskId': 't2',
+          'uid': uid,
+          'listId': listId,
+          'title': 'Task 2',
+          'priority': 'high',
+          'deletedAt': null,
+        });
+
+        await fakeFirestore.collection('tasks').doc('t1').set({
+          'taskId': 't1',
+          'uid': uid,
+          'listId': listId,
+          'title': 'Deploy project',
+          'priority': 'none',
+          'deletedAt': null,
+        });
+
+        final list = ListModel(
+          listId: listId,
+          uid: uid,
+          name: 'Work Projects',
+          isDefault: false,
+        );
+
+        late ProviderContainer container;
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              firebaseAuthProvider.overrideWithValue(mockAuth),
+              firestoreProvider.overrideWithValue(fakeFirestore),
+              taskRepositoryProvider.overrideWithValue(
+                TaskRepository(fakeFirestore),
+              ),
+            ],
+            child: Consumer(
+              builder: (context, ref, child) {
+                container = ProviderScope.containerOf(context);
+                return MaterialApp(home: ListDetailScreen(list: list));
+              },
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Select t1 and t2
+        await tester.longPress(find.byKey(const Key('taskItem_t1')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('taskItem_t2')));
+        await tester.pumpAndSettle();
+        expect(find.text('2 selected'), findsOneWidget);
+
+        // Change priority filter to high (which filters out t1)
+        await container
+            .read(taskPriorityFilterProvider(listId).notifier)
+            .setFilter(TaskPriorityFilter.high);
+        await tester.pumpAndSettle();
+
+        // t1 is filtered out and pruned from selection
+        expect(find.text('1 selected'), findsOneWidget);
+        expect(find.byKey(const Key('taskSelectCheckbox_t2')), findsOneWidget);
+        expect(find.byKey(const Key('taskSelectCheckbox_t1')), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'selection is dropped when leaving and re-entering the screen (autoDispose)',
+      (tester) async {
+        final list = ListModel(
+          listId: listId,
+          uid: uid,
+          name: 'Work Projects',
+          isDefault: false,
+        );
+
+        final navigatorKey = GlobalKey<NavigatorState>();
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              firebaseAuthProvider.overrideWithValue(mockAuth),
+              firestoreProvider.overrideWithValue(fakeFirestore),
+              taskRepositoryProvider.overrideWithValue(
+                TaskRepository(fakeFirestore),
+              ),
+            ],
+            child: MaterialApp(
+              navigatorKey: navigatorKey,
+              home: Builder(
+                builder: (context) => ElevatedButton(
+                  key: const Key('openScreenButton'),
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => ListDetailScreen(list: list),
+                    ),
+                  ),
+                  child: const Text('Open Screen'),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Open ListDetailScreen
+        await tester.tap(find.byKey(const Key('openScreenButton')));
+        await tester.pumpAndSettle();
+
+        // Select t1
+        await tester.longPress(find.byKey(const Key('taskItem_t1')));
+        await tester.pumpAndSettle();
+        expect(find.text('1 selected'), findsOneWidget);
+
+        // Pop the screen back to home
+        navigatorKey.currentState!.pop();
+        await tester.pumpAndSettle();
+
+        // Open ListDetailScreen again
+        await tester.tap(find.byKey(const Key('openScreenButton')));
+        await tester.pumpAndSettle();
+
+        // Selection should be empty
+        expect(find.byKey(const Key('selectionCountTitle')), findsNothing);
+        expect(find.byKey(const Key('listDetailTitle')), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'tapping edit button enters selection mode at 0 selected with actions disabled, and selecting enables them',
+      (tester) async {
+        final list = ListModel(
+          listId: listId,
+          uid: uid,
+          name: 'Work Projects',
+          isDefault: false,
+        );
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              firebaseAuthProvider.overrideWithValue(mockAuth),
+              firestoreProvider.overrideWithValue(fakeFirestore),
+              taskRepositoryProvider.overrideWithValue(
+                TaskRepository(fakeFirestore),
+              ),
+            ],
+            child: MaterialApp(home: ListDetailScreen(list: list)),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Verify editTasksButton is present in the normal AppBar
+        final editButton = find.byKey(const Key('editTasksButton'));
+        expect(editButton, findsOneWidget);
+
+        // Tap the editTasksButton
+        await tester.tap(editButton);
+        await tester.pumpAndSettle();
+
+        // Selection mode is now active with '0 selected'
+        expect(find.byKey(const Key('listDetailTitle')), findsNothing);
+        expect(find.byKey(const Key('selectionCloseButton')), findsOneWidget);
+        expect(find.byKey(const Key('selectionCountTitle')), findsOneWidget);
+        expect(find.text('0 selected'), findsOneWidget);
+
+        // Move and Delete buttons are disabled
+        final moveBtn = tester.widget<IconButton>(
+          find.byKey(const Key('selectionMoveButton')),
+        );
+        final delBtn = tester.widget<IconButton>(
+          find.byKey(const Key('selectionDeleteButton')),
+        );
+        expect(moveBtn.onPressed, isNull);
+        expect(delBtn.onPressed, isNull);
+
+        // Selection checkbox should now be visible on t1
+        expect(find.byKey(const Key('taskSelectCheckbox_t1')), findsOneWidget);
+
+        // Tap the task item to select it
+        await tester.tap(find.byKey(const Key('taskItem_t1')));
+        await tester.pumpAndSettle();
+
+        // Count updates and buttons become enabled
+        expect(find.text('1 selected'), findsOneWidget);
+        final moveBtnEnabled = tester.widget<IconButton>(
+          find.byKey(const Key('selectionMoveButton')),
+        );
+        final delBtnEnabled = tester.widget<IconButton>(
+          find.byKey(const Key('selectionDeleteButton')),
+        );
+        expect(moveBtnEnabled.onPressed, isNotNull);
+        expect(delBtnEnabled.onPressed, isNotNull);
+
+        // Tapping selectionCloseButton exits selection mode
+        await tester.tap(find.byKey(const Key('selectionCloseButton')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('selectionCountTitle')), findsNothing);
+        expect(find.byKey(const Key('listDetailTitle')), findsOneWidget);
+        expect(find.byKey(const Key('editTasksButton')), findsOneWidget);
+      },
     );
   });
 }

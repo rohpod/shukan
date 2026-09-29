@@ -4,8 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/firebase/firebase_providers.dart';
 import '../../export/export_service.dart';
 import '../../tasks/data/task.dart';
+import '../../tasks/presentation/move_tasks_dialog.dart';
 import '../../tasks/presentation/task_list_screen.dart';
 import '../../tasks/providers/task_providers.dart';
+import '../../tasks/providers/task_selection_providers.dart';
 import '../data/list.dart';
 
 class ListDetailScreen extends ConsumerWidget {
@@ -51,21 +53,173 @@ class ListDetailScreen extends ConsumerWidget {
     }
   }
 
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(list.name, key: const Key('listDetailTitle')),
+  Future<void> _handleBatchDelete(
+    BuildContext context,
+    WidgetRef ref,
+    List<Task> selectedTasks,
+  ) async {
+    final count = selectedTasks.length;
+    final titleText = count == 1 ? 'Delete 1 task?' : 'Delete $count tasks?';
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(titleText),
+        content: const Text('Tasks will be moved to Recently Deleted.'),
         actions: [
-          IconButton(
-            key: const Key('exportListButton'),
-            icon: const Icon(Icons.file_download_outlined),
-            tooltip: 'Export',
-            onPressed: () => _exportList(context, ref),
+          TextButton(
+            key: const Key('cancelBatchDeleteButton'),
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            key: const Key('confirmBatchDeleteButton'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Delete'),
           ),
         ],
       ),
-      body: TaskListScreen(key: ValueKey(list.listId), listId: list.listId),
+    );
+
+    if (confirmed != true) return;
+
+    final taskIds = selectedTasks.map((t) => t.taskId).toList();
+    try {
+      await ref.read(taskRepositoryProvider).softDeleteTasks(taskIds);
+      ref.read(taskSelectionProvider(list.listId).notifier).clear();
+      ref.read(isTaskSelectionModeActiveProvider(list.listId).notifier).exit();
+      if (context.mounted) {
+        final message = count == 1 ? '1 task deleted' : '$count tasks deleted';
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(message)));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to delete tasks: $e')));
+      }
+    }
+  }
+
+  Future<void> _handleBatchMove(
+    BuildContext context,
+    WidgetRef ref,
+    List<Task> selectedTasks,
+  ) async {
+    final count = selectedTasks.length;
+    final targetList = await showDialog<ListModel>(
+      context: context,
+      builder: (dialogContext) =>
+          MoveTasksDialog(excludeListId: list.listId, taskCount: count),
+    );
+
+    if (targetList == null) return;
+
+    final taskIds = selectedTasks.map((t) => t.taskId).toList();
+    try {
+      await ref
+          .read(taskRepositoryProvider)
+          .moveTasksToList(taskIds, targetList.listId);
+      ref.read(taskSelectionProvider(list.listId).notifier).clear();
+      ref.read(isTaskSelectionModeActiveProvider(list.listId).notifier).exit();
+      if (context.mounted) {
+        final message = count == 1
+            ? '1 task moved to "${targetList.name}"'
+            : '$count tasks moved to "${targetList.name}"';
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(message)));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Failed to move tasks: $e')));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final selectedTasks = ref.watch(selectedTasksProvider(list.listId));
+    final isSelectionActive = ref.watch(
+      isSelectionModeActiveProvider(list.listId),
+    );
+
+    return PopScope(
+      canPop: !isSelectionActive,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) {
+          ref.read(taskSelectionProvider(list.listId).notifier).clear();
+          ref
+              .read(isTaskSelectionModeActiveProvider(list.listId).notifier)
+              .exit();
+        }
+      },
+      child: Scaffold(
+        appBar: isSelectionActive
+            ? AppBar(
+                leading: IconButton(
+                  key: const Key('selectionCloseButton'),
+                  icon: const Icon(Icons.close),
+                  onPressed: () {
+                    ref
+                        .read(taskSelectionProvider(list.listId).notifier)
+                        .clear();
+                    ref
+                        .read(
+                          isTaskSelectionModeActiveProvider(list.listId)
+                              .notifier,
+                        )
+                        .exit();
+                  },
+                ),
+                title: Text(
+                  '${selectedTasks.length} selected',
+                  key: const Key('selectionCountTitle'),
+                ),
+                actions: [
+                  IconButton(
+                    key: const Key('selectionMoveButton'),
+                    icon: const Icon(Icons.drive_file_move_outlined),
+                    tooltip: 'Move to list',
+                    onPressed: selectedTasks.isEmpty
+                        ? null
+                        : () => _handleBatchMove(context, ref, selectedTasks),
+                  ),
+                  IconButton(
+                    key: const Key('selectionDeleteButton'),
+                    icon: const Icon(Icons.delete_outline),
+                    tooltip: 'Delete',
+                    onPressed: selectedTasks.isEmpty
+                        ? null
+                        : () => _handleBatchDelete(context, ref, selectedTasks),
+                  ),
+                ],
+              )
+            : AppBar(
+                title: Text(list.name, key: const Key('listDetailTitle')),
+                actions: [
+                  IconButton(
+                    key: const Key('editTasksButton'),
+                    icon: const Icon(Icons.edit_outlined),
+                    tooltip: 'Edit tasks',
+                    onPressed: () => ref
+                        .read(
+                          isTaskSelectionModeActiveProvider(list.listId)
+                              .notifier,
+                        )
+                        .enter(),
+                  ),
+                  IconButton(
+                    key: const Key('exportListButton'),
+                    icon: const Icon(Icons.file_download_outlined),
+                    tooltip: 'Export',
+                    onPressed: () => _exportList(context, ref),
+                  ),
+                ],
+              ),
+        body: TaskListScreen(key: ValueKey(list.listId), listId: list.listId),
+      ),
     );
   }
 }

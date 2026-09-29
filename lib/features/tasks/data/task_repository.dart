@@ -301,6 +301,32 @@ class TaskRepository {
     await _safeCancel(taskId);
   }
 
+  /// Soft-deletes multiple tasks by setting their [deletedAt] field to the current timestamp.
+  ///
+  /// Commits updates in batches of max 500 operations to respect Firestore's WriteBatch limit.
+  /// Cancels notifications for each task after writes succeed.
+  Future<void> softDeleteTasks(List<String> taskIds) async {
+    if (taskIds.isEmpty) return;
+
+    final now = Timestamp.now();
+    const batchSize = 500;
+    for (var i = 0; i < taskIds.length; i += batchSize) {
+      final end = (i + batchSize < taskIds.length)
+          ? i + batchSize
+          : taskIds.length;
+      final chunk = taskIds.sublist(i, end);
+      final batch = _firestore.batch();
+      for (final taskId in chunk) {
+        batch.update(_tasksCollection.doc(taskId), {'deletedAt': now});
+      }
+      await batch.commit();
+    }
+
+    for (final taskId in taskIds) {
+      await _safeCancel(taskId);
+    }
+  }
+
   /// Streams soft-deleted tasks belonging to [uid], ordered descending by [deletedAt].
   ///
   /// Filters by [uid] in Firestore and performs [deletedAt] filtering and sorting in-memory.
@@ -648,6 +674,49 @@ class TaskRepository {
     }
 
     await _tasksCollection.doc(taskId).update({'listId': newListId});
+  }
+
+  /// Moves multiple tasks to [newListId], updating only their [listId] field.
+  ///
+  /// Validates that all tasks exist, the target list exists, and all tasks belong
+  /// to the same user as the target list before performing any updates.
+  /// Commits updates in batches of max 500 operations to respect Firestore's WriteBatch limit.
+  Future<void> moveTasksToList(List<String> taskIds, String newListId) async {
+    if (taskIds.isEmpty) return;
+
+    final taskDocs = await Future.wait(
+      taskIds.map((id) => _tasksCollection.doc(id).get()),
+    );
+    for (var i = 0; i < taskIds.length; i++) {
+      if (!taskDocs[i].exists) {
+        throw ArgumentError('Task not found: ${taskIds[i]}');
+      }
+    }
+
+    final listDoc = await _firestore.collection('lists').doc(newListId).get();
+    if (!listDoc.exists) {
+      throw ArgumentError('List not found: $newListId');
+    }
+    final listUid = listDoc.data()?['uid'];
+
+    for (var i = 0; i < taskDocs.length; i++) {
+      if (listUid != taskDocs[i].data()?['uid']) {
+        throw ArgumentError('List does not belong to user: $newListId');
+      }
+    }
+
+    const batchSize = 500;
+    for (var i = 0; i < taskIds.length; i += batchSize) {
+      final end = (i + batchSize < taskIds.length)
+          ? i + batchSize
+          : taskIds.length;
+      final chunk = taskIds.sublist(i, end);
+      final batch = _firestore.batch();
+      for (final taskId in chunk) {
+        batch.update(_tasksCollection.doc(taskId), {'listId': newListId});
+      }
+      await batch.commit();
+    }
   }
 
   /// Streams a single task by [taskId]. Emits null if the document does not exist.

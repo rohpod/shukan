@@ -637,6 +637,278 @@ void main() {
       expect(doc.data()!['listId'], equals('inbox-456'));
     });
 
+    group('softDeleteTasks', () {
+      test(
+        'sets deletedAt on all given tasks and leaves other tasks untouched',
+        () async {
+          final t1 = await repository.createTask(
+            uid: 'user-123',
+            listId: 'inbox-456',
+            title: 'Task 1',
+            notes: 'Notes 1',
+          );
+          final t2 = await repository.createTask(
+            uid: 'user-123',
+            listId: 'inbox-456',
+            title: 'Task 2',
+            notes: 'Notes 2',
+          );
+          final t3 = await repository.createTask(
+            uid: 'user-123',
+            listId: 'inbox-456',
+            title: 'Untouched Task',
+          );
+
+          await repository.softDeleteTasks([t1.taskId, t2.taskId]);
+
+          final doc1 = await fakeFirestore
+              .collection('tasks')
+              .doc(t1.taskId)
+              .get();
+          final doc2 = await fakeFirestore
+              .collection('tasks')
+              .doc(t2.taskId)
+              .get();
+          final doc3 = await fakeFirestore
+              .collection('tasks')
+              .doc(t3.taskId)
+              .get();
+
+          expect(doc1.data()!['deletedAt'], isNotNull);
+          expect(doc1.data()!['title'], equals('Task 1'));
+          expect(doc1.data()!['notes'], equals('Notes 1'));
+
+          expect(doc2.data()!['deletedAt'], isNotNull);
+          expect(doc2.data()!['title'], equals('Task 2'));
+          expect(doc2.data()!['notes'], equals('Notes 2'));
+
+          expect(doc3.data()!['deletedAt'], isNull);
+        },
+      );
+
+      test('empty list is a no-op', () async {
+        final t = await repository.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Active Task',
+        );
+
+        await repository.softDeleteTasks([]);
+
+        final doc = await fakeFirestore.collection('tasks').doc(t.taskId).get();
+        expect(doc.data()!['deletedAt'], isNull);
+      });
+
+      test('handles >500 tasks in chunks', () async {
+        final taskIds = <String>[];
+        for (var chunkStart = 0; chunkStart < 505; chunkStart += 500) {
+          final batch = fakeFirestore.batch();
+          final chunkEnd = (chunkStart + 500 < 505) ? chunkStart + 500 : 505;
+          for (var i = chunkStart; i < chunkEnd; i++) {
+            final id = 'task-bulk-$i';
+            taskIds.add(id);
+            batch.set(fakeFirestore.collection('tasks').doc(id), {
+              'taskId': id,
+              'uid': 'user-123',
+              'listId': 'inbox-456',
+              'title': 'Task $i',
+              'deletedAt': null,
+            });
+          }
+          await batch.commit();
+        }
+
+        await repository.softDeleteTasks(taskIds);
+
+        final snapshot = await fakeFirestore.collection('tasks').get();
+        expect(snapshot.docs.length, equals(505));
+        for (final doc in snapshot.docs) {
+          expect(doc.data()['deletedAt'], isNotNull);
+        }
+      });
+    });
+
+    group('moveTasksToList', () {
+      test('updates only listId and preserves other fields', () async {
+        await fakeFirestore.collection('lists').doc('work-123').set({
+          'listId': 'work-123',
+          'uid': 'user-123',
+          'name': 'Work',
+          'isDefault': false,
+        });
+
+        final t1 = await repository.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Task 1',
+          notes: 'Notes 1',
+        );
+        final t2 = await repository.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Task 2',
+          notes: 'Notes 2',
+        );
+
+        await repository.moveTasksToList([t1.taskId, t2.taskId], 'work-123');
+
+        final doc1 = await fakeFirestore
+            .collection('tasks')
+            .doc(t1.taskId)
+            .get();
+        final doc2 = await fakeFirestore
+            .collection('tasks')
+            .doc(t2.taskId)
+            .get();
+
+        expect(doc1.data()!['listId'], equals('work-123'));
+        expect(doc1.data()!['title'], equals('Task 1'));
+        expect(doc1.data()!['notes'], equals('Notes 1'));
+
+        expect(doc2.data()!['listId'], equals('work-123'));
+        expect(doc2.data()!['title'], equals('Task 2'));
+        expect(doc2.data()!['notes'], equals('Notes 2'));
+      });
+
+      test('empty list is a no-op', () async {
+        await fakeFirestore.collection('lists').doc('work-123').set({
+          'listId': 'work-123',
+          'uid': 'user-123',
+          'name': 'Work',
+          'isDefault': false,
+        });
+
+        await repository.moveTasksToList([], 'work-123');
+      });
+
+      test('handles >500 tasks in chunks', () async {
+        await fakeFirestore.collection('lists').doc('dest-list').set({
+          'listId': 'dest-list',
+          'uid': 'user-123',
+          'name': 'Destination',
+          'isDefault': false,
+        });
+        final taskIds = <String>[];
+        for (var chunkStart = 0; chunkStart < 505; chunkStart += 500) {
+          final batch = fakeFirestore.batch();
+          final chunkEnd = (chunkStart + 500 < 505) ? chunkStart + 500 : 505;
+          for (var i = chunkStart; i < chunkEnd; i++) {
+            final id = 'task-move-$i';
+            taskIds.add(id);
+            batch.set(fakeFirestore.collection('tasks').doc(id), {
+              'taskId': id,
+              'uid': 'user-123',
+              'listId': 'inbox-456',
+              'title': 'Task $i',
+              'order': (i + 1) * 10.0,
+              'deletedAt': null,
+            });
+          }
+          await batch.commit();
+        }
+
+        await repository.moveTasksToList(taskIds, 'dest-list');
+
+        final snapshot = await fakeFirestore.collection('tasks').get();
+        expect(snapshot.docs.length, equals(505));
+        for (final doc in snapshot.docs) {
+          expect(doc.data()['listId'], equals('dest-list'));
+          expect(doc.data()['order'], isNotNull);
+        }
+      });
+
+      test(
+        'throws ArgumentError and writes nothing when a task is missing',
+        () async {
+          final task = await repository.createTask(
+            uid: 'user-123',
+            listId: 'inbox-456',
+            title: 'Task 1',
+          );
+          await fakeFirestore.collection('lists').doc('dest-list').set({
+            'listId': 'dest-list',
+            'uid': 'user-123',
+            'name': 'Destination',
+            'isDefault': false,
+          });
+
+          await expectLater(
+            repository.moveTasksToList([
+              task.taskId,
+              'missing-task',
+            ], 'dest-list'),
+            throwsA(
+              isA<ArgumentError>().having(
+                (e) => e.message,
+                'message',
+                contains('Task not found: missing-task'),
+              ),
+            ),
+          );
+
+          final doc = await fakeFirestore
+              .collection('tasks')
+              .doc(task.taskId)
+              .get();
+          expect(doc.data()!['listId'], equals('inbox-456'));
+        },
+      );
+
+      test(
+        'throws ArgumentError and writes nothing when list is missing',
+        () async {
+          final task = await repository.createTask(
+            uid: 'user-123',
+            listId: 'inbox-456',
+            title: 'Task 1',
+          );
+
+          await expectLater(
+            repository.moveTasksToList([task.taskId], 'missing-list'),
+            throwsA(
+              isA<ArgumentError>().having(
+                (e) => e.message,
+                'message',
+                contains('List not found: missing-list'),
+              ),
+            ),
+          );
+
+          final doc = await fakeFirestore
+              .collection('tasks')
+              .doc(task.taskId)
+              .get();
+          expect(doc.data()!['listId'], equals('inbox-456'));
+        },
+      );
+
+      test('throws ArgumentError and writes nothing when list belongs to another user', () async {
+        // list-xyz belongs to user-abc
+        final task = await repository.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Task 1',
+        );
+
+        await expectLater(
+          repository.moveTasksToList([task.taskId], 'list-xyz'),
+          throwsA(
+            isA<ArgumentError>().having(
+              (e) => e.message,
+              'message',
+              contains('List does not belong to user: list-xyz'),
+            ),
+          ),
+        );
+
+        final doc = await fakeFirestore
+            .collection('tasks')
+            .doc(task.taskId)
+            .get();
+        expect(doc.data()!['listId'], equals('inbox-456'));
+      });
+    });
+
     group('Subtasks', () {
       test('addSubtask appends new subtask with uuid, trimmed title, and false completed', () async {
         final task = await repository.createTask(
@@ -2054,6 +2326,29 @@ void main() {
         await repoWithNotifications.softDeleteTask(task.taskId);
 
         verify(() => mockNotificationService.cancelForTask(task.taskId))
+            .called(1);
+      });
+
+      test('softDeleteTasks cancels notification for each id', () async {
+        final t1 = await repoWithNotifications.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Task 1',
+        );
+        final t2 = await repoWithNotifications.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Task 2',
+        );
+        reset(mockNotificationService);
+        when(() => mockNotificationService.cancelForTask(any()))
+            .thenAnswer((_) async {});
+
+        await repoWithNotifications.softDeleteTasks([t1.taskId, t2.taskId]);
+
+        verify(() => mockNotificationService.cancelForTask(t1.taskId))
+            .called(1);
+        verify(() => mockNotificationService.cancelForTask(t2.taskId))
             .called(1);
       });
 

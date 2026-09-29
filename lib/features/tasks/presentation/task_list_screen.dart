@@ -9,6 +9,7 @@ import '../domain/task_constants.dart';
 import '../domain/task_priority_filter.dart';
 import '../domain/task_sort_options.dart';
 import '../providers/task_providers.dart';
+import '../providers/task_selection_providers.dart';
 import '../providers/task_sort_providers.dart';
 import '../providers/task_tag_filter_providers.dart';
 import 'widgets/empty_state_view.dart';
@@ -98,6 +99,23 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
     final rawTasks =
         ref.watch(tasksForListProvider(listId)).value ?? const <Task>[];
     final unfilteredCount = rawTasks.length;
+
+    final selectedTasks = ref.watch(selectedTasksProvider(listId));
+    final isSelectionMode = ref.watch(isSelectionModeActiveProvider(listId));
+    final selectedTaskIds = selectedTasks.map((t) => t.taskId).toSet();
+
+    ref.listen<AsyncValue<List<Task>>>(sortedTasksForListProvider(listId), (
+      previous,
+      next,
+    ) {
+      next.whenData((tasks) {
+        final visibleIds = tasks.map((t) => t.taskId).toSet();
+        ref.read(taskSelectionProvider(listId).notifier).retainOnly(visibleIds);
+        if (tasks.isEmpty) {
+          ref.read(isTaskSelectionModeActiveProvider(listId).notifier).exit();
+        }
+      });
+    });
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -209,6 +227,7 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                   itemBuilder: (context, index) {
                     final task = tasks[index];
                     final isExpanded = _expandedTaskIds.contains(task.taskId);
+                    final isSelected = selectedTaskIds.contains(task.taskId);
 
                     return Column(
                       key: ValueKey('taskItemWrapper_${task.taskId}'),
@@ -216,12 +235,31 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                       children: [
                         ListTile(
                           key: Key('taskItem_${task.taskId}'),
-                          onTap: () =>
-                              _showTaskDialog(context, uid, listId, task: task),
+                          selected: isSelectionMode && isSelected,
+                          selectedTileColor: Theme.of(context)
+                              .colorScheme
+                              .primaryContainer
+                              .withValues(alpha: 0.3),
+                          onTap: isSelectionMode
+                              ? () => ref
+                                    .read(
+                                      taskSelectionProvider(listId).notifier,
+                                    )
+                                    .toggle(task.taskId)
+                              : () => _showTaskDialog(
+                                  context,
+                                  uid,
+                                  listId,
+                                  task: task,
+                                ),
+                          onLongPress: () => ref
+                              .read(taskSelectionProvider(listId).notifier)
+                              .toggle(task.taskId),
                           leading: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              if (sortOption == TaskSortOption.manual)
+                              if (!isSelectionMode &&
+                                  sortOption == TaskSortOption.manual)
                                 ReorderableDragStartListener(
                                   index: index,
                                   child: Padding(
@@ -234,18 +272,34 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                                     ),
                                   ),
                                 ),
-                              Checkbox(
-                                key: Key('taskCompleteCheckbox_${task.taskId}'),
-                                value: task.isCompleted,
-                                onChanged: (val) async {
-                                  await ref
-                                      .read(taskRepositoryProvider)
-                                      .toggleTaskCompleted(
-                                        task.taskId,
-                                        isCompleted: val ?? false,
-                                      );
-                                },
-                              ),
+                              if (isSelectionMode)
+                                Checkbox(
+                                  key: Key('taskSelectCheckbox_${task.taskId}'),
+                                  value: isSelected,
+                                  onChanged: (_) {
+                                    ref
+                                        .read(
+                                          taskSelectionProvider(listId)
+                                              .notifier,
+                                        )
+                                        .toggle(task.taskId);
+                                  },
+                                )
+                              else
+                                Checkbox(
+                                  key: Key(
+                                    'taskCompleteCheckbox_${task.taskId}',
+                                  ),
+                                  value: task.isCompleted,
+                                  onChanged: (val) async {
+                                    await ref
+                                        .read(taskRepositoryProvider)
+                                        .toggleTaskCompleted(
+                                          task.taskId,
+                                          isCompleted: val ?? false,
+                                        );
+                                  },
+                                ),
                             ],
                           ),
                           title: Text(
@@ -332,19 +386,22 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                                   size: 20,
                                 ),
                                 tooltip: 'Move to List',
-                                onPressed: () =>
-                                    _showMoveTaskDialog(context, task),
+                                onPressed: isSelectionMode
+                                    ? null
+                                    : () => _showMoveTaskDialog(context, task),
                               ),
                               IconButton(
                                 key: Key('editTaskButton_${task.taskId}'),
                                 icon: const Icon(Icons.edit_outlined, size: 20),
                                 tooltip: 'Edit Task',
-                                onPressed: () => _showTaskDialog(
-                                  context,
-                                  uid,
-                                  listId,
-                                  task: task,
-                                ),
+                                onPressed: isSelectionMode
+                                    ? null
+                                    : () => _showTaskDialog(
+                                        context,
+                                        uid,
+                                        listId,
+                                        task: task,
+                                      ),
                               ),
                               IconButton(
                                 key: Key('deleteTaskButton_${task.taskId}'),
@@ -353,61 +410,67 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                                   size: 20,
                                 ),
                                 tooltip: 'Delete',
-                                onPressed: () async {
-                                  try {
-                                    await ref
-                                        .read(taskRepositoryProvider)
-                                        .softDeleteTask(task.taskId);
-                                    if (!mounted) return;
-                                    scaffoldMessenger.clearSnackBars();
-                                    scaffoldMessenger.showSnackBar(
-                                      SnackBar(
-                                        duration: const Duration(seconds: 5),
-                                        persist: false,
-                                        dismissDirection:
-                                            DismissDirection.startToEnd,
-                                        content: Text(
-                                          'Deleted "${task.title}"',
-                                        ),
-                                        action: SnackBarAction(
-                                          key: const Key(
-                                            'undoDeleteTaskButton',
-                                          ),
-                                          label: 'Undo',
-                                          onPressed: () async {
-                                            try {
-                                              await ref
-                                                  .read(taskRepositoryProvider)
-                                                  .restoreTask(
-                                                    uid: uid,
-                                                    taskId: task.taskId,
-                                                    defaultListId: listId,
-                                                  );
-                                            } catch (e) {
-                                              if (!mounted) return;
-                                              scaffoldMessenger.showSnackBar(
-                                                SnackBar(
-                                                  content: Text(
-                                                    'Failed to undo deletion: $e',
-                                                  ),
+                                onPressed: isSelectionMode
+                                    ? null
+                                    : () async {
+                                        try {
+                                          await ref
+                                              .read(taskRepositoryProvider)
+                                              .softDeleteTask(task.taskId);
+                                          if (!mounted) return;
+                                          scaffoldMessenger.clearSnackBars();
+                                          scaffoldMessenger.showSnackBar(
+                                            SnackBar(
+                                              duration: const Duration(
+                                                seconds: 5,
+                                              ),
+                                              persist: false,
+                                              dismissDirection:
+                                                  DismissDirection.startToEnd,
+                                              content: Text(
+                                                'Deleted "${task.title}"',
+                                              ),
+                                              action: SnackBarAction(
+                                                key: const Key(
+                                                  'undoDeleteTaskButton',
                                                 ),
-                                              );
-                                            }
-                                          },
-                                        ),
-                                      ),
-                                    );
-                                  } catch (e) {
-                                    if (!mounted) return;
-                                    scaffoldMessenger.showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                          'Failed to delete task: $e',
-                                        ),
-                                      ),
-                                    );
-                                  }
-                                },
+                                                label: 'Undo',
+                                                onPressed: () async {
+                                                  try {
+                                                    await ref
+                                                        .read(
+                                                          taskRepositoryProvider,
+                                                        )
+                                                        .restoreTask(
+                                                          uid: uid,
+                                                          taskId: task.taskId,
+                                                          defaultListId: listId,
+                                                        );
+                                                  } catch (e) {
+                                                    if (!mounted) return;
+                                                    scaffoldMessenger.showSnackBar(
+                                                      SnackBar(
+                                                        content: Text(
+                                                          'Failed to undo deletion: $e',
+                                                        ),
+                                                      ),
+                                                    );
+                                                  }
+                                                },
+                                              ),
+                                            ),
+                                          );
+                                        } catch (e) {
+                                          if (!mounted) return;
+                                          scaffoldMessenger.showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                'Failed to delete task: $e',
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                      },
                               ),
                             ],
                           ),
