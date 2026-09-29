@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/ui/feedback_snackbar.dart';
+import '../../auth/providers/auth_providers.dart';
 import '../../tasks/data/task.dart';
 import '../../tasks/domain/task_priority_filter.dart';
 import '../../tasks/domain/task_sort_options.dart';
@@ -36,6 +38,7 @@ class _TagDetailScreenState extends ConsumerState<TagDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final uid = ref.watch(currentUidProvider);
     final tasksAsync = ref.watch(sortedTasksForTagDetailProvider(viewKey));
     final sortOption = ref.watch(taskSortModeProvider(viewKey));
     final tagFilter = ref.watch(taskTagFilterProvider(viewKey));
@@ -224,13 +227,27 @@ class _TagDetailScreenState extends ConsumerState<TagDetailScreen> {
                             icon: const Icon(Icons.delete_outline, size: 20),
                             tooltip: 'Delete',
                             onPressed: () async {
+                              final messenger = ScaffoldMessenger.of(context);
+                              final taskRepo = ref.read(taskRepositoryProvider);
                               try {
-                                await ref
-                                    .read(taskRepositoryProvider)
-                                    .softDeleteTask(task.taskId);
+                                await taskRepo.softDeleteTask(task.taskId);
+                                if (!context.mounted) return;
+                                showFeedbackSnackBar(
+                                  messenger,
+                                  'Deleted "${task.title}"',
+                                  actionLabel: 'Undo',
+                                  actionKey: const Key('undoDeleteTaskButton'),
+                                  onAction: uid == null
+                                      ? null
+                                      : () => taskRepo.restoreTask(
+                                          uid: uid,
+                                          taskId: task.taskId,
+                                        ),
+                                  actionErrorPrefix: 'Failed to undo deletion',
+                                );
                               } catch (e) {
                                 if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
+                                  messenger.showSnackBar(
                                     SnackBar(
                                       content: Text(
                                         'Failed to delete task: $e',

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/ui/feedback_snackbar.dart';
 import '../../auth/providers/auth_providers.dart';
 import '../../lists/data/list.dart';
 import '../../lists/presentation/list_detail_screen.dart';
@@ -419,43 +420,26 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                                 ),
                                 tooltip: 'Delete Task',
                                 onPressed: () async {
-                                  await ref
-                                      .read(taskRepositoryProvider)
-                                      .softDeleteTask(task.taskId);
+                                  final messenger = scaffoldMessenger;
+                                  final taskRepo = ref.read(
+                                    taskRepositoryProvider,
+                                  );
+                                  await taskRepo.softDeleteTask(task.taskId);
                                   if (!mounted) return;
-                                  scaffoldMessenger.clearSnackBars();
-                                  scaffoldMessenger.showSnackBar(
-                                    SnackBar(
-                                      duration: const Duration(seconds: 5),
-                                      persist: false,
-                                      dismissDirection:
-                                          DismissDirection.startToEnd,
-                                      content: Text('Deleted "${task.title}"'),
-                                      action: SnackBarAction(
-                                        key: const Key('undoDeleteTaskButton'),
-                                        label: 'Undo',
-                                        onPressed: () async {
-                                          try {
-                                            await ref
-                                                .read(taskRepositoryProvider)
-                                                .restoreTask(
-                                                  uid: uid,
-                                                  taskId: task.taskId,
-                                                  defaultListId: defaultListId,
-                                                );
-                                          } catch (e) {
-                                            if (!mounted) return;
-                                            scaffoldMessenger.showSnackBar(
-                                              SnackBar(
-                                                content: Text(
-                                                  'Failed to undo deletion: $e',
-                                                ),
-                                              ),
-                                            );
-                                          }
-                                        },
-                                      ),
+                                  showFeedbackSnackBar(
+                                    messenger,
+                                    'Deleted "${task.title}"',
+                                    actionLabel: 'Undo',
+                                    actionKey: const Key(
+                                      'undoDeleteTaskButton',
                                     ),
+                                    onAction: () => taskRepo.restoreTask(
+                                      uid: uid,
+                                      taskId: task.taskId,
+                                      defaultListId: defaultListId,
+                                    ),
+                                    actionErrorPrefix:
+                                        'Failed to undo deletion',
                                   );
                                 },
                               ),

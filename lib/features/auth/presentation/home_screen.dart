@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/ui/feedback_snackbar.dart';
 import '../../lists/data/list.dart';
 import '../../lists/presentation/list_detail_screen.dart';
 import '../../lists/providers/list_providers.dart';
@@ -22,6 +23,7 @@ class HomeScreen extends ConsumerWidget {
     WidgetRef ref,
     String uid,
   ) async {
+    final messenger = ScaffoldMessenger.of(context);
     final controller = TextEditingController();
     final formKey = GlobalKey<FormState>();
 
@@ -63,6 +65,7 @@ class HomeScreen extends ConsumerWidget {
               if (dialogContext.mounted) {
                 Navigator.of(dialogContext).pop();
               }
+              showFeedbackSnackBar(messenger, 'Created list "$name"');
             },
             child: const Text('Create'),
           ),
@@ -76,6 +79,7 @@ class HomeScreen extends ConsumerWidget {
     WidgetRef ref,
     ListModel list,
   ) async {
+    final messenger = ScaffoldMessenger.of(context);
     final controller = TextEditingController(text: list.name);
     final formKey = GlobalKey<FormState>();
 
@@ -107,12 +111,20 @@ class HomeScreen extends ConsumerWidget {
             key: const Key('confirmRenameListButton'),
             onPressed: () async {
               if (!formKey.currentState!.validate()) return;
+              final newName = controller.text.trim();
+              if (newName == list.name) {
+                if (dialogContext.mounted) {
+                  Navigator.of(dialogContext).pop();
+                }
+                return;
+              }
               await ref
                   .read(listRepositoryProvider)
-                  .renameList(list.listId, controller.text.trim());
+                  .renameList(list.listId, newName);
               if (dialogContext.mounted) {
                 Navigator.of(dialogContext).pop();
               }
+              showFeedbackSnackBar(messenger, 'Renamed list to "$newName"');
             },
             child: const Text('Save'),
           ),
@@ -127,6 +139,8 @@ class HomeScreen extends ConsumerWidget {
     ListModel list,
     String uid,
   ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final listName = list.name;
     final taskCount = await ref
         .read(listRepositoryProvider)
         .getActiveTaskCountForList(uid: uid, listId: list.listId);
@@ -136,7 +150,7 @@ class HomeScreen extends ConsumerWidget {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text('Delete "${list.name}"?'),
+        title: Text('Delete "$listName"?'),
         content: Text(
           '$taskCount task(s) in this list will also be removed.',
           key: const Key('deleteListWarningText'),
@@ -160,6 +174,7 @@ class HomeScreen extends ConsumerWidget {
               if (dialogContext.mounted) {
                 Navigator.of(dialogContext).pop();
               }
+              showFeedbackSnackBar(messenger, 'Deleted list "$listName"');
             },
             child: const Text('Delete'),
           ),

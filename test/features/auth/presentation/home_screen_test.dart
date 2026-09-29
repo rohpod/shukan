@@ -536,5 +536,136 @@ void main() {
         expect(find.byType(HomeScreen), findsOneWidget);
       },
     );
+
+    testWidgets(
+      'create list shows snackbar with trimmed name, and cancelling shows none',
+      (tester) async {
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        // Tap FAB to open create dialog
+        await tester.tap(find.byKey(const Key('addListButton')));
+        await tester.pumpAndSettle();
+
+        // Cancel test: tap Cancel and verify no snackbar appears
+        await tester.tap(find.text('Cancel'));
+        await tester.pumpAndSettle();
+        expect(find.byType(SnackBar), findsNothing);
+
+        // Open again, enter whitespace-padded name, and submit
+        await tester.tap(find.byKey(const Key('addListButton')));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('createListNameInput')),
+          '  Personal Projects  ',
+        );
+        await tester.tap(find.byKey(const Key('confirmCreateListButton')));
+        await tester.pumpAndSettle();
+
+        // Verify snackbar has trimmed name and no action
+        expect(find.text('Created list "Personal Projects"'), findsOneWidget);
+        expect(find.byType(SnackBarAction), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'rename list shows snackbar with new name; cancelling or renaming to same name shows none',
+      (tester) async {
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        // Cancel test: open rename, tap Cancel, verify no snackbar
+        await tester.tap(find.byKey(Key('renameListButton_$customListId')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Cancel'));
+        await tester.pumpAndSettle();
+        expect(find.byType(SnackBar), findsNothing);
+
+        // No-op rename test: save same name (with whitespace), verify no snackbar
+        await tester.tap(find.byKey(Key('renameListButton_$customListId')));
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const Key('renameListInput')),
+          '  Work  ',
+        );
+        await tester.tap(find.byKey(const Key('confirmRenameListButton')));
+        await tester.pumpAndSettle();
+        expect(find.byType(SnackBar), findsNothing);
+
+        // Successful rename: enter new name
+        await tester.tap(find.byKey(Key('renameListButton_$customListId')));
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const Key('renameListInput')),
+          '  Work 2.0  ',
+        );
+        await tester.tap(find.byKey(const Key('confirmRenameListButton')));
+        await tester.pumpAndSettle();
+
+        // Verify snackbar has trimmed name and no action
+        expect(find.text('Renamed list to "Work 2.0"'), findsOneWidget);
+        expect(find.byType(SnackBarAction), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'delete list shows snackbar with original name; cancelling delete shows none',
+      (tester) async {
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        // Cancel delete: tap delete, tap Cancel, verify no snackbar
+        await tester.tap(find.byKey(Key('deleteListButton_$customListId')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('cancelDeleteListButton')));
+        await tester.pumpAndSettle();
+        expect(find.byType(SnackBar), findsNothing);
+
+        // Confirm delete: tap delete, tap Delete button
+        await tester.tap(find.byKey(Key('deleteListButton_$customListId')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('confirmDeleteListButton')));
+        await tester.pumpAndSettle();
+
+        // Verify snackbar has original name and no action
+        expect(find.text('Deleted list "Work"'), findsOneWidget);
+        expect(find.byType(SnackBarAction), findsNothing);
+      },
+    );
+
+    testWidgets('two rapid actions leave only the latest snackbar', (
+      tester,
+    ) async {
+      await tester.pumpWidget(createWidgetUnderTest());
+      await tester.pumpAndSettle();
+
+      // Create first list
+      await tester.tap(find.byKey(const Key('addListButton')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('createListNameInput')),
+        'First List',
+      );
+      await tester.tap(find.byKey(const Key('confirmCreateListButton')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Created list "First List"'), findsOneWidget);
+
+      // Immediately create second list
+      await tester.tap(find.byKey(const Key('addListButton')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('createListNameInput')),
+        'Second List',
+      );
+      await tester.tap(find.byKey(const Key('confirmCreateListButton')));
+      await tester.pumpAndSettle();
+
+      // Only second snackbar remains
+      expect(find.text('Created list "First List"'), findsNothing);
+      expect(find.text('Created list "Second List"'), findsOneWidget);
+      expect(find.byType(SnackBar), findsOneWidget);
+    });
   });
 }

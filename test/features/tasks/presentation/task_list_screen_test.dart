@@ -645,6 +645,63 @@ void main() {
       },
     );
 
+    testWidgets('single move shows Undo and Undo moves the task back', (
+      tester,
+    ) async {
+      const targetListId = 'target-list-undo';
+      await fakeFirestore.collection('lists').doc(targetListId).set({
+        'listId': targetListId,
+        'uid': uid,
+        'name': 'Target List',
+        'isDefault': false,
+      });
+
+      const taskId = 'task-move-undo';
+      await fakeFirestore.collection('tasks').doc(taskId).set({
+        'taskId': taskId,
+        'uid': uid,
+        'listId': listId,
+        'title': 'Task to Move and Undo',
+        'notes': '',
+        'url': '',
+        'priority': 'none',
+        'tagIds': <String>[],
+        'dueDate': null,
+        'dueTime': null,
+        'earlyReminderMinutes': 0,
+        'repeatRule': 'none',
+        'repeatCustomConfig': null,
+        'order': 0,
+        'subtasks': <Map<String, dynamic>>[],
+        'createdAt': Timestamp.now(),
+        'completedAt': null,
+        'deletedAt': null,
+      });
+
+      await tester.pumpWidget(createWidgetUnderTest(customListId: listId));
+      await tester.pumpAndSettle();
+
+      // Tap move button
+      await tester.tap(find.byKey(const Key('moveTaskButton_$taskId')));
+      await tester.pumpAndSettle();
+
+      // Tap target list option
+      await tester.tap(find.byKey(const Key('moveToListOption_$targetListId')));
+      await tester.pumpAndSettle();
+
+      // Verify SnackBar with Undo action
+      expect(find.text('Task moved to "Target List"'), findsOneWidget);
+      expect(find.byKey(const Key('undoMoveTasksButton')), findsOneWidget);
+
+      // Tap Undo action
+      await tester.tap(find.byKey(const Key('undoMoveTasksButton')));
+      await tester.pumpAndSettle();
+
+      // Verify task was moved back to original listId
+      final doc = await fakeFirestore.collection('tasks').doc(taskId).get();
+      expect(doc.data()!['listId'], equals(listId));
+    });
+
     testWidgets(
       'soft delete shows Undo SnackBar, and tapping Undo restores the task',
       (tester) async {
