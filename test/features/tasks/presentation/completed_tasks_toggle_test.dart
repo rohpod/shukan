@@ -81,116 +81,18 @@ void main() {
     );
   }
 
-  group('ShowCompletedToggle - TaskListScreen', () {
-    testWidgets(
-      'hides completed tasks by default and shows them with strikethrough when toggled',
-      (tester) async {
-        final prefs = await SharedPreferences.getInstance();
-
-        // 1 incomplete task, 1 completed task
-        await fakeFirestore.collection('tasks').doc('t-inc').set({
-          'taskId': 't-inc',
-          'uid': uid,
-          'listId': listId,
-          'title': 'Incomplete Task',
-          'order': 100.0,
-          'dueDate': null,
-          'subtasks': [],
-          'createdAt': Timestamp.now(),
-          'completedAt': null,
-          'deletedAt': null,
-        });
-        await fakeFirestore.collection('tasks').doc('t-comp').set({
-          'taskId': 't-comp',
-          'uid': uid,
-          'listId': listId,
-          'title': 'Completed Task',
-          'order': 200.0,
-          'dueDate': null,
-          'subtasks': [],
-          'createdAt': Timestamp.now(),
-          'completedAt': Timestamp.now(),
-          'deletedAt': null,
-        });
-
-        await tester.pumpWidget(createTaskListWidget(listId, prefs: prefs));
-        await tester.pumpAndSettle();
-
-        // ShowCompletedToggle should exist
-        expect(find.byType(ShowCompletedToggle), findsOneWidget);
-        expect(find.byKey(Key('toggleShowCompleted_$listId')), findsOneWidget);
-
-        // Default: incomplete visible, completed hidden
-        expect(find.text('Incomplete Task'), findsOneWidget);
-        expect(find.text('Completed Task'), findsNothing);
-
-        // Tap toggle to show completed tasks
-        await tester.tap(find.byKey(Key('toggleShowCompleted_$listId')));
-        await tester.pumpAndSettle();
-
-        // Both tasks now visible
-        expect(find.text('Incomplete Task'), findsOneWidget);
-        expect(find.text('Completed Task'), findsOneWidget);
-
-        // Verify completed task styling (strikethrough)
-        final completedText = tester.widget<Text>(find.text('Completed Task'));
-        expect(
-          completedText.style?.decoration,
-          equals(TextDecoration.lineThrough),
-        );
-        expect(completedText.style?.color, equals(Colors.grey));
-
-        final incompleteText = tester.widget<Text>(
-          find.text('Incomplete Task'),
-        );
-        expect(
-          incompleteText.style?.decoration,
-          isNot(equals(TextDecoration.lineThrough)),
-        );
-
-        // Verify persistence
-        expect(prefs.getBool('task_show_completed_$listId'), isTrue);
-
-        // Tap toggle again to hide completed tasks
-        await tester.tap(find.byKey(Key('toggleShowCompleted_$listId')));
-        await tester.pumpAndSettle();
-
-        expect(find.text('Incomplete Task'), findsOneWidget);
-        expect(find.text('Completed Task'), findsNothing);
-        expect(prefs.getBool('task_show_completed_$listId'), isFalse);
-      },
-    );
-
-    testWidgets('completing a task hides it immediately when toggle is off', (
+  group('ShowCompletedToggle - TaskListScreen removal', () {
+    testWidgets('TaskListScreen no longer renders ShowCompletedToggle', (
       tester,
     ) async {
       final prefs = await SharedPreferences.getInstance();
 
-      await fakeFirestore.collection('tasks').doc('t1').set({
-        'taskId': 't1',
-        'uid': uid,
-        'listId': listId,
-        'title': 'Active Task',
-        'order': 100.0,
-        'dueDate': null,
-        'subtasks': [],
-        'createdAt': Timestamp.now(),
-        'completedAt': null,
-        'deletedAt': null,
-      });
-
       await tester.pumpWidget(createTaskListWidget(listId, prefs: prefs));
       await tester.pumpAndSettle();
 
-      expect(find.text('Active Task'), findsOneWidget);
-
-      // Check task complete checkbox
-      await tester.tap(find.byKey(const Key('taskCompleteCheckbox_t1')));
-      await tester.pumpAndSettle();
-
-      // Immediately hidden because show completed is off
-      expect(find.text('Active Task'), findsNothing);
-      expect(find.byKey(const Key('noTasksText')), findsOneWidget);
+      // ShowCompletedToggle should NOT exist in TaskListScreen
+      expect(find.byType(ShowCompletedToggle), findsNothing);
+      expect(find.byKey(Key('toggleShowCompleted_$listId')), findsNothing);
     });
   });
 
@@ -290,16 +192,16 @@ void main() {
     ) async {
       final prefs = await SharedPreferences.getInstance();
 
-      await tester.pumpWidget(createTaskListWidget(listId, prefs: prefs));
+      await tester.pumpWidget(
+        createSmartViewWidget(viewType: SmartViewType.today, prefs: prefs),
+      );
       await tester.pumpAndSettle();
 
-      // Toggle listId to true
-      await tester.tap(find.byKey(Key('toggleShowCompleted_$listId')));
+      // Toggle today to true
+      await tester.tap(find.byKey(const Key('toggleShowCompleted_today')));
       await tester.pumpAndSettle();
 
-      expect(prefs.getBool('task_show_completed_$listId'), isTrue);
-      expect(prefs.getBool('task_show_completed_$otherListId'), isNull);
-      expect(prefs.getBool('task_show_completed_today'), isNull);
+      expect(prefs.getBool('task_show_completed_today'), isTrue);
       expect(prefs.getBool('task_show_completed_thisWeek'), isNull);
       expect(prefs.getBool('task_show_completed_scheduled'), isNull);
     });

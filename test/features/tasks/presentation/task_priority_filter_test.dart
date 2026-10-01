@@ -353,8 +353,8 @@ void main() {
       expect(find.text('Medium Incomplete Task'), findsNothing);
       expect(find.text('High Completed Task'), findsNothing);
 
-      // 3. Toggle Show completed ON: both High tasks visible, completed has lineThrough
-      await tester.tap(find.byKey(Key('toggleShowCompleted_$listId')));
+      // 3. Expand Completed section: both High tasks visible, completed has lineThrough
+      await tester.tap(find.byKey(Key('completedSectionHeader_$listId')));
       await tester.pumpAndSettle();
 
       expect(find.text('High Incomplete Task'), findsOneWidget);

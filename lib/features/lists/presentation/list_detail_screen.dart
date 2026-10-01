@@ -164,7 +164,12 @@ class ListDetailScreen extends ConsumerWidget {
       isSelectionModeActiveProvider(list.listId),
     );
     final sortedTasksAsync = ref.watch(sortedTasksForListProvider(list.listId));
-    final hasTasksToSelect = sortedTasksAsync.value?.isNotEmpty ?? false;
+    final completedTasksAsync = ref.watch(
+      completedTasksForListProvider(list.listId),
+    );
+    final hasTasksToSelect =
+        (sortedTasksAsync.value?.isNotEmpty ?? false) ||
+        (completedTasksAsync.value?.isNotEmpty ?? false);
 
     return PopScope(
       canPop: !isSelectionActive,
