@@ -214,7 +214,18 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(TaskSortSelector), findsOneWidget);
-      expect(find.byKey(const Key('smartTaskDragHandle_st1')), findsOneWidget);
+      expect(find.text('Due date'), findsOneWidget);
+
+      // Default Due date sort: High Priority comes before Low Priority (tie-break by priority)
+      var titles = tester
+          .widgetList<Text>(find.byType(Text))
+          .map((w) => w.data)
+          .where((t) => t == 'Today Low Task' || t == 'Today High Task')
+          .toList();
+      expect(titles, equals(['Today High Task', 'Today Low Task']));
+
+      // In Due date mode, drag handle is hidden
+      expect(find.byKey(const Key('smartTaskDragHandle_st1')), findsNothing);
 
       // Switch to Priority
       await tester.tap(find.byKey(const Key('taskSortDropdown_today')));
@@ -225,7 +236,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      final titles = tester
+      titles = tester
           .widgetList<Text>(find.byType(Text))
           .map((w) => w.data)
           .where((t) => t == 'Today Low Task' || t == 'Today High Task')
@@ -235,6 +246,25 @@ void main() {
       // In Priority mode, drag handle is hidden
       expect(find.byKey(const Key('smartTaskDragHandle_st1')), findsNothing);
       expect(prefs.getString('task_sort_mode_today'), equals('priority'));
+
+      // Switch to Manual
+      await tester.tap(find.byKey(const Key('taskSortDropdown_today')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const Key('taskSortOption_today_manual')).last,
+      );
+      await tester.pumpAndSettle();
+
+      // In Manual mode, tasks are ordered by order (st1: 100.0 < st2: 200.0)
+      titles = tester
+          .widgetList<Text>(find.byType(Text))
+          .map((w) => w.data)
+          .where((t) => t == 'Today Low Task' || t == 'Today High Task')
+          .toList();
+      expect(titles, equals(['Today Low Task', 'Today High Task']));
+      expect(find.byKey(const Key('smartTaskDragHandle_st1')), findsOneWidget);
+      expect(prefs.getString('task_sort_mode_today'), equals('manual'));
     });
   });
 }

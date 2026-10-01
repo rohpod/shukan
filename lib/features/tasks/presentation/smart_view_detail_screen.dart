@@ -18,7 +18,6 @@ import '../providers/task_sort_providers.dart';
 import '../providers/task_tag_filter_providers.dart';
 import 'task_list_screen.dart';
 import 'widgets/empty_state_view.dart';
-import 'widgets/show_completed_toggle.dart';
 import 'widgets/task_priority_filter_selector.dart';
 import 'widgets/task_row_tag_chips.dart';
 import 'widgets/task_sort_selector.dart';
@@ -108,7 +107,10 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
     final unfilteredTasks =
         ref.watch(unfilteredSmartViewTasksProvider(widget.viewType)).value ??
         const <Task>[];
-    final unfilteredCount = unfilteredTasks.length;
+    final unfilteredActiveTasks = unfilteredTasks
+        .where((t) => !t.isCompleted)
+        .toList();
+    final unfilteredCount = unfilteredActiveTasks.length;
 
     return Scaffold(
       appBar: AppBar(
@@ -129,8 +131,6 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                   const SizedBox(width: 8),
                   TaskPriorityFilterSelector(viewKey: viewKey),
                   const SizedBox(width: 8),
-                  ShowCompletedToggle(viewKey: viewKey),
-                  const SizedBox(width: 8),
                   TaskTagFilterSelector(viewKey: viewKey),
                 ],
               ),
@@ -143,9 +143,6 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
               data: (tasks) {
                 if (tasks.isEmpty) {
                   if (unfilteredCount > 0) {
-                    final allCompleted = unfilteredTasks.every(
-                      (t) => t.isCompleted,
-                    );
                     return EmptyStateView(
                       icon: Icons.filter_alt_off_outlined,
                       message: 'No tasks match your filters',
@@ -159,9 +156,6 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                         ref
                             .read(taskTagFilterProvider(viewKey).notifier)
                             .clearAll();
-                        ref
-                            .read(showCompletedTasksProvider(viewKey).notifier)
-                            .setShowCompleted(allCompleted);
                       },
                     );
                   }

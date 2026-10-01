@@ -130,14 +130,12 @@ void main() {
       await tester.tap(find.byKey(Key('taskCompleteCheckbox_$dentistTaskId')));
       await tester.pumpAndSettle();
 
-      // Dentist appointment is hidden because show completed is off by default
+      // Dentist appointment is hidden because completed tasks are permanently hidden in smart views
       expect(find.text('Dentist Appointment'), findsNothing);
-
-      // Tap Show completed toggle
-      await tester.tap(find.byKey(const Key('toggleShowCompleted_thisWeek')));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Dentist Appointment'), findsOneWidget);
+      expect(
+        find.byKey(const Key('toggleShowCompleted_thisWeek')),
+        findsNothing,
+      );
 
       // 6. Return to HomeScreen and navigate to Scheduled view
       await tester.tap(find.byTooltip('Back'));

@@ -1,4 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:firebase_auth_mocks/firebase_auth_mocks.dart';
 import 'package:flutter/material.dart';
@@ -96,98 +95,8 @@ void main() {
     });
   });
 
-  group('ShowCompletedToggle - SmartViewDetailScreen', () {
-    testWidgets(
-      'Today view hides completed tasks by default and shows today completed when toggled',
-      (tester) async {
-        final prefs = await SharedPreferences.getInstance();
-        final testDate = DateTime(2026, 9, 20, 12, 0);
-
-        // Incomplete task due today
-        await fakeFirestore.collection('tasks').doc('st-inc').set({
-          'taskId': 'st-inc',
-          'uid': uid,
-          'listId': listId,
-          'title': 'Today Incomplete',
-          'order': 100.0,
-          'dueDate': Timestamp.fromDate(DateTime(2026, 9, 20, 15, 0)),
-          'subtasks': [],
-          'createdAt': Timestamp.now(),
-          'completedAt': null,
-          'deletedAt': null,
-        });
-
-        // Completed task due today
-        await fakeFirestore.collection('tasks').doc('st-comp').set({
-          'taskId': 'st-comp',
-          'uid': uid,
-          'listId': listId,
-          'title': 'Today Completed',
-          'order': 200.0,
-          'dueDate': Timestamp.fromDate(DateTime(2026, 9, 20, 11, 0)),
-          'subtasks': [],
-          'createdAt': Timestamp.now(),
-          'completedAt': Timestamp.now(),
-          'deletedAt': null,
-        });
-
-        // Overdue completed task from yesterday (must NEVER appear in Today view)
-        await fakeFirestore.collection('tasks').doc('st-past-comp').set({
-          'taskId': 'st-past-comp',
-          'uid': uid,
-          'listId': listId,
-          'title': 'Past Completed',
-          'order': 300.0,
-          'dueDate': Timestamp.fromDate(DateTime(2026, 9, 19, 11, 0)),
-          'subtasks': [],
-          'createdAt': Timestamp.now(),
-          'completedAt': Timestamp.now(),
-          'deletedAt': null,
-        });
-
-        await tester.pumpWidget(
-          createSmartViewWidget(
-            viewType: SmartViewType.today,
-            currentDate: testDate,
-            prefs: prefs,
-          ),
-        );
-        await tester.pumpAndSettle();
-
-        expect(find.byType(ShowCompletedToggle), findsOneWidget);
-        expect(
-          find.byKey(const Key('toggleShowCompleted_today')),
-          findsOneWidget,
-        );
-
-        // Default: only today's incomplete task visible
-        expect(find.text('Today Incomplete'), findsOneWidget);
-        expect(find.text('Today Completed'), findsNothing);
-        expect(find.text('Past Completed'), findsNothing);
-
-        // Toggle on Show Completed
-        await tester.tap(find.byKey(const Key('toggleShowCompleted_today')));
-        await tester.pumpAndSettle();
-
-        // Today completed task is now visible with strikethrough
-        expect(find.text('Today Incomplete'), findsOneWidget);
-        expect(find.text('Today Completed'), findsOneWidget);
-        // Overdue completed task must NOT appear
-        expect(find.text('Past Completed'), findsNothing);
-
-        final completedText = tester.widget<Text>(find.text('Today Completed'));
-        expect(
-          completedText.style?.decoration,
-          equals(TextDecoration.lineThrough),
-        );
-
-        expect(prefs.getBool('task_show_completed_today'), isTrue);
-      },
-    );
-  });
-
-  group('Per-view independent persistence', () {
-    testWidgets('toggling in one view does not affect other views', (
+  group('ShowCompletedToggle - SmartViewDetailScreen removal', () {
+    testWidgets('SmartViewDetailScreen no longer renders ShowCompletedToggle', (
       tester,
     ) async {
       final prefs = await SharedPreferences.getInstance();
@@ -197,13 +106,25 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Toggle today to true
-      await tester.tap(find.byKey(const Key('toggleShowCompleted_today')));
-      await tester.pumpAndSettle();
+      expect(find.byType(ShowCompletedToggle), findsNothing);
+      expect(find.byKey(const Key('toggleShowCompleted_today')), findsNothing);
+    });
+  });
 
-      expect(prefs.getBool('task_show_completed_today'), isTrue);
-      expect(prefs.getBool('task_show_completed_thisWeek'), isNull);
-      expect(prefs.getBool('task_show_completed_scheduled'), isNull);
+  group('Per-view independent persistence', () {
+    test('toggling in one view does not affect other views', () async {
+      final prefs = await SharedPreferences.getInstance();
+      final container = ProviderContainer(
+        overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+      );
+
+      // Toggle tag view to true
+      await container
+          .read(showCompletedTasksProvider('tag_tag-1').notifier)
+          .toggle();
+
+      expect(prefs.getBool('task_show_completed_tag_tag-1'), isTrue);
+      expect(prefs.getBool('task_show_completed_tag_tag-2'), isNull);
     });
   });
 }

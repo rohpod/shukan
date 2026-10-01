@@ -570,10 +570,10 @@ void main() {
   );
 
   group(
-    'Requirement 5: Smart views and Tag Detail retain ShowCompletedToggle',
+    'Requirement 5: Smart views and Tag Detail ShowCompletedToggle behavior',
     () {
       testWidgets(
-        'Today smart view retains ShowCompletedToggle and lacks collapsible section',
+        'Today smart view lacks ShowCompletedToggle and lacks collapsible section',
         (tester) async {
           final prefs = await SharedPreferences.getInstance();
 
@@ -595,17 +595,17 @@ void main() {
           );
           await tester.pumpAndSettle();
 
-          expect(find.byType(ShowCompletedToggle), findsOneWidget);
+          expect(find.byType(ShowCompletedToggle), findsNothing);
           expect(
             find.byKey(const Key('toggleShowCompleted_today')),
-            findsOneWidget,
+            findsNothing,
           );
           expect(find.text('Delete completed'), findsNothing);
         },
       );
 
       testWidgets(
-        'Scheduled smart view retains ShowCompletedToggle and lacks collapsible section',
+        'Scheduled smart view lacks ShowCompletedToggle and lacks collapsible section',
         (tester) async {
           final prefs = await SharedPreferences.getInstance();
 
@@ -627,10 +627,10 @@ void main() {
           );
           await tester.pumpAndSettle();
 
-          expect(find.byType(ShowCompletedToggle), findsOneWidget);
+          expect(find.byType(ShowCompletedToggle), findsNothing);
           expect(
             find.byKey(const Key('toggleShowCompleted_scheduled')),
-            findsOneWidget,
+            findsNothing,
           );
           expect(find.text('Delete completed'), findsNothing);
         },
