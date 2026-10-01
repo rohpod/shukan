@@ -224,7 +224,8 @@ void main() {
           .toList();
       expect(titles, equals(['Today High Task', 'Today Low Task']));
 
-      // In Due date mode, drag handle is hidden
+      // In Due date mode, drag listener is not present and handle is removed
+      expect(find.byType(ReorderableDelayedDragStartListener), findsNothing);
       expect(find.byKey(const Key('smartTaskDragHandle_st1')), findsNothing);
 
       // Switch to Priority
@@ -243,7 +244,8 @@ void main() {
           .toList();
       expect(titles, equals(['Today High Task', 'Today Low Task']));
 
-      // In Priority mode, drag handle is hidden
+      // In Priority mode, drag listener is not present
+      expect(find.byType(ReorderableDelayedDragStartListener), findsNothing);
       expect(find.byKey(const Key('smartTaskDragHandle_st1')), findsNothing);
       expect(prefs.getString('task_sort_mode_today'), equals('priority'));
 
@@ -263,7 +265,9 @@ void main() {
           .where((t) => t == 'Today Low Task' || t == 'Today High Task')
           .toList();
       expect(titles, equals(['Today Low Task', 'Today High Task']));
-      expect(find.byKey(const Key('smartTaskDragHandle_st1')), findsOneWidget);
+      // Long-press drag listener is present for manual mode, drag handle icon is removed
+      expect(find.byType(ReorderableDelayedDragStartListener), findsWidgets);
+      expect(find.byKey(const Key('smartTaskDragHandle_st1')), findsNothing);
       expect(prefs.getString('task_sort_mode_today'), equals('manual'));
     });
   });
