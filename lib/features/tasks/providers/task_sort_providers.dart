@@ -150,22 +150,50 @@ AsyncValue<List<Task>> _mapSortedTasks(
   return const AsyncLoading();
 }
 
-/// Streams tasks for [listId] sorted by that list's independent [TaskSortOption]
-/// and filtered by its independent [showCompletedTasksProvider], [taskPriorityFilterProvider],
-/// and [taskTagFilterProvider].
+/// Per-list notifier tracking whether the Completed section is collapsed.
+/// Persists the state to SharedPreferences under `task_completed_section_collapsed_<listId>`.
+/// Defaults to true (collapsed).
+class CompletedSectionCollapsedNotifier extends Notifier<bool> {
+  CompletedSectionCollapsedNotifier(this.listId);
+
+  final String listId;
+
+  @override
+  bool build() {
+    final prefs = ref.watch(sharedPreferencesProvider);
+    return prefs?.getBool('task_completed_section_collapsed_$listId') ?? true;
+  }
+
+  Future<void> toggle() async {
+    state = !state;
+    final prefs = ref.read(sharedPreferencesProvider);
+    await prefs?.setBool('task_completed_section_collapsed_$listId', state);
+  }
+
+  Future<void> setCollapsed(bool collapsed) async {
+    state = collapsed;
+    final prefs = ref.read(sharedPreferencesProvider);
+    await prefs?.setBool('task_completed_section_collapsed_$listId', state);
+  }
+}
+
+/// Provider exposing whether the Completed section is collapsed for a given list.
+final completedSectionCollapsedProvider =
+    NotifierProvider.family<CompletedSectionCollapsedNotifier, bool, String>(
+      (arg) => CompletedSectionCollapsedNotifier(arg),
+    );
+
+/// Streams active (non-completed) tasks for [listId] sorted by that list's independent [TaskSortOption]
+/// and filtered by its independent [taskPriorityFilterProvider] and [taskTagFilterProvider].
 final sortedTasksForListProvider =
     Provider.family<AsyncValue<List<Task>>, String>((ref, listId) {
       final tasksAsync = ref.watch(tasksForListProvider(listId));
       final sortOption = ref.watch(taskSortModeProvider(listId));
-      final showCompleted = ref.watch(showCompletedTasksProvider(listId));
       final priorityFilter = ref.watch(taskPriorityFilterProvider(listId));
       final tagFilter = ref.watch(taskTagFilterProvider(listId));
 
       final filteredTasksAsync = tasksAsync.whenData((tasks) {
-        var filtered = tasks;
-        if (!showCompleted) {
-          filtered = filtered.where((t) => !t.isCompleted).toList();
-        }
+        var filtered = tasks.where((t) => !t.isCompleted).toList();
         if (priorityFilter != TaskPriorityFilter.all) {
           final target = priorityFilter.firestoreValue;
           filtered = filtered.where((t) => t.priority == target).toList();
@@ -179,6 +207,29 @@ final sortedTasksForListProvider =
       });
 
       return _mapSortedTasks(filteredTasksAsync, sortOption);
+    });
+
+/// Streams completed tasks for [listId] ordered always by most recently completed first
+/// (descending by [Task.completedAt], falling back to [Task.createdAt]).
+/// Completed tasks are independent of sort mode, priority, and tag filters.
+final completedTasksForListProvider =
+    Provider.family<AsyncValue<List<Task>>, String>((ref, listId) {
+      final tasksAsync = ref.watch(tasksForListProvider(listId));
+      return tasksAsync.whenData((tasks) {
+        final completed = tasks.where((t) => t.isCompleted).toList();
+        completed.sort((a, b) {
+          final aTime =
+              a.completedAt ??
+              a.createdAt ??
+              DateTime.fromMillisecondsSinceEpoch(0);
+          final bTime =
+              b.completedAt ??
+              b.createdAt ??
+              DateTime.fromMillisecondsSinceEpoch(0);
+          return bTime.compareTo(aTime);
+        });
+        return completed;
+      });
     });
 
 /// Streams tasks for [viewType] sorted by that smart view's independent [TaskSortOption].

@@ -47,8 +47,9 @@ final taskSelectionProvider = NotifierProvider.autoDispose
       (arg) => TaskSelectionNotifier(arg),
     );
 
-/// Provider exposing the selected [Task] models from [sortedTasksForListProvider]
-/// in their displayed order. Returns an empty list while loading or on error.
+/// Provider exposing the selected [Task] models from displayed tasks
+/// ([sortedTasksForListProvider] and [completedTasksForListProvider]) in their displayed order.
+/// Returns an empty list while loading or on error.
 final selectedTasksProvider = Provider.autoDispose.family<List<Task>, String>((
   ref,
   listId,
@@ -58,15 +59,11 @@ final selectedTasksProvider = Provider.autoDispose.family<List<Task>, String>((
     return const <Task>[];
   }
 
-  final sortedTasksAsync = ref.watch(sortedTasksForListProvider(listId));
-  if (sortedTasksAsync.isLoading || sortedTasksAsync.hasError) {
-    return const <Task>[];
-  }
-
-  final tasks = sortedTasksAsync.value;
-  if (tasks == null) {
-    return const <Task>[];
-  }
+  final activeTasks =
+      ref.watch(sortedTasksForListProvider(listId)).value ?? const <Task>[];
+  final completedTasks =
+      ref.watch(completedTasksForListProvider(listId)).value ?? const <Task>[];
+  final tasks = [...activeTasks, ...completedTasks];
 
   return tasks.where((task) => selection.contains(task.taskId)).toList();
 });

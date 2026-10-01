@@ -15,6 +15,7 @@ import 'package:shukan/features/tasks/presentation/smart_view_detail_screen.dart
 import 'package:shukan/features/tasks/presentation/task_list_screen.dart';
 import 'package:shukan/features/tasks/presentation/widgets/empty_state_view.dart';
 import 'package:shukan/features/tasks/providers/smart_view_providers.dart';
+import 'package:shukan/features/tasks/providers/task_sort_providers.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -89,28 +90,29 @@ void main() {
     );
 
     testWidgets(
-      'renders filtered-to-zero when all tasks are completed and hidden by default, tapping "Clear filters" reveals them',
+      'renders filtered-to-zero when active tasks are filtered out, tapping "Clear filters" reveals them',
       (tester) async {
-        // Create 2 completed tasks in the list
-        await fakeFirestore.collection('tasks').doc('t-comp-1').set({
-          'taskId': 't-comp-1',
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('task_priority_filter_$listId', 'high');
+
+        // Create 2 normal priority tasks in the list
+        await fakeFirestore.collection('tasks').doc('t-1').set({
+          'taskId': 't-1',
           'uid': uid,
           'listId': listId,
-          'title': 'Completed Task 1',
-          'isCompleted': true,
-          'completedAt': Timestamp.now(),
+          'title': 'Low Task 1',
+          'completedAt': null,
           'deletedAt': null,
           'priority': 'none',
           'tagIds': [],
           'order': 0,
         });
-        await fakeFirestore.collection('tasks').doc('t-comp-2').set({
-          'taskId': 't-comp-2',
+        await fakeFirestore.collection('tasks').doc('t-2').set({
+          'taskId': 't-2',
           'uid': uid,
           'listId': listId,
-          'title': 'Completed Task 2',
-          'isCompleted': true,
-          'completedAt': Timestamp.now(),
+          'title': 'Low Task 2',
+          'completedAt': null,
           'deletedAt': null,
           'priority': 'none',
           'tagIds': [],
@@ -118,22 +120,27 @@ void main() {
         });
 
         await tester.pumpWidget(
-          wrapWithScope(const TaskListScreen(listId: listId)),
+          wrapWithScope(
+            const TaskListScreen(listId: listId),
+            extraOverrides: [
+              sharedPreferencesProvider.overrideWithValue(prefs),
+            ],
+          ),
         );
         await tester.pumpAndSettle();
 
-        // Tasks exist, but hidden because completion toggle is false -> filtered to zero!
+        // Tasks exist, but hidden because priority filter is high -> filtered to zero!
         expect(find.byIcon(Icons.filter_alt_off_outlined), findsOneWidget);
         expect(find.text('No tasks match your filters'), findsOneWidget);
         expect(find.byKey(Key('clearFiltersButton_$listId')), findsOneWidget);
 
-        // Tap Clear filters -> sets showCompleted to true
+        // Tap Clear filters -> resets priority filter
         await tester.tap(find.byKey(Key('clearFiltersButton_$listId')));
         await tester.pumpAndSettle();
 
         // Tasks are now revealed!
-        expect(find.text('Completed Task 1'), findsOneWidget);
-        expect(find.text('Completed Task 2'), findsOneWidget);
+        expect(find.text('Low Task 1'), findsOneWidget);
+        expect(find.text('Low Task 2'), findsOneWidget);
       },
     );
   });
