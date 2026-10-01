@@ -211,6 +211,19 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                   key: Key('smartViewsListView_${widget.viewType.name}'),
                   padding: const EdgeInsets.all(12),
                   buildDefaultDragHandles: false,
+                  proxyDecorator: (child, index, animation) {
+                    return Material(
+                      elevation: 4,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest,
+                      shadowColor: Theme.of(context).shadowColor
+                          .withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(8),
+                      clipBehavior: Clip.antiAlias,
+                      child: child,
+                    );
+                  },
                   itemCount: tasks.length,
                   onReorderItem: (oldIndex, newIndex) async {
                     if (sortOption != TaskSortOption.manual) return;
