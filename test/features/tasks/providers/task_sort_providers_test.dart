@@ -22,16 +22,43 @@ void main() {
   });
 
   group('TaskSortModeNotifier & persistence', () {
-    test('defaults to TaskSortOption.manual when no pref saved', () async {
-      final prefs = await SharedPreferences.getInstance();
-      final container = ProviderContainer(
-        overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
-      );
-      addTearDown(container.dispose);
+    test(
+      'defaults to TaskSortOption.manual for list views when no pref saved',
+      () async {
+        final prefs = await SharedPreferences.getInstance();
+        final container = ProviderContainer(
+          overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+        );
+        addTearDown(container.dispose);
 
-      final sortMode = container.read(taskSortModeProvider('list-1'));
-      expect(sortMode, equals(TaskSortOption.manual));
-    });
+        final sortMode = container.read(taskSortModeProvider('list-1'));
+        expect(sortMode, equals(TaskSortOption.manual));
+      },
+    );
+
+    test(
+      'defaults to TaskSortOption.dueDate for smart views when no pref saved',
+      () async {
+        final prefs = await SharedPreferences.getInstance();
+        final container = ProviderContainer(
+          overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+        );
+        addTearDown(container.dispose);
+
+        expect(
+          container.read(taskSortModeProvider('today')),
+          equals(TaskSortOption.dueDate),
+        );
+        expect(
+          container.read(taskSortModeProvider('thisWeek')),
+          equals(TaskSortOption.dueDate),
+        );
+        expect(
+          container.read(taskSortModeProvider('scheduled')),
+          equals(TaskSortOption.dueDate),
+        );
+      },
+    );
 
     test('persists selected sort mode to SharedPreferences under task_sort_mode_<viewKey>', () async {
       final prefs = await SharedPreferences.getInstance();
@@ -76,7 +103,7 @@ void main() {
       );
       expect(
         container.read(taskSortModeProvider('today')),
-        equals(TaskSortOption.manual),
+        equals(TaskSortOption.dueDate),
       );
     });
 

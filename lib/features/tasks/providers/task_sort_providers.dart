@@ -18,7 +18,7 @@ final sharedPreferencesProvider = Provider<SharedPreferences?>((ref) {
 /// Per-view sort mode notifier, keyed by `listId` (for list views) or `viewType.name` (for smart views).
 ///
 /// Persists the selected [TaskSortOption] to SharedPreferences under `task_sort_mode_<viewKey>`.
-/// Defaults to [TaskSortOption.manual].
+/// Defaults to [TaskSortOption.dueDate] for smart views, and [TaskSortOption.manual] for list views.
 class TaskSortModeNotifier extends Notifier<TaskSortOption> {
   TaskSortModeNotifier(this.viewKey);
 
@@ -34,6 +34,9 @@ class TaskSortModeNotifier extends Notifier<TaskSortOption> {
           return option;
         }
       }
+    }
+    if (SmartViewType.values.any((v) => v.name == viewKey)) {
+      return TaskSortOption.dueDate;
     }
     return TaskSortOption.manual;
   }
