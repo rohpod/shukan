@@ -88,10 +88,10 @@ void main() {
         // Work week toggle should NOT be visible on Today view
         expect(find.byKey(const Key('workWeekFilterButton')), findsNothing);
 
-        // Show completed toggle button should be visible
+        // Show completed toggle button should NOT be visible
         expect(
           find.byKey(const Key('toggleShowCompleted_today')),
-          findsOneWidget,
+          findsNothing,
         );
 
         // Task is rendered
@@ -271,16 +271,13 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // Because show completed is off by default, completed task disappears
+        // Completed tasks are permanently hidden in smart views
         expect(find.text('Grocery Shopping'), findsNothing);
         expect(find.byKey(const Key('noTasksText')), findsOneWidget);
-
-        // Tap "Show completed" toggle
-        await tester.tap(find.byKey(const Key('toggleShowCompleted_today')));
-        await tester.pumpAndSettle();
-
-        // Now visible
-        expect(find.text('Grocery Shopping'), findsOneWidget);
+        expect(
+          find.byKey(const Key('toggleShowCompleted_today')),
+          findsNothing,
+        );
       },
     );
 

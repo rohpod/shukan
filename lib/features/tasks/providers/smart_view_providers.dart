@@ -176,21 +176,20 @@ final unfilteredSmartViewTasksProvider =
 
 /// Family provider that streams tasks for a specific [SmartViewType].
 ///
-/// Filters [unfilteredSmartViewTasksProvider] in-memory by completion toggle,
-/// priority filter, and tag filter without issuing extra Firestore queries.
+/// Filters [unfilteredSmartViewTasksProvider] in-memory by hiding completed tasks,
+/// and applying active priority and tag filters without issuing extra Firestore queries.
 final smartViewTasksProvider = StreamProvider.family<List<Task>, SmartViewType>(
   (ref, viewType) {
     final unfilteredAsync = ref.watch(
       unfilteredSmartViewTasksProvider(viewType),
     );
-    final showCompleted = ref.watch(showCompletedTasksProvider(viewType.name));
     final priorityFilter = ref.watch(taskPriorityFilterProvider(viewType.name));
     final tagFilter = ref.watch(taskTagFilterProvider(viewType.name));
 
     return unfilteredAsync.when(
       data: (tasks) {
         final filtered = tasks.where((t) {
-          if (!showCompleted && t.isCompleted) {
+          if (t.isCompleted) {
             return false;
           }
 
@@ -212,7 +211,7 @@ final smartViewTasksProvider = StreamProvider.family<List<Task>, SmartViewType>(
           tasks,
         ) {
           return tasks.where((t) {
-            if (!showCompleted && t.isCompleted) {
+            if (t.isCompleted) {
               return false;
             }
 
