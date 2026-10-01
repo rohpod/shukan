@@ -192,11 +192,11 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
     final row = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Container(
+        Material(
           color: isSelectionMode && isSelected
               ? Theme.of(context).colorScheme.primaryContainer
-                  .withValues(alpha: 0.3)
-              : null,
+                    .withValues(alpha: 0.3)
+              : Colors.transparent,
           child: Row(
             children: [
               Padding(
@@ -237,7 +237,8 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                         ? () => ref
                               .read(taskSelectionProvider(listId).notifier)
                               .toggle(task.taskId)
-                        : () => _showTaskDialog(context, uid, listId, task: task),
+                        : () =>
+                              _showTaskDialog(context, uid, listId, task: task),
                     title: Text(
                       task.title,
                       key: Key('taskTitle_${task.taskId}'),
@@ -248,7 +249,8 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                         color: task.isCompleted ? Colors.grey : null,
                       ),
                     ),
-                    subtitle: (task.notes.isNotEmpty ||
+                    subtitle:
+                        (task.notes.isNotEmpty ||
                             task.url.isNotEmpty ||
                             tagFilter.isNotEmpty)
                         ? Column(
@@ -333,11 +335,11 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                       onPressed: isSelectionMode
                           ? null
                           : () => _showTaskDialog(
-                                context,
-                                uid,
-                                listId,
-                                task: task,
-                              ),
+                              context,
+                              uid,
+                              listId,
+                              task: task,
+                            ),
                     ),
                     IconButton(
                       key: Key('deleteTaskButton_${task.taskId}'),
@@ -347,9 +349,7 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                           ? null
                           : () async {
                               final messenger = scaffoldMessenger;
-                              final taskRepo = ref.read(
-                                taskRepositoryProvider,
-                              );
+                              final taskRepo = ref.read(taskRepositoryProvider);
                               try {
                                 await taskRepo.softDeleteTask(task.taskId);
                                 if (!mounted) return;
@@ -357,9 +357,7 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                                   messenger,
                                   'Deleted "${task.title}"',
                                   actionLabel: 'Undo',
-                                  actionKey: const Key(
-                                    'undoDeleteTaskButton',
-                                  ),
+                                  actionKey: const Key('undoDeleteTaskButton'),
                                   onAction: () => taskRepo.restoreTask(
                                     uid: uid,
                                     taskId: task.taskId,
@@ -371,9 +369,7 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                                 if (!mounted) return;
                                 messenger.showSnackBar(
                                   SnackBar(
-                                    content: Text(
-                                      'Failed to delete task: $e',
-                                    ),
+                                    content: Text('Failed to delete task: $e'),
                                   ),
                                 );
                               }

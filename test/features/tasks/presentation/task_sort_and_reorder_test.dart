@@ -73,7 +73,7 @@ void main() {
 
   group('TaskListScreen Sorting & Drag Handle Tests', () {
     testWidgets(
-      'shows sort selector with Manual by default, displays drag handles',
+      'shows sort selector with Manual by default, enables delayed drag listener',
       (tester) async {
         final prefs = await SharedPreferences.getInstance();
 
@@ -97,81 +97,91 @@ void main() {
 
         expect(find.byType(TaskSortSelector), findsOneWidget);
         expect(find.text('Manual'), findsOneWidget);
-        expect(find.byKey(const Key('taskDragHandle_t1')), findsOneWidget);
+        expect(
+          find.byType(ReorderableDelayedDragStartListener),
+          findsOneWidget,
+        );
+        expect(find.byKey(const Key('taskDragHandle_t1')), findsNothing);
       },
     );
 
-    testWidgets('switching sort mode hides drag handles and reorders tasks', (
-      tester,
-    ) async {
-      final prefs = await SharedPreferences.getInstance();
+    testWidgets(
+      'switching sort mode disables drag listener and reorders tasks',
+      (tester) async {
+        final prefs = await SharedPreferences.getInstance();
 
-      await fakeFirestore.collection('tasks').doc('t1').set({
-        'taskId': 't1',
-        'uid': uid,
-        'listId': listId,
-        'title': 'Low Priority Task',
-        'priority': 'low',
-        'order': 100.0,
-        'dueDate': Timestamp.fromDate(DateTime(2026, 9, 25)),
-        'subtasks': [],
-        'createdAt': Timestamp.fromDate(DateTime(2026, 1, 1)),
-        'completedAt': null,
-        'deletedAt': null,
-      });
-      await fakeFirestore.collection('tasks').doc('t2').set({
-        'taskId': 't2',
-        'uid': uid,
-        'listId': listId,
-        'title': 'High Priority Task',
-        'priority': 'high',
-        'order': 200.0,
-        'dueDate': Timestamp.fromDate(DateTime(2026, 9, 15)),
-        'subtasks': [],
-        'createdAt': Timestamp.fromDate(DateTime(2026, 1, 2)),
-        'completedAt': null,
-        'deletedAt': null,
-      });
+        await fakeFirestore.collection('tasks').doc('t1').set({
+          'taskId': 't1',
+          'uid': uid,
+          'listId': listId,
+          'title': 'Low Priority Task',
+          'priority': 'low',
+          'order': 100.0,
+          'dueDate': Timestamp.fromDate(DateTime(2026, 9, 25)),
+          'subtasks': [],
+          'createdAt': Timestamp.fromDate(DateTime(2026, 1, 1)),
+          'completedAt': null,
+          'deletedAt': null,
+        });
+        await fakeFirestore.collection('tasks').doc('t2').set({
+          'taskId': 't2',
+          'uid': uid,
+          'listId': listId,
+          'title': 'High Priority Task',
+          'priority': 'high',
+          'order': 200.0,
+          'dueDate': Timestamp.fromDate(DateTime(2026, 9, 15)),
+          'subtasks': [],
+          'createdAt': Timestamp.fromDate(DateTime(2026, 1, 2)),
+          'completedAt': null,
+          'deletedAt': null,
+        });
 
-      await tester.pumpWidget(createTaskListWidget(prefs: prefs));
-      await tester.pumpAndSettle();
+        await tester.pumpWidget(createTaskListWidget(prefs: prefs));
+        await tester.pumpAndSettle();
 
-      // In Manual mode, t1 (100) comes before t2 (200)
-      final titlesBefore = tester
-          .widgetList<Text>(find.byType(Text))
-          .map((w) => w.data)
-          .where((t) => t == 'Low Priority Task' || t == 'High Priority Task')
-          .toList();
-      expect(titlesBefore, equals(['Low Priority Task', 'High Priority Task']));
-      expect(find.byKey(const Key('taskDragHandle_t1')), findsOneWidget);
+        // In Manual mode, t1 (100) comes before t2 (200)
+        final titlesBefore = tester
+            .widgetList<Text>(find.byType(Text))
+            .map((w) => w.data)
+            .where((t) => t == 'Low Priority Task' || t == 'High Priority Task')
+            .toList();
+        expect(
+          titlesBefore,
+          equals(['Low Priority Task', 'High Priority Task']),
+        );
+        expect(find.byType(ReorderableDelayedDragStartListener), findsWidgets);
+        expect(find.byKey(const Key('taskDragHandle_t1')), findsNothing);
 
-      // Tap sort dropdown and select Priority
-      await tester.tap(find.byKey(Key('taskSortDropdown_$listId')));
-      await tester.pumpAndSettle();
+        // Tap sort dropdown and select Priority
+        await tester.tap(find.byKey(Key('taskSortDropdown_$listId')));
+        await tester.pumpAndSettle();
 
-      await tester.tap(
-        find.byKey(Key('taskSortOption_${listId}_priority')).last,
-      );
-      await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(Key('taskSortOption_${listId}_priority')).last,
+        );
+        await tester.pumpAndSettle();
 
-      // In Priority mode, High Priority comes first
-      final titlesAfterPriority = tester
-          .widgetList<Text>(find.byType(Text))
-          .map((w) => w.data)
-          .where((t) => t == 'Low Priority Task' || t == 'High Priority Task')
-          .toList();
-      expect(
-        titlesAfterPriority,
-        equals(['High Priority Task', 'Low Priority Task']),
-      );
+        // In Priority mode, High Priority comes first
+        final titlesAfterPriority = tester
+            .widgetList<Text>(find.byType(Text))
+            .map((w) => w.data)
+            .where((t) => t == 'Low Priority Task' || t == 'High Priority Task')
+            .toList();
+        expect(
+          titlesAfterPriority,
+          equals(['High Priority Task', 'Low Priority Task']),
+        );
 
-      // Drag handles should NOT be visible when not in Manual mode
-      expect(find.byKey(const Key('taskDragHandle_t1')), findsNothing);
-      expect(find.byKey(const Key('taskDragHandle_t2')), findsNothing);
+        // Drag listeners should NOT be active when not in Manual mode, and handles remain absent
+        expect(find.byType(ReorderableDelayedDragStartListener), findsNothing);
+        expect(find.byKey(const Key('taskDragHandle_t1')), findsNothing);
+        expect(find.byKey(const Key('taskDragHandle_t2')), findsNothing);
 
-      // Verifies persistence in shared preferences
-      expect(prefs.getString('task_sort_mode_$listId'), equals('priority'));
-    });
+        // Verifies persistence in shared preferences
+        expect(prefs.getString('task_sort_mode_$listId'), equals('priority'));
+      },
+    );
   });
 
   group('SmartViewDetailScreen Sorting Tests', () {

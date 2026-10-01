@@ -257,8 +257,12 @@ void main() {
           );
           expect(lateCheckbox.value, isTrue);
 
-          // In Manual sort mode: active task HAS a drag handle, but completed tasks DO NOT
-          expect(find.byKey(const Key('taskDragHandle_act-1')), findsOneWidget);
+          // In Manual sort mode: active task HAS a delayed drag listener, but completed tasks DO NOT
+          expect(
+            find.byType(ReorderableDelayedDragStartListener),
+            findsOneWidget,
+          );
+          expect(find.byKey(const Key('taskDragHandle_act-1')), findsNothing);
           expect(
             find.byKey(const Key('taskDragHandle_comp-late')),
             findsNothing,
@@ -679,7 +683,7 @@ void main() {
 
   group('Requirement 6: Batch selection on active and completed rows; drag reorder active only', () {
     testWidgets(
-      'long-press selects both active and completed rows; drag handle present only on active row in manual mode',
+      'double tap selects both active and completed rows; drag listener present only on active row in manual mode',
       (tester) async {
         final prefs = await SharedPreferences.getInstance();
         // Expanded completed section and manual sort mode
@@ -731,18 +735,21 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // In Manual sort mode: active task has drag handle, completed task does not
+        // In Manual sort mode: active task has drag listener, drag handle is removed
         expect(
-          find.byKey(const Key('taskDragHandle_batch-act')),
+          find.byType(ReorderableDelayedDragStartListener),
           findsOneWidget,
         );
+        expect(find.byKey(const Key('taskDragHandle_batch-act')), findsNothing);
         expect(
           find.byKey(const Key('taskDragHandle_batch-comp')),
           findsNothing,
         );
 
-        // Long-press active task to enter batch selection mode
-        await tester.longPress(find.text('Batch Active'));
+        // Double-tap active task to enter batch selection mode
+        await tester.tap(find.text('Batch Active'));
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.tap(find.text('Batch Active'));
         await tester.pumpAndSettle();
 
         // Selection mode is active: AppBar shows "1 selected"
