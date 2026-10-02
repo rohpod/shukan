@@ -211,6 +211,19 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                   key: Key('smartViewsListView_${widget.viewType.name}'),
                   padding: const EdgeInsets.all(12),
                   buildDefaultDragHandles: false,
+                  proxyDecorator: (child, index, animation) {
+                    return Material(
+                      elevation: 4,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest,
+                      shadowColor: Theme.of(context).shadowColor
+                          .withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(8),
+                      clipBehavior: Clip.antiAlias,
+                      child: child,
+                    );
+                  },
                   itemCount: tasks.length,
                   onReorderItem: (oldIndex, newIndex) async {
                     if (sortOption != TaskSortOption.manual) return;
@@ -265,45 +278,24 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                         ? Colors.red.shade700
                         : Colors.blueGrey;
 
-                    return Column(
-                      key: ValueKey('smartTaskItemWrapper_${task.taskId}'),
+                    final row = Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         ListTile(
                           key: Key('taskItem_${task.taskId}'),
-                          leading: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (sortOption == TaskSortOption.manual)
-                                ReorderableDragStartListener(
-                                  index: index,
-                                  child: Padding(
-                                    padding: const EdgeInsets.only(right: 6),
-                                    child: Icon(
-                                      Icons.drag_handle,
-                                      key: Key(
-                                        'smartTaskDragHandle_${task.taskId}',
-                                      ),
-                                      size: 20,
-                                      color: Colors.grey,
-                                    ),
-                                  ),
-                                ),
-                              Checkbox(
-                                key: Key('taskCompleteCheckbox_${task.taskId}'),
-                                value: task.isCompleted,
-                                onChanged: (val) async {
-                                  if (val != null) {
-                                    await ref
-                                        .read(taskRepositoryProvider)
-                                        .toggleTaskCompleted(
-                                          task.taskId,
-                                          isCompleted: val,
-                                        );
-                                  }
-                                },
-                              ),
-                            ],
+                          leading: Checkbox(
+                            key: Key('taskCompleteCheckbox_${task.taskId}'),
+                            value: task.isCompleted,
+                            onChanged: (val) async {
+                              if (val != null) {
+                                await ref
+                                    .read(taskRepositoryProvider)
+                                    .toggleTaskCompleted(
+                                      task.taskId,
+                                      isCompleted: val,
+                                    );
+                              }
+                            },
                           ),
                           title: Text(
                             task.title,
@@ -442,6 +434,18 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                         ),
                         const Divider(height: 1),
                       ],
+                    );
+
+                    if (sortOption == TaskSortOption.manual) {
+                      return ReorderableDelayedDragStartListener(
+                        key: ValueKey('smartTaskItemWrapper_${task.taskId}'),
+                        index: index,
+                        child: row,
+                      );
+                    }
+                    return KeyedSubtree(
+                      key: ValueKey('smartTaskItemWrapper_${task.taskId}'),
+                      child: row,
                     );
                   },
                 );
