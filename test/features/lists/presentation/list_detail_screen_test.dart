@@ -12,6 +12,19 @@ import 'package:shukan/features/tasks/presentation/task_list_screen.dart';
 import 'package:shukan/features/tasks/providers/task_providers.dart';
 import 'package:shukan/features/tasks/providers/task_sort_providers.dart';
 
+Future<void> _doubleTapRow(WidgetTester tester, Finder finder) async {
+  await tester.tap(finder);
+  await tester.pump(const Duration(milliseconds: 50));
+  await tester.tap(finder);
+  await tester.pumpAndSettle();
+}
+
+Future<void> _tapRow(WidgetTester tester, Finder finder) async {
+  await tester.tap(finder);
+  await tester.pump(const Duration(milliseconds: 350));
+  await tester.pumpAndSettle();
+}
+
 void main() {
   late MockFirebaseAuth mockAuth;
   late FakeFirebaseFirestore fakeFirestore;
@@ -167,7 +180,7 @@ void main() {
 
   group('Batch selection and multi-task actions', () {
     testWidgets(
-      'long-press enters selection mode, tap toggles, and deselecting last exits',
+      'double tap enters selection mode, tap toggles, and deselecting last exits',
       (tester) async {
         await fakeFirestore.collection('tasks').doc('t2').set({
           'taskId': 't2',
@@ -202,9 +215,8 @@ void main() {
         expect(find.byKey(const Key('listDetailTitle')), findsOneWidget);
         expect(find.byKey(const Key('selectionCountTitle')), findsNothing);
 
-        // Long press first task row
-        await tester.longPress(find.byKey(const Key('taskItem_t1')));
-        await tester.pumpAndSettle();
+        // Double tap first task row
+        await _doubleTapRow(tester, find.byKey(const Key('taskItem_t1')));
 
         // Selection mode active
         expect(find.byKey(const Key('listDetailTitle')), findsNothing);
@@ -215,18 +227,15 @@ void main() {
         expect(find.text('1 selected'), findsOneWidget);
 
         // Tap second task row to toggle it into selection
-        await tester.tap(find.byKey(const Key('taskItem_t2')));
-        await tester.pumpAndSettle();
+        await _tapRow(tester, find.byKey(const Key('taskItem_t2')));
         expect(find.text('2 selected'), findsOneWidget);
 
         // Tap second task row again to deselect it
-        await tester.tap(find.byKey(const Key('taskItem_t2')));
-        await tester.pumpAndSettle();
+        await _tapRow(tester, find.byKey(const Key('taskItem_t2')));
         expect(find.text('1 selected'), findsOneWidget);
 
         // Tap first task row to deselect the last selected task -> exits mode
-        await tester.tap(find.byKey(const Key('taskItem_t1')));
-        await tester.pumpAndSettle();
+        await _tapRow(tester, find.byKey(const Key('taskItem_t1')));
 
         expect(find.byKey(const Key('listDetailTitle')), findsOneWidget);
         expect(find.byKey(const Key('selectionCountTitle')), findsNothing);
@@ -255,8 +264,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.longPress(find.byKey(const Key('taskItem_t1')));
-      await tester.pumpAndSettle();
+      await _doubleTapRow(tester, find.byKey(const Key('taskItem_t1')));
       expect(find.byKey(const Key('selectionCountTitle')), findsOneWidget);
 
       await tester.tap(find.byKey(const Key('selectionCloseButton')));
@@ -291,8 +299,7 @@ void main() {
         await tester.pumpAndSettle();
 
         // Enter selection mode
-        await tester.longPress(find.byKey(const Key('taskItem_t1')));
-        await tester.pumpAndSettle();
+        await _doubleTapRow(tester, find.byKey(const Key('taskItem_t1')));
 
         // Verify row buttons disabled
         final moveBtn = tester.widget<IconButton>(
@@ -312,13 +319,11 @@ void main() {
         expect(find.byKey(const Key('taskDragHandle_t1')), findsNothing);
 
         // Tap row -> toggles selection instead of opening edit dialog
-        await tester.tap(find.byKey(const Key('taskItem_t1')));
-        await tester.pumpAndSettle();
+        await _tapRow(tester, find.byKey(const Key('taskItem_t1')));
         expect(find.text('Edit Task'), findsNothing);
 
         // Now outside selection mode, tap row opens edit dialog
-        await tester.tap(find.byKey(const Key('taskItem_t1')));
-        await tester.pumpAndSettle();
+        await _tapRow(tester, find.byKey(const Key('taskItem_t1')));
         expect(find.text('Edit Task'), findsOneWidget);
       },
     );
@@ -356,8 +361,7 @@ void main() {
         await tester.pumpAndSettle();
 
         // 1. Single selection: verify singular wording
-        await tester.longPress(find.byKey(const Key('taskItem_t1')));
-        await tester.pumpAndSettle();
+        await _doubleTapRow(tester, find.byKey(const Key('taskItem_t1')));
 
         await tester.tap(find.byKey(const Key('selectionDeleteButton')));
         await tester.pumpAndSettle();
@@ -376,8 +380,7 @@ void main() {
         expect(find.text('1 selected'), findsOneWidget);
 
         // 2. Multi selection: select t2 as well
-        await tester.tap(find.byKey(const Key('taskItem_t2')));
-        await tester.pumpAndSettle();
+        await _tapRow(tester, find.byKey(const Key('taskItem_t2')));
         expect(find.text('2 selected'), findsOneWidget);
 
         await tester.tap(find.byKey(const Key('selectionDeleteButton')));
@@ -432,8 +435,7 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.longPress(find.byKey(const Key('taskItem_t1')));
-        await tester.pumpAndSettle();
+        await _doubleTapRow(tester, find.byKey(const Key('taskItem_t1')));
 
         await tester.tap(find.byKey(const Key('selectionMoveButton')));
         await tester.pumpAndSettle();
@@ -480,8 +482,7 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.longPress(find.byKey(const Key('taskItem_t1')));
-        await tester.pumpAndSettle();
+        await _doubleTapRow(tester, find.byKey(const Key('taskItem_t1')));
 
         await tester.tap(find.byKey(const Key('selectionMoveButton')));
         await tester.pumpAndSettle();
@@ -537,8 +538,7 @@ void main() {
         expect(find.byType(ListDetailScreen), findsOneWidget);
 
         // Enter selection mode
-        await tester.longPress(find.byKey(const Key('taskItem_t1')));
-        await tester.pumpAndSettle();
+        await _doubleTapRow(tester, find.byKey(const Key('taskItem_t1')));
         expect(find.text('1 selected'), findsOneWidget);
 
         // Trigger system back
@@ -592,10 +592,8 @@ void main() {
         await tester.pumpAndSettle();
 
         // Select t1 and t2
-        await tester.longPress(find.byKey(const Key('taskItem_t1')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('taskItem_t2')));
-        await tester.pumpAndSettle();
+        await _doubleTapRow(tester, find.byKey(const Key('taskItem_t1')));
+        await _tapRow(tester, find.byKey(const Key('taskItem_t2')));
         expect(find.text('2 selected'), findsOneWidget);
 
         // Delete t1 from Firestore stream
@@ -664,10 +662,8 @@ void main() {
         await tester.pumpAndSettle();
 
         // Select t1 and t2
-        await tester.longPress(find.byKey(const Key('taskItem_t1')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('taskItem_t2')));
-        await tester.pumpAndSettle();
+        await _doubleTapRow(tester, find.byKey(const Key('taskItem_t1')));
+        await _tapRow(tester, find.byKey(const Key('taskItem_t2')));
         expect(find.text('2 selected'), findsOneWidget);
 
         // Change priority filter to high (which filters out t1)
@@ -726,8 +722,7 @@ void main() {
         await tester.pumpAndSettle();
 
         // Select t1
-        await tester.longPress(find.byKey(const Key('taskItem_t1')));
-        await tester.pumpAndSettle();
+        await _doubleTapRow(tester, find.byKey(const Key('taskItem_t1')));
         expect(find.text('1 selected'), findsOneWidget);
 
         // Pop the screen back to home
@@ -796,8 +791,7 @@ void main() {
         expect(find.byKey(const Key('taskSelectCheckbox_t1')), findsOneWidget);
 
         // Tap the task item to select it
-        await tester.tap(find.byKey(const Key('taskItem_t1')));
-        await tester.pumpAndSettle();
+        await _tapRow(tester, find.byKey(const Key('taskItem_t1')));
 
         // Count updates and buttons become enabled
         expect(find.text('1 selected'), findsOneWidget);
@@ -945,10 +939,8 @@ void main() {
         await tester.pumpAndSettle();
 
         // Select t1 and t2
-        await tester.longPress(find.byKey(const Key('taskItem_t1')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('taskItem_t2')));
-        await tester.pumpAndSettle();
+        await _doubleTapRow(tester, find.byKey(const Key('taskItem_t1')));
+        await _tapRow(tester, find.byKey(const Key('taskItem_t2')));
         expect(find.text('2 selected'), findsOneWidget);
 
         // Delete
@@ -1021,10 +1013,8 @@ void main() {
         await tester.pumpAndSettle();
 
         // Select t1 and t2
-        await tester.longPress(find.byKey(const Key('taskItem_t1')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const Key('taskItem_t2')));
-        await tester.pumpAndSettle();
+        await _doubleTapRow(tester, find.byKey(const Key('taskItem_t1')));
+        await _tapRow(tester, find.byKey(const Key('taskItem_t2')));
 
         // Tap move
         await tester.tap(find.byKey(const Key('selectionMoveButton')));
@@ -1085,8 +1075,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.longPress(find.byKey(const Key('taskItem_t1')));
-      await tester.pumpAndSettle();
+      await _doubleTapRow(tester, find.byKey(const Key('taskItem_t1')));
 
       await tester.tap(find.byKey(const Key('selectionMoveButton')));
       await tester.pumpAndSettle();
@@ -1154,8 +1143,7 @@ void main() {
         await tester.pumpAndSettle();
 
         // Select and delete t1
-        await tester.longPress(find.byKey(const Key('taskItem_t1')));
-        await tester.pumpAndSettle();
+        await _doubleTapRow(tester, find.byKey(const Key('taskItem_t1')));
         await tester.tap(find.byKey(const Key('selectionDeleteButton')));
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('confirmBatchDeleteButton')));

@@ -406,6 +406,7 @@ void main() {
 
       // Tap the task row directly
       await tester.tap(find.byKey(const Key('taskItem_task-row-tap')));
+      await tester.pump(const Duration(milliseconds: 350));
       await tester.pumpAndSettle();
 
       // Confirms edit popup dialog opened
@@ -914,6 +915,93 @@ void main() {
         // Verify SnackBar still appears despite row Element being unmounted
         expect(find.text('Deleted "Task unmounted"'), findsOneWidget);
         expect(find.byKey(const Key('undoDeleteTaskButton')), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'double-tapping task row selects the task and activates selection mode',
+      (tester) async {
+        const taskId = 'task-double-tap';
+        await fakeFirestore.collection('tasks').doc(taskId).set({
+          'taskId': taskId,
+          'uid': uid,
+          'listId': listId,
+          'title': 'Task for Double Tap',
+          'notes': '',
+          'url': '',
+          'priority': 'none',
+          'tagIds': [],
+          'dueDate': null,
+          'dueTime': null,
+          'order': 0,
+          'subtasks': [],
+          'createdAt': Timestamp.now(),
+          'completedAt': null,
+          'deletedAt': null,
+        });
+
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('taskItem_$taskId')), findsOneWidget);
+        expect(
+          find.byKey(const Key('taskSelectCheckbox_$taskId')),
+          findsNothing,
+        );
+
+        // Double tap on task row
+        await tester.tap(find.byKey(const Key('taskItem_$taskId')));
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.tap(find.byKey(const Key('taskItem_$taskId')));
+        await tester.pumpAndSettle();
+
+        // Selection mode activated: checkbox is now visible and checked
+        expect(
+          find.byKey(const Key('taskSelectCheckbox_$taskId')),
+          findsOneWidget,
+        );
+        final checkbox = tester.widget<Checkbox>(
+          find.byKey(const Key('taskSelectCheckbox_$taskId')),
+        );
+        expect(checkbox.value, isTrue);
+      },
+    );
+
+    testWidgets(
+      'task row has no drag handle icon and uses ReorderableDelayedDragStartListener in manual sort mode',
+      (tester) async {
+        const taskId = 'task-reorder-check';
+        await fakeFirestore.collection('tasks').doc(taskId).set({
+          'taskId': taskId,
+          'uid': uid,
+          'listId': listId,
+          'title': 'Task for Reorder Check',
+          'notes': '',
+          'url': '',
+          'priority': 'none',
+          'order': 0,
+          'subtasks': [],
+          'createdAt': Timestamp.now(),
+          'completedAt': null,
+          'deletedAt': null,
+        });
+
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        // Dedicated drag handle icon is removed
+        expect(find.byKey(const Key('taskDragHandle_$taskId')), findsNothing);
+        // Delayed drag start listener is present for manual reordering
+        expect(
+          find.byType(ReorderableDelayedDragStartListener),
+          findsOneWidget,
+        );
+
+        // Verify proxyDecorator on ReorderableListView renders styled Material
+        final listView = tester.widget<ReorderableListView>(
+          find.byKey(const Key('tasksListView')),
+        );
+        expect(listView.proxyDecorator, isNotNull);
       },
     );
   });

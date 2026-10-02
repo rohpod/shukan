@@ -113,20 +113,40 @@ class _TagDetailScreenState extends ConsumerState<TagDetailScreen> {
                   key: Key('tagTaskList_$viewKey'),
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   buildDefaultDragHandles: false,
+                  proxyDecorator: (child, index, animation) {
+                    return Material(
+                      elevation: 4,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest,
+                      shadowColor: Theme.of(context).shadowColor
+                          .withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(8),
+                      clipBehavior: Clip.antiAlias,
+                      child: child,
+                    );
+                  },
                   itemCount: tasks.length,
                   onReorderItem: (oldIndex, newIndex) async {
-                    if (sortOption != TaskSortOption.manual) return;
                     if (oldIndex == newIndex) return;
+
+                    final priorSortOption = sortOption;
 
                     final movedTask = tasks[oldIndex];
                     final remainingTasks = List<Task>.from(tasks)
                       ..removeAt(oldIndex);
 
-                    final Task? before = newIndex > 0
-                        ? remainingTasks[newIndex - 1]
+                    int targetIndex = newIndex;
+                    if (oldIndex < newIndex) {
+                      targetIndex -= 1;
+                    }
+                    targetIndex = targetIndex.clamp(0, remainingTasks.length);
+
+                    final Task? before = targetIndex > 0
+                        ? remainingTasks[targetIndex - 1]
                         : null;
-                    final Task? after = newIndex < remainingTasks.length
-                        ? remainingTasks[newIndex]
+                    final Task? after = targetIndex < remainingTasks.length
+                        ? remainingTasks[targetIndex]
                         : null;
 
                     if (before != null &&
@@ -136,7 +156,7 @@ class _TagDetailScreenState extends ConsumerState<TagDetailScreen> {
                           after: after,
                         )) {
                       final updatedList = List<Task>.from(remainingTasks)
-                        ..insert(newIndex, movedTask);
+                        ..insert(targetIndex, movedTask);
                       final batchMap = <String, double>{};
                       for (int i = 0; i < updatedList.length; i++) {
                         batchMap[updatedList[i].taskId] = (i + 1) * 1000.0;
@@ -153,47 +173,40 @@ class _TagDetailScreenState extends ConsumerState<TagDetailScreen> {
                           .read(taskRepositoryProvider)
                           .updateTaskOrder(movedTask.taskId, newOrder);
                     }
+
+                    if (priorSortOption != TaskSortOption.manual) {
+                      await ref
+                          .read(taskSortModeProvider(viewKey).notifier)
+                          .setSortMode(TaskSortOption.manual);
+                      if (context.mounted) {
+                        showFeedbackSnackBar(
+                          ScaffoldMessenger.of(context),
+                          'Sort changed from ${priorSortOption.label} to Manual',
+                        );
+                      }
+                    }
                   },
                   itemBuilder: (context, index) {
                     final task = tasks[index];
 
-                    return Column(
-                      key: ValueKey('tagTaskItemWrapper_${task.taskId}'),
+                    final row = Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         ListTile(
                           key: Key('taskItem_${task.taskId}'),
-                          leading: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (sortOption == TaskSortOption.manual)
-                                ReorderableDragStartListener(
-                                  index: index,
-                                  child: Padding(
-                                    padding: const EdgeInsets.only(right: 6),
-                                    child: Icon(
-                                      Icons.drag_handle,
-                                      key: Key('taskDragHandle_${task.taskId}'),
-                                      size: 20,
-                                      color: Colors.grey,
-                                    ),
-                                  ),
-                                ),
-                              Checkbox(
-                                key: Key('taskCompleteCheckbox_${task.taskId}'),
-                                value: task.isCompleted,
-                                onChanged: (val) async {
-                                  if (val != null) {
-                                    await ref
-                                        .read(taskRepositoryProvider)
-                                        .toggleTaskCompleted(
-                                          task.taskId,
-                                          isCompleted: val,
-                                        );
-                                  }
-                                },
-                              ),
-                            ],
+                          leading: Checkbox(
+                            key: Key('taskCompleteCheckbox_${task.taskId}'),
+                            value: task.isCompleted,
+                            onChanged: (val) async {
+                              if (val != null) {
+                                await ref
+                                    .read(taskRepositoryProvider)
+                                    .toggleTaskCompleted(
+                                      task.taskId,
+                                      isCompleted: val,
+                                    );
+                              }
+                            },
                           ),
                           title: Text(
                             task.title,
@@ -261,6 +274,12 @@ class _TagDetailScreenState extends ConsumerState<TagDetailScreen> {
                         ),
                         const Divider(height: 1),
                       ],
+                    );
+
+                    return ReorderableDelayedDragStartListener(
+                      key: ValueKey('tagTaskItemWrapper_${task.taskId}'),
+                      index: index,
+                      child: row,
                     );
                   },
                 );
