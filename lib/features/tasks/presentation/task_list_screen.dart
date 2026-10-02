@@ -386,10 +386,7 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
       ],
     );
 
-    if (!isCompletedSection &&
-        !isSelectionMode &&
-        sortOption == TaskSortOption.manual &&
-        index != null) {
+    if (!isCompletedSection && !isSelectionMode && index != null) {
       return ReorderableDelayedDragStartListener(
         key: ValueKey('taskItemWrapper_${task.taskId}'),
         index: index,
@@ -651,8 +648,9 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                   },
                   itemCount: activeTasks.length,
                   onReorderItem: (oldIndex, newIndex) async {
-                    if (sortOption != TaskSortOption.manual) return;
                     if (oldIndex == newIndex) return;
+
+                    final priorSortOption = sortOption;
 
                     final movedTask = activeTasks[oldIndex];
                     final remainingTasks = List<Task>.from(activeTasks)
@@ -688,6 +686,18 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                       await ref
                           .read(taskRepositoryProvider)
                           .updateTaskOrder(movedTask.taskId, newOrder);
+                    }
+
+                    if (priorSortOption != TaskSortOption.manual) {
+                      await ref
+                          .read(taskSortModeProvider(listId).notifier)
+                          .setSortMode(TaskSortOption.manual);
+                      if (context.mounted) {
+                        showFeedbackSnackBar(
+                          scaffoldMessenger,
+                          'Sort changed from ${priorSortOption.label} to Manual',
+                        );
+                      }
                     }
                   },
                   itemBuilder: (context, index) {
