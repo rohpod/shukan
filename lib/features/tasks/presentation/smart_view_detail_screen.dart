@@ -226,8 +226,9 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                   },
                   itemCount: tasks.length,
                   onReorderItem: (oldIndex, newIndex) async {
-                    if (sortOption != TaskSortOption.manual) return;
                     if (oldIndex == newIndex) return;
+
+                    final priorSortOption = sortOption;
 
                     final movedTask = tasks[oldIndex];
                     final remainingTasks = List<Task>.from(tasks)
@@ -263,6 +264,20 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                       await ref
                           .read(taskRepositoryProvider)
                           .updateTaskOrder(movedTask.taskId, newOrder);
+                    }
+
+                    if (priorSortOption != TaskSortOption.manual) {
+                      await ref
+                          .read(
+                            taskSortModeProvider(widget.viewType.name).notifier,
+                          )
+                          .setSortMode(TaskSortOption.manual);
+                      if (context.mounted) {
+                        showFeedbackSnackBar(
+                          ScaffoldMessenger.of(context),
+                          'Sort changed from ${priorSortOption.label} to Manual',
+                        );
+                      }
                     }
                   },
                   itemBuilder: (context, index) {
@@ -436,15 +451,9 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                       ],
                     );
 
-                    if (sortOption == TaskSortOption.manual) {
-                      return ReorderableDelayedDragStartListener(
-                        key: ValueKey('smartTaskItemWrapper_${task.taskId}'),
-                        index: index,
-                        child: row,
-                      );
-                    }
-                    return KeyedSubtree(
+                    return ReorderableDelayedDragStartListener(
                       key: ValueKey('smartTaskItemWrapper_${task.taskId}'),
+                      index: index,
                       child: row,
                     );
                   },
