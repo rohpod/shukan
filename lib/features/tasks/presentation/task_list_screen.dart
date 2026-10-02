@@ -656,11 +656,17 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                     final remainingTasks = List<Task>.from(activeTasks)
                       ..removeAt(oldIndex);
 
-                    final Task? before = newIndex > 0
-                        ? remainingTasks[newIndex - 1]
+                    int targetIndex = newIndex;
+                    if (oldIndex < newIndex) {
+                      targetIndex -= 1;
+                    }
+                    targetIndex = targetIndex.clamp(0, remainingTasks.length);
+
+                    final Task? before = targetIndex > 0
+                        ? remainingTasks[targetIndex - 1]
                         : null;
-                    final Task? after = newIndex < remainingTasks.length
-                        ? remainingTasks[newIndex]
+                    final Task? after = targetIndex < remainingTasks.length
+                        ? remainingTasks[targetIndex]
                         : null;
 
                     if (before != null &&
@@ -670,7 +676,7 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                           after: after,
                         )) {
                       final updatedList = List<Task>.from(remainingTasks)
-                        ..insert(newIndex, movedTask);
+                        ..insert(targetIndex, movedTask);
                       final batchMap = <String, double>{};
                       for (int i = 0; i < updatedList.length; i++) {
                         batchMap[updatedList[i].taskId] = (i + 1) * 1000.0;
