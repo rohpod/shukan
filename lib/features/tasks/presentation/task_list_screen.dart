@@ -1299,7 +1299,7 @@ class _TaskDialogState extends ConsumerState<TaskDialog> {
                 items: reminderOptions.map((minutes) {
                   String label;
                   if (minutes == 0) {
-                    label = 'None (0 min)';
+                    label = 'None';
                   } else if (minutes < 60) {
                     label = '$minutes minutes before';
                   } else {
