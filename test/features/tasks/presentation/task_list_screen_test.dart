@@ -375,6 +375,324 @@ void main() {
       },
     );
 
+    testWidgets(
+      'early reminder dropdown does not expose 0 min option while preserving positive durations and none',
+      (tester) async {
+        tester.view.physicalSize = const Size(800, 1400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+
+        final mockTaskRepo = MockTaskRepository();
+        final testTask = Task(
+          taskId: 'task-reminder-test',
+          uid: uid,
+          listId: listId,
+          title: 'Reminder Task',
+          notes: '',
+          url: '',
+          priority: 'none',
+          tagIds: const [],
+          dueDate: null,
+          dueTime: null,
+          earlyReminderMinutes: 0,
+          repeatRule: 'none',
+          createdAt: DateTime(2026, 1, 1),
+        );
+
+        when(() => mockTaskRepo.streamTasksForList(uid, listId))
+            .thenAnswer((_) => Stream.value([testTask]));
+        when(
+          () => mockTaskRepo.updateTask(
+            any(),
+            title: any(named: 'title'),
+            notes: any(named: 'notes'),
+            url: any(named: 'url'),
+            priority: any(named: 'priority'),
+            tagIds: any(named: 'tagIds'),
+            dueDate: any(named: 'dueDate'),
+            dueTime: any(named: 'dueTime'),
+            earlyReminderMinutes: any(named: 'earlyReminderMinutes'),
+            repeatRule: any(named: 'repeatRule'),
+            clearDueDate: any(named: 'clearDueDate'),
+            clearDueTime: any(named: 'clearDueTime'),
+          ),
+        ).thenAnswer((_) async {});
+
+        await tester.pumpWidget(
+          createWidgetUnderTest(taskRepository: mockTaskRepo),
+        );
+        await tester.pumpAndSettle();
+
+        // Open edit dialog
+        await tester.tap(
+          find.byKey(const Key('editTaskButton_task-reminder-test')),
+        );
+        await tester.pumpAndSettle();
+
+        // Verify dropdown exists
+        final dropdownFinder = find.byKey(
+          const Key('editTaskEarlyReminderInput'),
+        );
+        expect(dropdownFinder, findsOneWidget);
+
+        final dropdownWidget = tester.widget<DropdownButton<int>>(
+          find.descendant(
+            of: dropdownFinder,
+            matching: find.byType(DropdownButton<int>),
+          ),
+        );
+        final itemValues = dropdownWidget.items!
+            .map((item) => item.value)
+            .toList();
+        expect(itemValues, containsAllInOrder([0, 5, 10, 15, 30, 60]));
+
+        final itemLabels = dropdownWidget.items!
+            .map((item) => (item.child as Text).data!)
+            .toList();
+        expect(
+          itemLabels,
+          equals([
+            'None',
+            '5 minutes before',
+            '10 minutes before',
+            '15 minutes before',
+            '30 minutes before',
+            '1 hour before',
+          ]),
+        );
+        expect(
+          itemLabels.any((label) => RegExp(r'\b0\s*min').hasMatch(label)),
+          isFalse,
+        );
+
+        // Open early reminder dropdown
+        await tester.tap(dropdownFinder);
+        await tester.pumpAndSettle();
+
+        // Verify "0 min" is NOT exposed in any menu item
+        expect(find.text('None (0 min)'), findsNothing);
+        expect(find.text('0 min'), findsNothing);
+        expect(find.text('0 minutes before'), findsNothing);
+
+        // Verify positive duration options and "None" are present
+        expect(find.text('None'), findsWidgets);
+        expect(find.text('5 minutes before'), findsOneWidget);
+        expect(find.text('10 minutes before'), findsOneWidget);
+        expect(find.text('15 minutes before'), findsOneWidget);
+        expect(find.text('30 minutes before'), findsOneWidget);
+        expect(find.text('1 hour before'), findsOneWidget);
+
+        // Select 30 minutes before and save
+        await tester.tap(find.text('30 minutes before').last);
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('saveTaskButton')));
+        await tester.pumpAndSettle();
+
+        verify(
+          () => mockTaskRepo.updateTask(
+            'task-reminder-test',
+            title: 'Reminder Task',
+            notes: '',
+            url: '',
+            priority: 'none',
+            tagIds: const [],
+            dueDate: null,
+            dueTime: null,
+            earlyReminderMinutes: 30,
+            repeatRule: 'none',
+            clearDueDate: true,
+            clearDueTime: true,
+          ),
+        ).called(1);
+      },
+    );
+
+    testWidgets(
+      'selecting None early reminder saves earlyReminderMinutes as 0',
+      (tester) async {
+        tester.view.physicalSize = const Size(800, 1400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+
+        final mockTaskRepo = MockTaskRepository();
+        final testTask = Task(
+          taskId: 'task-reminder-reset',
+          uid: uid,
+          listId: listId,
+          title: 'Reminder Reset Task',
+          notes: '',
+          url: '',
+          priority: 'none',
+          tagIds: const [],
+          dueDate: null,
+          dueTime: null,
+          earlyReminderMinutes: 15,
+          repeatRule: 'none',
+          createdAt: DateTime(2026, 1, 1),
+        );
+
+        when(() => mockTaskRepo.streamTasksForList(uid, listId))
+            .thenAnswer((_) => Stream.value([testTask]));
+        when(
+          () => mockTaskRepo.updateTask(
+            any(),
+            title: any(named: 'title'),
+            notes: any(named: 'notes'),
+            url: any(named: 'url'),
+            priority: any(named: 'priority'),
+            tagIds: any(named: 'tagIds'),
+            dueDate: any(named: 'dueDate'),
+            dueTime: any(named: 'dueTime'),
+            earlyReminderMinutes: any(named: 'earlyReminderMinutes'),
+            repeatRule: any(named: 'repeatRule'),
+            clearDueDate: any(named: 'clearDueDate'),
+            clearDueTime: any(named: 'clearDueTime'),
+          ),
+        ).thenAnswer((_) async {});
+
+        await tester.pumpWidget(
+          createWidgetUnderTest(taskRepository: mockTaskRepo),
+        );
+        await tester.pumpAndSettle();
+
+        // Open edit dialog
+        await tester.tap(
+          find.byKey(const Key('editTaskButton_task-reminder-reset')),
+        );
+        await tester.pumpAndSettle();
+
+        // Open dropdown
+        await tester.tap(find.byKey(const Key('editTaskEarlyReminderInput')));
+        await tester.pumpAndSettle();
+
+        // Select 'None'
+        await tester.tap(find.text('None').last);
+        await tester.pumpAndSettle();
+
+        // Save
+        await tester.tap(find.byKey(const Key('saveTaskButton')));
+        await tester.pumpAndSettle();
+
+        verify(
+          () => mockTaskRepo.updateTask(
+            'task-reminder-reset',
+            title: 'Reminder Reset Task',
+            notes: '',
+            url: '',
+            priority: 'none',
+            tagIds: const [],
+            dueDate: null,
+            dueTime: null,
+            earlyReminderMinutes: 0,
+            repeatRule: 'none',
+            clearDueDate: true,
+            clearDueTime: true,
+          ),
+        ).called(1);
+      },
+    );
+
+    testWidgets(
+      'new task dialog defaults early reminder to None and persists selected positive duration',
+      (tester) async {
+        tester.view.physicalSize = const Size(800, 1400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+
+        final mockTaskRepo = MockTaskRepository();
+        final createdTask = Task(
+          taskId: 'task-created-1',
+          uid: uid,
+          listId: listId,
+          title: 'Brand New Task',
+          notes: '',
+          url: '',
+          priority: 'none',
+          tagIds: const [],
+          dueDate: null,
+          dueTime: null,
+          earlyReminderMinutes: 0,
+          repeatRule: 'none',
+          createdAt: DateTime(2026, 1, 1),
+        );
+
+        when(() => mockTaskRepo.streamTasksForList(uid, listId))
+            .thenAnswer((_) => Stream.value([]));
+        when(
+          () => mockTaskRepo.createTask(
+            uid: uid,
+            listId: listId,
+            title: 'Brand New Task',
+            notes: '',
+            url: '',
+            dueDate: null,
+            dueTime: null,
+          ),
+        ).thenAnswer((_) async => createdTask);
+        when(
+          () => mockTaskRepo.updateTask(
+            'task-created-1',
+            priority: any(named: 'priority'),
+            tagIds: any(named: 'tagIds'),
+            earlyReminderMinutes: any(named: 'earlyReminderMinutes'),
+            repeatRule: any(named: 'repeatRule'),
+          ),
+        ).thenAnswer((_) async {});
+
+        await tester.pumpWidget(
+          createWidgetUnderTest(taskRepository: mockTaskRepo),
+        );
+        await tester.pumpAndSettle();
+
+        // Open create task dialog via FAB
+        await tester.tap(find.byKey(const Key('addTaskButton')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('New Task'), findsOneWidget);
+
+        // Enter title
+        await tester.enterText(
+          find.byKey(const Key('taskTitleInput')),
+          'Brand New Task',
+        );
+
+        final dropdownFinder = find.byKey(
+          const Key('editTaskEarlyReminderInput'),
+        );
+        expect(dropdownFinder, findsOneWidget);
+
+        // Verify "None (0 min)" is not shown
+        expect(find.text('None (0 min)'), findsNothing);
+        expect(find.text('0 min'), findsNothing);
+
+        await tester.tap(dropdownFinder);
+        await tester.pumpAndSettle();
+
+        expect(find.text('None (0 min)'), findsNothing);
+        expect(find.text('0 min'), findsNothing);
+        expect(find.text('0 minutes before'), findsNothing);
+
+        // Select 15 minutes before
+        await tester.tap(find.text('15 minutes before').last);
+        await tester.pumpAndSettle();
+
+        // Tap Create
+        await tester.tap(find.byKey(const Key('saveTaskButton')));
+        await tester.pumpAndSettle();
+
+        verify(
+          () => mockTaskRepo.updateTask(
+            'task-created-1',
+            priority: 'none',
+            tagIds: const [],
+            earlyReminderMinutes: 15,
+            repeatRule: 'none',
+          ),
+        ).called(1);
+      },
+    );
+
     testWidgets('tapping task row opens edit task popup dialog', (
       tester,
     ) async {
