@@ -76,8 +76,8 @@ void main() {
       find.byKey(const Key('taskTagFilterDialog_test-view')),
       findsOneWidget,
     );
-    expect(find.text('Work'), findsOneWidget);
-    expect(find.text('Life'), findsOneWidget);
+    expect(find.text('#Work'), findsOneWidget);
+    expect(find.text('#Life'), findsOneWidget);
 
     // Tap "Work" tag checkbox
     await tester.tap(

@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/ui/feedback_snackbar.dart';
+import '../../../core/ui/tag_format.dart';
 import '../../auth/providers/auth_providers.dart';
 import '../../lists/providers/list_providers.dart';
+import '../../tags/presentation/widgets/tag_chips_section.dart';
 import '../../tags/providers/tag_providers.dart';
 import '../data/task.dart';
 import '../domain/task_constants.dart';
@@ -506,6 +508,9 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
     final activeRawTasks = rawTasks.where((t) => !t.isCompleted).toList();
     final unfilteredActiveCount = activeRawTasks.length;
     final completedTasks = completedTasksAsync.value ?? const <Task>[];
+    final listTagEntries =
+        ref.watch(tagBrowserEntriesForListProvider(listId)).value ??
+        const <TagBrowserEntry>[];
 
     final selectedTasks = ref.watch(selectedTasksProvider(listId));
     final isSelectionMode = ref.watch(isSelectionModeActiveProvider(listId));
@@ -737,6 +742,11 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
             expandButtonKey: const Key('addTaskButton'),
             onExpand: (text) =>
                 _showTaskDialog(context, uid, listId, initialTitle: text),
+          ),
+          TagChipsSection(
+            contextKey: listId,
+            uid: uid,
+            entries: listTagEntries,
           ),
         ],
       ),
@@ -1033,12 +1043,12 @@ class _TaskDialogState extends ConsumerState<TaskDialog> {
   }
 
   Future<void> _addTag(String name) async {
-    final trimmed = name.trim();
-    if (trimmed.isEmpty) return;
+    final cleaned = stripTagPrefix(name);
+    if (cleaned.isEmpty) return;
     try {
       final tagId = await ref
           .read(tagRepositoryProvider)
-          .createTag(uid: widget.uid, name: trimmed);
+          .createTag(uid: widget.uid, name: cleaned);
       if (!_tagIds.contains(tagId)) {
         setState(() {
           _tagIds.add(tagId);
@@ -1345,7 +1355,7 @@ class _TaskDialogState extends ConsumerState<TaskDialog> {
                     final tagName = tagMap[tagId] ?? tagId;
                     return Chip(
                       key: Key('taskTagChip_$tagId'),
-                      label: Text(tagName),
+                      label: Text(formatTag(tagName)),
                       onDeleted: () {
                         setState(() {
                           _tagIds.remove(tagId);

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../tags/providers/tag_providers.dart';
+import '../../../../core/ui/tag_format.dart';
 import '../../data/task.dart';
 
 /// Renders small tag chips for a task row when the tag filter is active.
@@ -44,7 +45,7 @@ class TaskRowTagChips extends ConsumerWidget {
               ),
             ),
             child: Text(
-              '#$tagName',
+              formatTag(tagName),
               style: TextStyle(
                 fontSize: 11,
                 color: Theme.of(context).colorScheme.onSurfaceVariant,

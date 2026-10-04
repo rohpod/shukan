@@ -14,8 +14,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shukan/core/firebase/firebase_providers.dart';
 import 'package:shukan/features/auth/presentation/home_screen.dart';
-import 'package:shukan/features/tags/presentation/tag_browser_screen.dart';
-import 'package:shukan/features/tags/presentation/tag_detail_screen.dart';
 import 'package:shukan/features/tasks/domain/smart_view_models.dart';
 import 'package:shukan/features/tasks/presentation/smart_view_detail_screen.dart';
 import 'package:shukan/features/tasks/presentation/task_list_screen.dart';
@@ -495,33 +493,22 @@ void main() {
     await snap(tester, repaintKey, 'smart_views_today_priority_high.png');
   });
 
-  testWidgets('snap tag browser', (tester) async {
+  testWidgets('snap home tags expanded', (tester) async {
     setupTester(tester);
     addTearDown(() => teardownTester(tester));
 
     final repaintKey = GlobalKey();
     await tester.pumpWidget(
-      buildApp(home: const TagBrowserScreen(), repaintKey: repaintKey),
+      buildApp(home: const HomeScreen(), repaintKey: repaintKey),
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
-    await snap(tester, repaintKey, 'tag_browser.png');
-  });
-
-  testWidgets('snap tag detail', (tester) async {
-    setupTester(tester);
-    addTearDown(() => teardownTester(tester));
-
-    final repaintKey = GlobalKey();
-    await tester.pumpWidget(
-      buildApp(
-        home: const TagDetailScreen(tagId: 'work', tagName: 'work'),
-        repaintKey: repaintKey,
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
-    await snap(tester, repaintKey, 'tag_detail.png');
+    final headerFinder = find.byKey(const Key('homeTagsSectionHeader'));
+    if (headerFinder.evaluate().isNotEmpty) {
+      await tester.tap(headerFinder);
+      await tester.pumpAndSettle();
+    }
+    await snap(tester, repaintKey, 'home_tags_expanded.png');
   });
 
   testWidgets('snap task list view - tag filter active', (tester) async {

@@ -186,6 +186,35 @@ final completedSectionCollapsedProvider =
       (arg) => CompletedSectionCollapsedNotifier(arg),
     );
 
+/// Manages collapsed state of the Tags section on HomeScreen, persisted in [SharedPreferences].
+class HomeTagsSectionCollapsedNotifier extends Notifier<bool> {
+  static const prefKey = 'home_tags_section_collapsed';
+
+  @override
+  bool build() {
+    final prefs = ref.watch(sharedPreferencesProvider);
+    return prefs?.getBool(prefKey) ?? true;
+  }
+
+  Future<void> toggle() async {
+    state = !state;
+    final prefs = ref.read(sharedPreferencesProvider);
+    await prefs?.setBool(prefKey, state);
+  }
+
+  Future<void> setCollapsed(bool collapsed) async {
+    state = collapsed;
+    final prefs = ref.read(sharedPreferencesProvider);
+    await prefs?.setBool(prefKey, state);
+  }
+}
+
+/// Provider exposing whether the Tags section is collapsed on HomeScreen.
+final homeTagsSectionCollapsedProvider =
+    NotifierProvider<HomeTagsSectionCollapsedNotifier, bool>(
+      HomeTagsSectionCollapsedNotifier.new,
+    );
+
 /// Streams active (non-completed) tasks for [listId] sorted by that list's independent [TaskSortOption]
 /// and filtered by its independent [taskPriorityFilterProvider] and [taskTagFilterProvider].
 final sortedTasksForListProvider =
@@ -240,15 +269,6 @@ final sortedSmartViewTasksProvider =
     Provider.family<AsyncValue<List<Task>>, SmartViewType>((ref, viewType) {
       final tasksAsync = ref.watch(smartViewTasksProvider(viewType));
       final sortOption = ref.watch(taskSortModeProvider(viewType.name));
-
-      return _mapSortedTasks(tasksAsync, sortOption);
-    });
-
-/// Streams tasks for [viewKey] in TagDetailScreen sorted by that view's independent [TaskSortOption].
-final sortedTasksForTagDetailProvider =
-    Provider.family<AsyncValue<List<Task>>, String>((ref, viewKey) {
-      final tasksAsync = ref.watch(tasksForTagDetailProvider(viewKey));
-      final sortOption = ref.watch(taskSortModeProvider(viewKey));
 
       return _mapSortedTasks(tasksAsync, sortOption);
     });

@@ -1,11 +1,43 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/providers/auth_providers.dart';
+import '../../lists/data/list.dart';
+import '../../lists/providers/list_providers.dart';
 import '../../tags/providers/tag_providers.dart';
 import '../data/task.dart';
-import '../domain/task_priority_filter.dart';
 import 'task_providers.dart';
 import 'task_sort_providers.dart';
+
+/// Model representing a group of tasks belonging to a list for a given tag.
+class TagTaskListGroup {
+  final String listId;
+  final String listName;
+  final List<Task> tasks;
+
+  const TagTaskListGroup({
+    required this.listId,
+    required this.listName,
+    required this.tasks,
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TagTaskListGroup &&
+          runtimeType == other.runtimeType &&
+          listId == other.listId &&
+          listName == other.listName &&
+          listEquals(tasks, other.tasks);
+
+  @override
+  int get hashCode =>
+      listId.hashCode ^ listName.hashCode ^ Object.hashAll(tasks);
+
+  @override
+  String toString() =>
+      'TagTaskListGroup(listId: $listId, listName: $listName, taskCount: ${tasks.length})';
+}
 
 /// Model representing a distinct tag with active task count for the tag browser.
 class TagBrowserEntry {
@@ -178,9 +210,66 @@ final tagBrowserEntriesProvider = Provider<AsyncValue<List<TagBrowserEntry>>>((
   return AsyncData(entries);
 });
 
-/// Family stream provider returning all tasks for [tagId] without completion or priority filters.
-/// Used to compute unfiltered task counts for TagDetailScreen.
-final rawTasksForTagProvider = StreamProvider.family<List<Task>, String>((
+/// Computes the unique tag set client-side for [listId] from tasks in that list,
+/// sorted alphabetically by name with the count of active tasks per tag.
+final tagBrowserEntriesForListProvider =
+    Provider.family<AsyncValue<List<TagBrowserEntry>>, String>((ref, listId) {
+      final tasksAsync = ref.watch(tasksForListProvider(listId));
+      final tagsAsync = ref.watch(tagsForCurrentUserProvider);
+
+      if (tasksAsync.isLoading || tagsAsync.isLoading) {
+        return const AsyncLoading();
+      }
+
+      if (tasksAsync.hasError) {
+        return AsyncError(
+          tasksAsync.error!,
+          tasksAsync.stackTrace ?? StackTrace.current,
+        );
+      }
+      if (tagsAsync.hasError) {
+        return AsyncError(
+          tagsAsync.error!,
+          tagsAsync.stackTrace ?? StackTrace.current,
+        );
+      }
+
+      final tasks = tasksAsync.value ?? [];
+      final tags = tagsAsync.value ?? [];
+
+      final tagMap = <String, String>{};
+      for (final tag in tags) {
+        tagMap[tag.tagId] = tag.name;
+      }
+
+      final counts = <String, int>{};
+      for (final task in tasks) {
+        for (final tagId in task.tagIds) {
+          counts[tagId] = (counts[tagId] ?? 0) + 1;
+        }
+      }
+
+      final entries = <TagBrowserEntry>[];
+      for (final entry in counts.entries) {
+        final tagId = entry.key;
+        final count = entry.value;
+        if (count > 0) {
+          final tagName = tagMap[tagId] ?? tagId;
+          entries.add(
+            TagBrowserEntry(tagId: tagId, name: tagName, taskCount: count),
+          );
+        }
+      }
+
+      entries.sort(
+        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+      );
+
+      return AsyncData(entries);
+    });
+
+/// Family stream provider returning incomplete, active tasks for [tagId] across all lists.
+final activeTasksForTagProvider = StreamProvider.family<List<Task>, String>((
   ref,
   tagId,
 ) {
@@ -193,51 +282,103 @@ final rawTasksForTagProvider = StreamProvider.family<List<Task>, String>((
   return repository.streamTasksForTagIds(
     uid: uid,
     tagIds: [tagId],
-    onlyIncomplete: false,
+    onlyIncomplete: true,
   );
 });
 
-/// Family provider that streams tasks for TagDetailScreen matching the active tag filter.
-final tasksForTagDetailProvider = StreamProvider.family<List<Task>, String>((
-  ref,
-  viewKey,
-) {
-  final tagId = viewKey.startsWith('tag_') ? viewKey.substring(4) : viewKey;
-  final rawAsync = ref.watch(rawTasksForTagProvider(tagId));
-  final selectedTags = ref.watch(taskTagFilterProvider(viewKey));
-  final showCompleted = ref.watch(showCompletedTasksProvider(viewKey));
-  final priorityFilter = ref.watch(taskPriorityFilterProvider(viewKey));
+/// Family provider returning active tasks carrying [tagId] grouped by list,
+/// sorted alphabetically by listName with tasks ordered by createdAt ascending.
+final tasksForTagGroupedByListProvider =
+    Provider.family<AsyncValue<List<TagTaskListGroup>>, String>((ref, tagId) {
+      final tasksAsync = ref.watch(activeTasksForTagProvider(tagId));
+      final listsAsync = ref.watch(listsForUserProvider);
 
-  if (selectedTags.isEmpty) {
-    return Stream.value(const <Task>[]);
+      if (tasksAsync.isLoading || listsAsync.isLoading) {
+        return const AsyncLoading();
+      }
+
+      if (tasksAsync.hasError) {
+        return AsyncError(
+          tasksAsync.error!,
+          tasksAsync.stackTrace ?? StackTrace.current,
+        );
+      }
+      if (listsAsync.hasError) {
+        return AsyncError(
+          listsAsync.error!,
+          listsAsync.stackTrace ?? StackTrace.current,
+        );
+      }
+
+      final tasks = tasksAsync.value ?? const <Task>[];
+      final lists = listsAsync.value ?? const <ListModel>[];
+      final listNames = {for (final l in lists) l.listId: l.name};
+
+      final groupedMap = <String, List<Task>>{};
+      for (final task in tasks) {
+        // Strict active check: completed tasks are NEVER shown
+        if (task.isCompleted) continue;
+        groupedMap.putIfAbsent(task.listId, () => <Task>[]).add(task);
+      }
+
+      final groups = <TagTaskListGroup>[];
+      for (final entry in groupedMap.entries) {
+        final listId = entry.key;
+        final groupTasks = List<Task>.from(entry.value);
+        groupTasks.sort((a, b) {
+          if (a.createdAt == null && b.createdAt == null) return 0;
+          if (a.createdAt == null) return 1;
+          if (b.createdAt == null) return -1;
+          return a.createdAt!.compareTo(b.createdAt!);
+        });
+
+        final listName = listNames[listId] ?? 'Inbox';
+        groups.add(
+          TagTaskListGroup(
+            listId: listId,
+            listName: listName,
+            tasks: groupTasks,
+          ),
+        );
+      }
+
+      groups.sort(
+        (a, b) => a.listName.toLowerCase().compareTo(b.listName.toLowerCase()),
+      );
+
+      return AsyncData(groups);
+    });
+
+/// Manages collapsed state of a tag chips section, keyed by [contextKey] (e.g. 'home' or listId).
+class TagChipsSectionCollapsedNotifier extends Notifier<bool> {
+  TagChipsSectionCollapsedNotifier(this.contextKey);
+
+  final String contextKey;
+
+  static String prefKey(String contextKey) =>
+      'tag_chips_section_collapsed_$contextKey';
+
+  @override
+  bool build() {
+    final prefs = ref.watch(sharedPreferencesProvider);
+    return prefs?.getBool(prefKey(contextKey)) ?? true;
   }
 
-  return rawAsync.when(
-    data: (tasks) {
-      final filtered = tasks.where((t) {
-        if (!t.tagIds.any(selectedTags.contains)) return false;
-        if (!showCompleted && t.isCompleted) return false;
-        if (priorityFilter != TaskPriorityFilter.all &&
-            t.priority != priorityFilter.firestoreValue) {
-          return false;
-        }
-        return true;
-      }).toList();
-      return Stream.value(filtered);
-    },
-    loading: () => Stream<List<Task>>.fromFuture(
-      ref.watch(rawTasksForTagProvider(tagId).future).then((tasks) {
-        return tasks.where((t) {
-          if (!t.tagIds.any(selectedTags.contains)) return false;
-          if (!showCompleted && t.isCompleted) return false;
-          if (priorityFilter != TaskPriorityFilter.all &&
-              t.priority != priorityFilter.firestoreValue) {
-            return false;
-          }
-          return true;
-        }).toList();
-      }),
-    ),
-    error: (e, st) => Stream<List<Task>>.error(e, st),
-  );
-});
+  Future<void> toggle() async {
+    state = !state;
+    final prefs = ref.read(sharedPreferencesProvider);
+    await prefs?.setBool(prefKey(contextKey), state);
+  }
+
+  Future<void> setCollapsed(bool collapsed) async {
+    state = collapsed;
+    final prefs = ref.read(sharedPreferencesProvider);
+    await prefs?.setBool(prefKey(contextKey), state);
+  }
+}
+
+/// Provider exposing whether a tag chips section is collapsed for a given [contextKey].
+final tagChipsSectionCollapsedProvider =
+    NotifierProvider.family<TagChipsSectionCollapsedNotifier, bool, String>(
+      (arg) => TagChipsSectionCollapsedNotifier(arg),
+    );
