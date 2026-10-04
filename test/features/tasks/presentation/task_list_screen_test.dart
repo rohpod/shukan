@@ -246,7 +246,7 @@ void main() {
         await tester.tap(find.byKey(const Key('addTagIconButton')));
         await tester.pumpAndSettle();
 
-        expect(find.text('urgent'), findsOneWidget);
+        expect(find.text('#urgent'), findsOneWidget);
 
         // 4. Set due date via showDatePicker
         await tester.tap(find.byKey(const Key('editTaskDueDateInput')));
@@ -1002,6 +1002,184 @@ void main() {
           find.byKey(const Key('tasksListView')),
         );
         expect(listView.proxyDecorator, isNotNull);
+      },
+    );
+
+    testWidgets(
+      'adding a tag with leading # strips prefix in Firestore and renders formatted chip',
+      (tester) async {
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('addTaskButton')));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('editTaskTagInput')),
+          '  #work  ',
+        );
+        await tester.tap(find.byKey(const Key('addTagIconButton')));
+        await tester.pumpAndSettle();
+
+        // Chip in dialog displays with #
+        expect(find.text('#work'), findsOneWidget);
+
+        // Firestore tag collection has bare name
+        final tagDocs = await fakeFirestore
+            .collection('tags')
+            .where('uid', isEqualTo: uid)
+            .get();
+        final tagDoc = tagDocs.docs.firstWhere(
+          (d) => d.data()['name'] == 'work',
+        );
+        expect(tagDoc.data()['name'], equals('work'));
+      },
+    );
+  });
+
+  group('Per-list TagChipsSection', () {
+    testWidgets(
+      'is hidden when the list has no tagged tasks, appears when tagged tasks exist, and only shows scoped tags',
+      (tester) async {
+        const otherListId = 'other-list';
+        await fakeFirestore.collection('lists').doc(otherListId).set({
+          'listId': otherListId,
+          'uid': uid,
+          'name': 'Other List',
+        });
+
+        await fakeFirestore.collection('tags').doc('tag-home').set({
+          'tagId': 'tag-home',
+          'uid': uid,
+          'name': 'Home',
+          'createdAt': DateTime.now(),
+        });
+        await fakeFirestore.collection('tags').doc('tag-work').set({
+          'tagId': 'tag-work',
+          'uid': uid,
+          'name': 'Work',
+          'createdAt': DateTime.now(),
+        });
+
+        // Task with tag-work is in OTHER list
+        await fakeFirestore.collection('tasks').doc('t-other').set({
+          'taskId': 't-other',
+          'uid': uid,
+          'listId': otherListId,
+          'title': 'Other Task',
+          'tagIds': ['tag-work'],
+          'deletedAt': null,
+          'completedAt': null,
+        });
+
+        // Test on listId ('test-list-id') which currently has no tagged tasks
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        // Section hidden when list has no tagged tasks
+        expect(
+          find.byKey(const Key('tagChipsSection_test-list-id')),
+          findsNothing,
+        );
+
+        // Add a tagged task to this list
+        await fakeFirestore.collection('tasks').doc('t-this-list').set({
+          'taskId': 't-this-list',
+          'uid': uid,
+          'listId': listId,
+          'title': 'This List Task',
+          'tagIds': ['tag-home'],
+          'deletedAt': null,
+          'completedAt': null,
+        });
+
+        await tester.pumpAndSettle();
+
+        // Section appears
+        expect(
+          find.byKey(const Key('tagChipsSection_test-list-id')),
+          findsOneWidget,
+        );
+        // Expand section
+        await tester.tap(
+          find.byKey(const Key('tagChipsSectionHeader_test-list-id')),
+        );
+        await tester.pumpAndSettle();
+
+        // Shows scoped tag 'Home', does NOT show 'Work' (which is only in otherListId)
+        expect(
+          find.byKey(const Key('tagChip_test-list-id_tag-home')),
+          findsOneWidget,
+        );
+        expect(find.text('#Home'), findsOneWidget);
+        expect(
+          find.byKey(const Key('tagChip_test-list-id_tag-work')),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets(
+      'tap on chip opens TagTasksPopup, long-press opens edit/delete bottom sheet',
+      (tester) async {
+        await fakeFirestore.collection('tags').doc('tag-home').set({
+          'tagId': 'tag-home',
+          'uid': uid,
+          'name': 'Home',
+          'createdAt': DateTime.now(),
+        });
+
+        await fakeFirestore.collection('tasks').doc('t-home-1').set({
+          'taskId': 't-home-1',
+          'uid': uid,
+          'listId': listId,
+          'title': 'Home Task',
+          'tagIds': ['tag-home'],
+          'deletedAt': null,
+          'completedAt': null,
+        });
+
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        // Expand section
+        await tester.tap(
+          find.byKey(const Key('tagChipsSectionHeader_test-list-id')),
+        );
+        await tester.pumpAndSettle();
+
+        // Tap chip opens TagTasksPopup
+        await tester.tap(
+          find.byKey(const Key('tagChip_test-list-id_tag-home')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('tagTasksPopup_tag-home')), findsOneWidget);
+        expect(
+          find.byKey(const Key('tagTasksPopupTask_tag-home_t-home-1')),
+          findsOneWidget,
+        );
+
+        // Close popup
+        await tester.tap(find.byKey(const Key('tagTasksPopupCloseButton')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('tagTasksPopup_tag-home')), findsNothing);
+
+        // Long press chip opens bottom sheet
+        await tester.longPress(
+          find.byKey(const Key('tagChip_test-list-id_tag-home')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('tagActionsBottomSheet_tag-home')),
+          findsOneWidget,
+        );
+        expect(find.byKey(const Key('editTagAction_tag-home')), findsOneWidget);
+        expect(
+          find.byKey(const Key('deleteTagAction_tag-home')),
+          findsOneWidget,
+        );
       },
     );
   });

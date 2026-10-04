@@ -7,13 +7,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shukan/core/firebase/firebase_providers.dart';
 import 'package:shukan/features/search/presentation/search_screen.dart';
-import 'package:shukan/features/tags/presentation/tag_browser_screen.dart';
-import 'package:shukan/features/tags/presentation/tag_detail_screen.dart';
 import 'package:shukan/features/tasks/domain/smart_view_models.dart';
 import 'package:shukan/features/tasks/presentation/recently_deleted_screen.dart';
 import 'package:shukan/features/tasks/presentation/smart_view_detail_screen.dart';
 import 'package:shukan/features/tasks/presentation/task_list_screen.dart';
-import 'package:shukan/features/tasks/presentation/widgets/empty_state_view.dart';
 import 'package:shukan/features/tasks/providers/smart_view_providers.dart';
 import 'package:shukan/features/tasks/providers/task_sort_providers.dart';
 
@@ -279,77 +276,6 @@ void main() {
     );
   });
 
-  group('TagDetailScreen Empty State Tests', () {
-    const tagId = 'tag-school';
-    const tagName = 'school';
-
-    testWidgets('renders genuinely empty state when no tasks have this tag', (
-      tester,
-    ) async {
-      await fakeFirestore.collection('tags').doc(tagId).set({
-        'tagId': tagId,
-        'uid': uid,
-        'name': tagName,
-      });
-
-      await tester.pumpWidget(
-        wrapWithScope(const TagDetailScreen(tagId: tagId, tagName: tagName)),
-      );
-      await tester.pumpAndSettle();
-
-      expect(
-        find.descendant(
-          of: find.byType(EmptyStateView),
-          matching: find.byIcon(Icons.label_outline),
-        ),
-        findsOneWidget,
-      );
-      expect(find.text('No tasks found'), findsOneWidget);
-      expect(find.byKey(const Key('emptyStateAddTaskButton')), findsNothing);
-    });
-
-    testWidgets(
-      'renders filtered-to-zero when tag tasks are completed and hidden by default, tapping "Clear filters" reveals them',
-      (tester) async {
-        await fakeFirestore.collection('tags').doc(tagId).set({
-          'tagId': tagId,
-          'uid': uid,
-          'name': tagName,
-        });
-        await fakeFirestore.collection('tasks').doc('t-tag-done').set({
-          'taskId': 't-tag-done',
-          'uid': uid,
-          'listId': listId,
-          'title': 'School Homework Done',
-          'isCompleted': true,
-          'completedAt': Timestamp.now(),
-          'deletedAt': null,
-          'priority': 'none',
-          'tagIds': [tagId],
-        });
-
-        await tester.pumpWidget(
-          wrapWithScope(const TagDetailScreen(tagId: tagId, tagName: tagName)),
-        );
-        await tester.pumpAndSettle();
-
-        expect(find.byIcon(Icons.filter_alt_off_outlined), findsOneWidget);
-        expect(find.text('No tasks match your filters'), findsOneWidget);
-        expect(
-          find.byKey(const Key('clearFiltersButton_tag_tag-school')),
-          findsOneWidget,
-        );
-
-        await tester.tap(
-          find.byKey(const Key('clearFiltersButton_tag_tag-school')),
-        );
-        await tester.pumpAndSettle();
-
-        expect(find.text('School Homework Done'), findsOneWidget);
-      },
-    );
-  });
-
   group('SearchScreen Empty State Tests', () {
     testWidgets(
       'renders "No tasks found" with search_off icon when account has 0 tasks',
@@ -409,7 +335,7 @@ void main() {
     );
   });
 
-  group('RecentlyDeletedScreen & TagBrowserScreen Empty State Tests', () {
+  group('RecentlyDeletedScreen Empty State Tests', () {
     testWidgets(
       'RecentlyDeletedScreen renders EmptyStateView with delete_outline icon',
       (tester) async {
@@ -422,18 +348,6 @@ void main() {
           find.byKey(const Key('noRecentlyDeletedTasksText')),
           findsOneWidget,
         );
-      },
-    );
-
-    testWidgets(
-      'TagBrowserScreen renders EmptyStateView with label_outline icon',
-      (tester) async {
-        await tester.pumpWidget(wrapWithScope(const TagBrowserScreen()));
-        await tester.pumpAndSettle();
-
-        expect(find.byIcon(Icons.label_outline), findsOneWidget);
-        expect(find.text('No tags in use'), findsOneWidget);
-        expect(find.byKey(const Key('noTagsText')), findsOneWidget);
       },
     );
   });

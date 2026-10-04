@@ -7,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shukan/core/firebase/firebase_providers.dart';
 import 'package:shukan/features/auth/presentation/home_screen.dart';
 import 'package:shukan/features/lists/presentation/list_detail_screen.dart';
-import 'package:shukan/features/tags/presentation/tag_browser_screen.dart';
+import 'package:shukan/features/tags/presentation/widgets/tag_tasks_popup.dart';
 import 'package:shukan/features/tasks/presentation/recently_deleted_screen.dart';
 import 'package:timezone/data/latest_all.dart' as tz_data;
 
@@ -259,20 +259,139 @@ void main() {
       expect(mockAuth.currentUser, isNull);
     });
 
-    testWidgets('tapping tag browser button navigates to TagBrowserScreen', (
-      tester,
-    ) async {
+    testWidgets('app bar does not have tagBrowserButton', (tester) async {
       await tester.pumpWidget(createWidgetUnderTest());
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('tagBrowserButton')), findsOneWidget);
-
-      await tester.tap(find.byKey(const Key('tagBrowserButton')));
-      await tester.pumpAndSettle();
-
-      expect(find.byType(TagBrowserScreen), findsOneWidget);
-      expect(find.text('Tags'), findsWidgets);
+      expect(find.byKey(const Key('tagBrowserButton')), findsNothing);
     });
+
+    testWidgets(
+      'Home tags section starts collapsed, expands on tap, shows chips, and opens TagTasksPopup',
+      (tester) async {
+        await fakeFirestore.collection('tags').doc('tag-urgent').set({
+          'tagId': 'tag-urgent',
+          'uid': uid,
+          'name': 'Urgent',
+          'createdAt': DateTime.now(),
+        });
+        await fakeFirestore.collection('tasks').doc('t-tag-1').set({
+          'taskId': 't-tag-1',
+          'uid': uid,
+          'listId': defaultListId,
+          'title': 'Tagged Task',
+          'tagIds': ['tag-urgent'],
+          'deletedAt': null,
+          'completedAt': null,
+        });
+
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        // Starts collapsed: header exists, chevron is expand_more, chips not rendered
+        expect(
+          find.byKey(const Key('tagChipsSectionHeader_home')),
+          findsOneWidget,
+        );
+        expect(find.byIcon(Icons.expand_more), findsOneWidget);
+        expect(find.byKey(const Key('tagChip_home_tag-urgent')), findsNothing);
+
+        // Tap to expand
+        await tester.tap(find.byKey(const Key('tagChipsSectionHeader_home')));
+        await tester.pumpAndSettle();
+
+        expect(find.byIcon(Icons.expand_less), findsOneWidget);
+        expect(
+          find.byKey(const Key('tagChip_home_tag-urgent')),
+          findsOneWidget,
+        );
+        expect(find.text('#Urgent'), findsOneWidget);
+        expect(
+          find.byKey(const Key('tagChipCount_home_tag-urgent')),
+          findsOneWidget,
+        );
+        expect(find.text('1'), findsWidgets);
+
+        // Tap chip to open TagTasksPopup
+        await tester.tap(find.byKey(const Key('tagChip_home_tag-urgent')));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(TagTasksPopup), findsOneWidget);
+        expect(
+          find.byKey(const Key('tagTasksPopup_tag-urgent')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('tagTasksPopupTask_tag-urgent_t-tag-1')),
+          findsOneWidget,
+        );
+        expect(find.text('Tagged Task'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'long-pressing a tag chip opens bottom sheet with functional Edit and Delete actions',
+      (tester) async {
+        await fakeFirestore.collection('tags').doc('tag-work').set({
+          'tagId': 'tag-work',
+          'uid': uid,
+          'name': 'Work',
+          'createdAt': DateTime.now(),
+        });
+        await fakeFirestore.collection('tasks').doc('t-work-1').set({
+          'taskId': 't-work-1',
+          'uid': uid,
+          'listId': defaultListId,
+          'title': 'Work Task',
+          'tagIds': ['tag-work'],
+          'deletedAt': null,
+          'completedAt': null,
+        });
+
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        // Expand section
+        await tester.tap(find.byKey(const Key('tagChipsSectionHeader_home')));
+        await tester.pumpAndSettle();
+
+        // Long press chip
+        await tester.longPress(find.byKey(const Key('tagChip_home_tag-work')));
+        await tester.pumpAndSettle();
+
+        // Bottom sheet appears
+        expect(
+          find.byKey(const Key('tagActionsBottomSheet_tag-work')),
+          findsOneWidget,
+        );
+        expect(find.byKey(const Key('editTagAction_tag-work')), findsOneWidget);
+        expect(
+          find.byKey(const Key('deleteTagAction_tag-work')),
+          findsOneWidget,
+        );
+
+        // Tap Edit action
+        await tester.tap(find.byKey(const Key('editTagAction_tag-work')));
+        await tester.pumpAndSettle();
+
+        // Rename dialog opens
+        expect(find.text('Rename Tag'), findsOneWidget);
+        await tester.tap(find.byKey(const Key('cancelRenameTagButton')));
+        await tester.pumpAndSettle();
+
+        // Long press chip again and tap Delete action
+        await tester.longPress(find.byKey(const Key('tagChip_home_tag-work')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('deleteTagAction_tag-work')));
+        await tester.pumpAndSettle();
+
+        // Delete confirmation dialog opens
+        expect(find.text('Delete "#Work"?'), findsOneWidget);
+        await tester.tap(find.byKey(const Key('cancelDeleteTagButton')));
+        await tester.pumpAndSettle();
+        expect(find.text('Delete "#Work"?'), findsNothing);
+      },
+    );
 
     testWidgets('renders active task count badge on each list card', (
       tester,

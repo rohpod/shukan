@@ -5,14 +5,15 @@ import '../../../core/ui/feedback_snackbar.dart';
 import '../../lists/data/list.dart';
 import '../../lists/presentation/list_detail_screen.dart';
 import '../../lists/providers/list_providers.dart';
-import '../../tags/presentation/tag_browser_screen.dart';
 import '../../search/presentation/search_screen.dart';
+import '../../tags/presentation/widgets/tag_chips_section.dart';
 import '../../tasks/domain/smart_view_models.dart';
 import '../../tasks/presentation/missed_tasks_banner.dart';
 import '../../tasks/presentation/recently_deleted_screen.dart';
 import '../../tasks/presentation/smart_view_detail_screen.dart';
 import '../../tasks/providers/smart_view_providers.dart';
 import '../../tasks/providers/task_providers.dart';
+import '../../tasks/providers/task_tag_filter_providers.dart';
 import '../providers/auth_providers.dart';
 
 class HomeScreen extends ConsumerWidget {
@@ -188,23 +189,13 @@ class HomeScreen extends ConsumerWidget {
     final uid = ref.watch(currentUidProvider);
     final listsAsync = ref.watch(listsForUserProvider);
     final recentlyDeletedCount = ref.watch(recentlyDeletedCountProvider);
+    final tagEntries =
+        ref.watch(tagBrowserEntriesProvider).value ?? const <TagBrowserEntry>[];
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('shukan'),
         actions: [
-          IconButton(
-            key: const Key('tagBrowserButton'),
-            icon: const Icon(Icons.label_outline),
-            tooltip: 'Tags',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const TagBrowserScreen(),
-                ),
-              );
-            },
-          ),
           IconButton(
             key: const Key('searchButton'),
             icon: const Icon(Icons.search),
@@ -281,6 +272,7 @@ class HomeScreen extends ConsumerWidget {
                 error: (e, _) => Center(child: Text('Error loading lists: $e')),
               ),
             ),
+            TagChipsSection(contextKey: 'home', uid: uid, entries: tagEntries),
           ],
         ),
       ),

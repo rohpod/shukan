@@ -9,7 +9,6 @@ import 'package:shukan/core/firebase/firebase_providers.dart';
 import 'package:shukan/features/auth/providers/auth_providers.dart';
 import 'package:shukan/features/lists/data/list.dart';
 import 'package:shukan/features/lists/presentation/list_detail_screen.dart';
-import 'package:shukan/features/tags/presentation/tag_detail_screen.dart';
 import 'package:shukan/features/tasks/domain/smart_view_models.dart';
 import 'package:shukan/features/tasks/domain/task_priority_filter.dart';
 import 'package:shukan/features/tasks/domain/task_sort_options.dart';
@@ -635,45 +634,6 @@ void main() {
           expect(
             find.byKey(const Key('toggleShowCompleted_scheduled')),
             findsNothing,
-          );
-          expect(find.text('Delete completed'), findsNothing);
-        },
-      );
-
-      testWidgets(
-        'TagDetailScreen retains ShowCompletedToggle and lacks collapsible section',
-        (tester) async {
-          final prefs = await SharedPreferences.getInstance();
-
-          await fakeFirestore.collection('tags').doc('test-tag-id').set({
-            'tagId': 'test-tag-id',
-            'uid': uid,
-            'name': 'urgent',
-            'createdAt': DateTime(2026, 9, 20, 10, 0),
-          });
-
-          await tester.pumpWidget(
-            ProviderScope(
-              overrides: [
-                firebaseAuthProvider.overrideWithValue(mockAuth),
-                firestoreProvider.overrideWithValue(fakeFirestore),
-                currentUidProvider.overrideWithValue(uid),
-                currentDateProvider.overrideWithValue(
-                  DateTime(2026, 9, 20, 10, 0),
-                ),
-                sharedPreferencesProvider.overrideWithValue(prefs),
-              ],
-              child: const MaterialApp(
-                home: TagDetailScreen(tagId: 'test-tag-id', tagName: 'urgent'),
-              ),
-            ),
-          );
-          await tester.pumpAndSettle();
-
-          expect(find.byType(ShowCompletedToggle), findsOneWidget);
-          expect(
-            find.byKey(const Key('toggleShowCompleted_tag_test-tag-id')),
-            findsOneWidget,
           );
           expect(find.text('Delete completed'), findsNothing);
         },

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../tags/data/tag.dart';
 import '../../../tags/providers/tag_providers.dart';
+import '../../../../core/ui/tag_format.dart';
 import '../../providers/task_tag_filter_providers.dart';
 
 /// Reusable multi-select tag filter dropdown selector for task lists, smart views, and tag detail.
@@ -73,7 +74,7 @@ class TaskTagFilterSelector extends ConsumerWidget {
                                 'tagFilterOption_${viewKey}_${tag.tagId}',
                               ),
                               value: isSelected,
-                              title: Text(tag.name),
+                              title: Text(formatTag(tag.name)),
                               dense: true,
                               subtitle: !canSelect && !isSelected
                                   ? const Text(
