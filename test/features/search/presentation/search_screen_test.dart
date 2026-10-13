@@ -388,5 +388,22 @@ void main() {
         );
       },
     );
+
+    testWidgets(
+      'tapping a task row opens TaskDialog in edit mode on SearchScreen',
+      (tester) async {
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        expect(find.text('Buy groceries'), findsOneWidget);
+
+        // Tap task row
+        await tester.tap(find.text('Buy groceries'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Edit Task'), findsOneWidget);
+        expect(find.byKey(const Key('editTaskTitleInput')), findsOneWidget);
+      },
+    );
   });
 }

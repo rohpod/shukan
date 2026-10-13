@@ -41,7 +41,6 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
     String listId, {
     Task? task,
     DateTime? initialDueDate,
-    String? initialTitle,
   }) async {
     await showDialog<void>(
       context: context,
@@ -50,7 +49,6 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
         listId: task?.listId ?? listId,
         task: task,
         initialDueDate: initialDueDate,
-        initialTitle: initialTitle,
       ),
     );
   }
@@ -304,6 +302,12 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                       children: [
                         ListTile(
                           key: Key('taskItem_${task.taskId}'),
+                          onTap: () => _openTaskDialog(
+                            context,
+                            uid,
+                            task.listId,
+                            task: task,
+                          ),
                           leading: Checkbox(
                             key: Key('taskCompleteCheckbox_${task.taskId}'),
                             value: task.isCompleted,
@@ -491,25 +495,6 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
             hintText: destinationListName != null
                 ? 'Add task to $destinationListName...'
                 : null,
-            expandButtonKey: const Key('addSmartViewTaskButton'),
-            onExpand: effectiveListId == null
-                ? null
-                : (text) {
-                    final now = ref.read(currentDateProvider);
-                    final initialDate = widget.viewType == SmartViewType.today
-                        ? SmartViewDateUtils.startOfDay(now)
-                        : (widget.viewType == SmartViewType.thisWeek
-                              ? SmartViewDateUtils.startOfDay(now)
-                              : SmartViewDateUtils.startOfDay(now));
-
-                    _openTaskDialog(
-                      context,
-                      uid,
-                      effectiveListId,
-                      initialDueDate: initialDate,
-                      initialTitle: text,
-                    );
-                  },
             onTaskCreated: (task) {
               if (!context.mounted) return;
               final listName = destinationListName ?? 'list';

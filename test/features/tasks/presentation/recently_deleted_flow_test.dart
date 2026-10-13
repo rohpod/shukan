@@ -58,15 +58,15 @@ void main() {
       await tester.tap(find.byKey(const Key('listCard_$inboxListId')));
       await tester.pumpAndSettle();
 
-      // 2. Add a new task
-      await tester.tap(find.byKey(const Key('addTaskButton')));
-      await tester.pumpAndSettle();
-
+      // 2. Add a new task via quick-add
       await tester.enterText(
-        find.byKey(const Key('taskTitleInput')),
+        find.byKey(const Key('quickAddTextInput')),
         'Flow Task',
       );
-      await tester.tap(find.byKey(const Key('saveTaskButton')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('quickAddSubmitButton')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('quickAddSubmitButton')));
       await tester.pumpAndSettle();
 
       expect(find.text('Flow Task'), findsOneWidget);
