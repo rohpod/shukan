@@ -80,10 +80,10 @@ void main() {
       expect(find.byKey(const Key('listDetailTitle')), findsOneWidget);
       expect(find.text('Work Projects'), findsOneWidget);
 
-      // Verify TaskListScreen is mounted with task content and add task button
+      // Verify TaskListScreen is mounted with task content and quick add bar
       expect(find.byType(TaskListScreen), findsOneWidget);
       expect(find.text('Deploy project'), findsOneWidget);
-      expect(find.byKey(const Key('addTaskButton')), findsOneWidget);
+      expect(find.byKey(const Key('quickAddTextInput')), findsOneWidget);
     },
   );
 

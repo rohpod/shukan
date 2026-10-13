@@ -39,8 +39,6 @@ void main() {
   Widget createWidgetUnderTest({
     String? listIdOverride = listId,
     String? hintText,
-    void Function(String)? onExpand,
-    Key? expandButtonKey,
     void Function(Task)? onTaskCreated,
   }) {
     return ProviderScope(
@@ -55,8 +53,6 @@ void main() {
             uid: uid,
             listId: listIdOverride,
             hintText: hintText,
-            onExpand: onExpand,
-            expandButtonKey: expandButtonKey,
             onTaskCreated: onTaskCreated,
           ),
         ),
@@ -65,18 +61,19 @@ void main() {
   }
 
   group('QuickAddBar Widget Tests', () {
-    testWidgets('renders input, submit button, and expand button', (
-      tester,
-    ) async {
-      await tester.pumpWidget(createWidgetUnderTest());
-      await tester.pumpAndSettle();
+    testWidgets(
+      'renders input and submit button, and renders no expand button',
+      (tester) async {
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('quickAddTextInput')), findsOneWidget);
-      expect(find.byKey(const Key('quickAddSubmitButton')), findsOneWidget);
-      expect(find.byKey(const Key('quickAddExpandButton')), findsOneWidget);
-      expect(find.byKey(const Key('quickAddDateChip')), findsNothing);
-      expect(find.byKey(const Key('quickAddHintText')), findsNothing);
-    });
+        expect(find.byKey(const Key('quickAddTextInput')), findsOneWidget);
+        expect(find.byKey(const Key('quickAddSubmitButton')), findsOneWidget);
+        expect(find.byKey(const Key('quickAddExpandButton')), findsNothing);
+        expect(find.byKey(const Key('quickAddDateChip')), findsNothing);
+        expect(find.byKey(const Key('quickAddHintText')), findsNothing);
+      },
+    );
 
     testWidgets(
       'typing + submitting date phrase shows preview chip and stripped title, second submit creates task',
@@ -208,34 +205,6 @@ void main() {
       },
     );
 
-    testWidgets(
-      'tapping expand button calls onExpand with current input text',
-      (tester) async {
-        String? capturedText;
-
-        await tester.pumpWidget(
-          createWidgetUnderTest(
-            onExpand: (text) => capturedText = text,
-            expandButtonKey: const Key('customExpandKey'),
-          ),
-        );
-        await tester.pumpAndSettle();
-
-        expect(find.byKey(const Key('customExpandKey')), findsOneWidget);
-
-        await tester.enterText(
-          find.byKey(const Key('quickAddTextInput')),
-          'Draft quarterly proposal',
-        );
-        await tester.pumpAndSettle();
-
-        await tester.tap(find.byKey(const Key('customExpandKey')));
-        await tester.pumpAndSettle();
-
-        expect(capturedText, 'Draft quarterly proposal');
-      },
-    );
-
     testWidgets('submitting via keyboard Enter action works identically', (
       tester,
     ) async {
@@ -291,11 +260,6 @@ void main() {
         find.byKey(const Key('quickAddSubmitButton')),
       );
       expect(submitButton.onPressed, isNull);
-
-      final expandButton = tester.widget<IconButton>(
-        find.byKey(const Key('quickAddExpandButton')),
-      );
-      expect(expandButton.onPressed, isNull);
     });
 
     testWidgets('invokes onTaskCreated callback after task is created', (

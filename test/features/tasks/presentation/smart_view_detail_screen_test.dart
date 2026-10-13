@@ -357,24 +357,25 @@ void main() {
       expect(find.text('Deleted "Task to delete timeout"'), findsNothing);
     });
 
-    testWidgets('FAB opens TaskDialog with initial dueDate pre-populated', (
-      tester,
-    ) async {
-      final today = DateTime(2026, 10, 14, 10, 0);
+    testWidgets(
+      'Empty state Add task button opens TaskDialog with initial dueDate pre-populated',
+      (tester) async {
+        final today = DateTime(2026, 10, 14, 10, 0);
 
-      await tester.pumpWidget(
-        createWidgetUnderTest(SmartViewType.today, overrideDate: today),
-      );
-      await tester.pumpAndSettle();
+        await tester.pumpWidget(
+          createWidgetUnderTest(SmartViewType.today, overrideDate: today),
+        );
+        await tester.pumpAndSettle();
 
-      // Tap FAB
-      await tester.tap(find.byKey(const Key('addSmartViewTaskButton')));
-      await tester.pumpAndSettle();
+        // Tap Add task button in empty state
+        await tester.tap(find.byKey(const Key('emptyStateAddTaskButton')));
+        await tester.pumpAndSettle();
 
-      // TaskDialog is open
-      expect(find.text('New Task'), findsOneWidget);
-      expect(find.text('2026-10-14'), findsOneWidget);
-    });
+        // TaskDialog is open
+        expect(find.text('New Task'), findsOneWidget);
+        expect(find.text('2026-10-14'), findsOneWidget);
+      },
+    );
 
     testWidgets('renders friendly timeout message when stream times out', (
       tester,
@@ -458,12 +459,6 @@ void main() {
           find.byKey(const Key('quickAddSubmitButton')),
         );
         expect(submitButton.onPressed, isNull);
-
-        // Verify expand button is disabled
-        final expandButton = tester.widget<IconButton>(
-          find.byKey(const Key('addSmartViewTaskButton')),
-        );
-        expect(expandButton.onPressed, isNull);
       },
     );
 
@@ -508,6 +503,43 @@ void main() {
 
         // Should navigate to ListDetailScreen for Inbox
         expect(find.byType(ListDetailScreen), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'tapping a task row opens TaskDialog in edit mode on SmartViewDetailScreen',
+      (tester) async {
+        final today = DateTime(2026, 10, 14, 10, 0);
+        await fakeFirestore.collection('tasks').doc('smart-edit-1').set({
+          'taskId': 'smart-edit-1',
+          'uid': uid,
+          'listId': defaultListId,
+          'title': 'Test Smart Task',
+          'notes': 'Smart notes',
+          'url': '',
+          'priority': 'none',
+          'tagIds': <String>[],
+          'order': 1000.0,
+          'createdAt': Timestamp.now(),
+          'dueDate': Timestamp.fromDate(today),
+          'dueTime': null,
+          'completedAt': null,
+          'deletedAt': null,
+        });
+
+        await tester.pumpWidget(
+          createWidgetUnderTest(SmartViewType.today, overrideDate: today),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Test Smart Task'), findsOneWidget);
+
+        // Tap task row
+        await tester.tap(find.text('Test Smart Task'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Edit Task'), findsOneWidget);
+        expect(find.text('Smart notes'), findsOneWidget);
       },
     );
   });

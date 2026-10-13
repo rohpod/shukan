@@ -10,8 +10,6 @@ class QuickAddBar extends ConsumerStatefulWidget {
   final String uid;
   final String? listId;
   final String? hintText;
-  final void Function(String currentText)? onExpand;
-  final Key? expandButtonKey;
   final void Function(Task task)? onTaskCreated;
 
   const QuickAddBar({
@@ -19,8 +17,6 @@ class QuickAddBar extends ConsumerStatefulWidget {
     required this.uid,
     required this.listId,
     this.hintText,
-    this.onExpand,
-    this.expandButtonKey,
     this.onTaskCreated,
   });
 
@@ -243,18 +239,6 @@ class _QuickAddBarState extends ConsumerState<QuickAddBar> {
             ),
           Row(
             children: [
-              IconButton(
-                key:
-                    widget.expandButtonKey ?? const Key('quickAddExpandButton'),
-                icon: const Icon(Icons.open_in_full, size: 18),
-                tooltip: 'Full task form',
-                onPressed: (!isEnabled || _isSaving)
-                    ? null
-                    : () {
-                        final textToPass = _rawInput ?? _controller.text;
-                        widget.onExpand?.call(textToPass);
-                      },
-              ),
               Expanded(
                 child: TextField(
                   key: const Key('quickAddTextInput'),
@@ -272,9 +256,11 @@ class _QuickAddBarState extends ConsumerState<QuickAddBar> {
                       color: theme.hintColor.withValues(alpha: 0.6),
                     ),
                     isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 8,
+                    contentPadding: const EdgeInsets.only(
+                      left: 14,
+                      right: 10,
+                      top: 8,
+                      bottom: 8,
                     ),
                     border: InputBorder.none,
                   ),
@@ -315,7 +301,7 @@ class _QuickAddBarState extends ConsumerState<QuickAddBar> {
           ),
           if (_hasParsed && !hasDateOrTime)
             Padding(
-              padding: const EdgeInsets.only(left: 44, top: 2),
+              padding: const EdgeInsets.only(left: 14, top: 2),
               child: Text(
                 'No date detected. Press Enter to create.',
                 key: const Key('quickAddHintText'),

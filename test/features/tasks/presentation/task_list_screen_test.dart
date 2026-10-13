@@ -78,7 +78,7 @@ void main() {
 
       expect(find.byKey(const Key('noTasksText')), findsOneWidget);
       expect(find.text('No tasks yet'), findsOneWidget);
-      expect(find.byKey(const Key('addTaskButton')), findsOneWidget);
+      expect(find.byKey(const Key('quickAddTextInput')), findsOneWidget);
     });
 
     testWidgets(
@@ -87,29 +87,41 @@ void main() {
         await tester.pumpWidget(createWidgetUnderTest());
         await tester.pumpAndSettle();
 
-        // 1. Open create task dialog via FAB
-        await tester.tap(find.byKey(const Key('addTaskButton')));
-        await tester.pumpAndSettle();
-
-        expect(find.text('New Task'), findsOneWidget);
-
-        // Enter task details and create task
+        // 1. Create task via quick-add
         await tester.enterText(
-          find.byKey(const Key('taskTitleInput')),
+          find.byKey(const Key('quickAddTextInput')),
           'Buy milk',
         );
+        await tester.pumpAndSettle();
+        // Submit 1 (parse)
+        await tester.tap(find.byKey(const Key('quickAddSubmitButton')));
+        await tester.pumpAndSettle();
+        // Submit 2 (confirm creation)
+        await tester.tap(find.byKey(const Key('quickAddSubmitButton')));
+        await tester.pumpAndSettle();
+
+        // Verify task appears in the list
+        expect(find.text('Buy milk'), findsOneWidget);
+        expect(find.byKey(const Key('noTasksText')), findsNothing);
+
+        // Tap the row to open edit dialog and set notes and URL
+        await tester.tap(find.text('Buy milk'));
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Edit Task'), findsOneWidget);
         await tester.enterText(
-          find.byKey(const Key('taskNotesInput')),
+          find.byKey(const Key('editTaskNotesInput')),
           '2% organic milk',
         );
         await tester.enterText(
-          find.byKey(const Key('taskUrlInput')),
+          find.byKey(const Key('editTaskUrlInput')),
           'https://example.com/store',
         );
         await tester.tap(find.byKey(const Key('saveTaskButton')));
         await tester.pumpAndSettle();
 
-        // Verify task appears in the list
+        // Verify task details updated in list
         expect(find.text('Buy milk'), findsOneWidget);
         expect(find.text('2% organic milk'), findsOneWidget);
         expect(find.text('https://example.com/store'), findsOneWidget);
@@ -618,18 +630,7 @@ void main() {
         );
 
         when(() => mockTaskRepo.streamTasksForList(uid, listId))
-            .thenAnswer((_) => Stream.value([]));
-        when(
-          () => mockTaskRepo.createTask(
-            uid: uid,
-            listId: listId,
-            title: 'Brand New Task',
-            notes: '',
-            url: '',
-            dueDate: null,
-            dueTime: null,
-          ),
-        ).thenAnswer((_) async => createdTask);
+            .thenAnswer((_) => Stream.value([createdTask]));
         when(
           () => mockTaskRepo.updateTask(
             'task-created-1',
@@ -645,17 +646,12 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // Open create task dialog via FAB
-        await tester.tap(find.byKey(const Key('addTaskButton')));
+        // Open edit task dialog via row tap
+        await tester.tap(find.text('Brand New Task'));
+        await tester.pump(const Duration(milliseconds: 350));
         await tester.pumpAndSettle();
 
-        expect(find.text('New Task'), findsOneWidget);
-
-        // Enter title
-        await tester.enterText(
-          find.byKey(const Key('taskTitleInput')),
-          'Brand New Task',
-        );
+        expect(find.text('Edit Task'), findsOneWidget);
 
         final dropdownFinder = find.byKey(
           const Key('editTaskEarlyReminderInput'),
@@ -677,17 +673,24 @@ void main() {
         await tester.tap(find.text('15 minutes before').last);
         await tester.pumpAndSettle();
 
-        // Tap Create
+        // Tap Save
         await tester.tap(find.byKey(const Key('saveTaskButton')));
         await tester.pumpAndSettle();
 
         verify(
           () => mockTaskRepo.updateTask(
             'task-created-1',
-            priority: 'none',
-            tagIds: const [],
+            title: any(named: 'title'),
+            notes: any(named: 'notes'),
+            url: any(named: 'url'),
+            priority: any(named: 'priority'),
+            tagIds: any(named: 'tagIds'),
+            dueDate: any(named: 'dueDate'),
+            dueTime: any(named: 'dueTime'),
             earlyReminderMinutes: 15,
-            repeatRule: 'none',
+            repeatRule: any(named: 'repeatRule'),
+            clearDueDate: any(named: 'clearDueDate'),
+            clearDueTime: any(named: 'clearDueTime'),
           ),
         ).called(1);
       },
@@ -1326,10 +1329,26 @@ void main() {
     testWidgets(
       'adding a tag with leading # strips prefix in Firestore and renders formatted chip',
       (tester) async {
+        await fakeFirestore.collection('tasks').doc('t-tag-test').set({
+          'taskId': 't-tag-test',
+          'uid': uid,
+          'listId': listId,
+          'title': 'Tagged Task',
+          'notes': '',
+          'url': '',
+          'priority': 'none',
+          'tagIds': <String>[],
+          'order': 0,
+          'createdAt': Timestamp.now(),
+          'completedAt': null,
+          'deletedAt': null,
+        });
+
         await tester.pumpWidget(createWidgetUnderTest());
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byKey(const Key('addTaskButton')));
+        await tester.tap(find.text('Tagged Task'));
+        await tester.pump(const Duration(milliseconds: 350));
         await tester.pumpAndSettle();
 
         await tester.enterText(

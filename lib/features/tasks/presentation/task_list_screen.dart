@@ -39,16 +39,11 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
     String uid,
     String listId, {
     Task? task,
-    String? initialTitle,
   }) async {
     await showDialog<void>(
       context: context,
-      builder: (dialogContext) => TaskDialog(
-        uid: uid,
-        listId: listId,
-        task: task,
-        initialTitle: initialTitle,
-      ),
+      builder: (dialogContext) =>
+          TaskDialog(uid: uid, listId: listId, task: task),
     );
   }
 
@@ -736,13 +731,7 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
               error: (e, _) => Center(child: Text('Error loading tasks: $e')),
             ),
           ),
-          QuickAddBar(
-            uid: uid,
-            listId: listId,
-            expandButtonKey: const Key('addTaskButton'),
-            onExpand: (text) =>
-                _showTaskDialog(context, uid, listId, initialTitle: text),
-          ),
+          QuickAddBar(uid: uid, listId: listId),
           TagChipsSection(
             contextKey: listId,
             uid: uid,
@@ -967,7 +956,6 @@ class TaskDialog extends ConsumerStatefulWidget {
   final String listId;
   final Task? task;
   final DateTime? initialDueDate;
-  final String? initialTitle;
 
   const TaskDialog({
     super.key,
@@ -975,7 +963,6 @@ class TaskDialog extends ConsumerStatefulWidget {
     required this.listId,
     this.task,
     this.initialDueDate,
-    this.initialTitle,
   });
 
   @override
@@ -1005,9 +992,7 @@ class _TaskDialogState extends ConsumerState<TaskDialog> {
   @override
   void initState() {
     super.initState();
-    _titleController = TextEditingController(
-      text: widget.task?.title ?? widget.initialTitle ?? '',
-    );
+    _titleController = TextEditingController(text: widget.task?.title ?? '');
     _notesController = TextEditingController(text: widget.task?.notes ?? '');
     _urlController = TextEditingController(text: widget.task?.url ?? '');
     _tagInputController = TextEditingController();

@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:firebase_auth_mocks/firebase_auth_mocks.dart';
 import 'package:flutter/material.dart';
@@ -67,18 +68,15 @@ void main() {
       expect(find.byKey(const Key('smartViewTitle_today')), findsOneWidget);
       expect(find.byKey(const Key('noTasksText')), findsOneWidget);
 
-      // 2. Add a new task due today via FAB
-      await tester.tap(find.byKey(const Key('addSmartViewTaskButton')));
-      await tester.pumpAndSettle();
-
-      expect(find.text('New Task'), findsOneWidget);
-      expect(find.text('2026-10-14'), findsOneWidget);
-
+      // 2. Add a new task due today via quick-add
       await tester.enterText(
-        find.byKey(const Key('taskTitleInput')),
-        'Dentist Appointment',
+        find.byKey(const Key('quickAddTextInput')),
+        'Dentist Appointment today',
       );
-      await tester.tap(find.byKey(const Key('saveTaskButton')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('quickAddSubmitButton')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('quickAddSubmitButton')));
       await tester.pumpAndSettle();
 
       // Task is now in Today view
@@ -97,14 +95,32 @@ void main() {
       expect(find.byType(SmartViewDetailScreen), findsOneWidget);
       expect(find.text('Dentist Appointment'), findsOneWidget);
 
-      // Add Saturday task
-      await tester.tap(find.byKey(const Key('addSmartViewTaskButton')));
+      // Add Saturday task by seeding and editing date via tap-to-edit
+      await fakeFirestore.collection('tasks').doc('concert-task').set({
+        'taskId': 'concert-task',
+        'uid': uid,
+        'listId': inboxListId,
+        'title': 'Saturday Concert',
+        'notes': '',
+        'url': '',
+        'priority': 'none',
+        'tagIds': <String>[],
+        'order': 1000.0,
+        'createdAt': Timestamp.now(),
+        'dueDate': Timestamp.fromDate(DateTime(2026, 10, 14)),
+        'dueTime': null,
+        'completedAt': null,
+        'deletedAt': null,
+      });
       await tester.pumpAndSettle();
 
-      await tester.enterText(
-        find.byKey(const Key('taskTitleInput')),
-        'Saturday Concert',
-      );
+      expect(find.text('Saturday Concert'), findsOneWidget);
+
+      // Tap task row to open edit dialog
+      await tester.tap(find.text('Saturday Concert'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Edit Task'), findsOneWidget);
 
       // Pick Saturday date (Oct 17, 2026)
       await tester.tap(find.byKey(const Key('editTaskDueDateInput')));

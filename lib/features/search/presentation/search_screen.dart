@@ -289,6 +289,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                           final task = matchingTasks[index];
                           return ListTile(
                             key: Key('taskItem_${task.taskId}'),
+                            onTap: uid != null
+                                ? () => _showEditDialog(context, uid, task)
+                                : null,
                             leading: Checkbox(
                               key: Key('taskCompleteCheckbox_${task.taskId}'),
                               value: task.isCompleted,
