@@ -82,20 +82,7 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
     final defaultListId = ref.watch(defaultListIdProvider).value;
     final lists = ref.watch(listsForUserProvider).value ?? const <ListModel>[];
     final listNames = {for (final l in lists) l.listId: l.name};
-
-    ListModel? effectiveList;
-    if (lists.isNotEmpty) {
-      if (defaultListId != null) {
-        for (final l in lists) {
-          if (l.listId == defaultListId) {
-            effectiveList = l;
-            break;
-          }
-        }
-      }
-      effectiveList ??= lists.first;
-    }
-
+    final effectiveList = ref.watch(effectiveDefaultListProvider);
     final effectiveListId = effectiveList?.listId;
     final destinationListName = effectiveList?.name;
 
@@ -508,7 +495,7 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                             Navigator.of(context).push(
                               MaterialPageRoute<void>(
                                 builder: (_) =>
-                                    ListDetailScreen(list: effectiveList!),
+                                    ListDetailScreen(list: effectiveList),
                               ),
                             );
                           },

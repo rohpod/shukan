@@ -5,6 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/providers/auth_providers.dart';
+import '../../lists/data/list.dart';
+import '../../lists/presentation/list_detail_screen.dart';
+import '../../lists/providers/list_providers.dart';
 import '../../tags/providers/tag_providers.dart';
 import '../../tasks/data/task.dart';
 import '../../tasks/presentation/task_list_screen.dart';
@@ -22,6 +25,7 @@ class SearchScreen extends ConsumerStatefulWidget {
 class _SearchScreenState extends ConsumerState<SearchScreen> {
   late final TextEditingController _searchController;
   Timer? _debounceTimer;
+  bool _isCreatingTask = false;
 
   @override
   void initState() {
@@ -56,6 +60,53 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       builder: (dialogContext) =>
           TaskDialog(uid: uid, listId: task.listId, task: task),
     );
+  }
+
+  Future<void> _handleAddTask(String uid, ListModel list, String title) async {
+    if (_isCreatingTask) return;
+    setState(() {
+      _isCreatingTask = true;
+    });
+
+    _debounceTimer?.cancel();
+    ref.read(searchQueryProvider.notifier).setQuery(title);
+
+    try {
+      await ref
+          .read(taskRepositoryProvider)
+          .createTask(uid: uid, listId: list.listId, title: title);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Added to ${list.name}'),
+            action: SnackBarAction(
+              label: 'View',
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => ListDetailScreen(list: list),
+                  ),
+                );
+              },
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Failed to add task: $e')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isCreatingTask = false;
+        });
+      } else {
+        _isCreatingTask = false;
+      }
+    }
   }
 
   bool _isFailedPrecondition(Object error) {
@@ -108,10 +159,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   @override
   Widget build(BuildContext context) {
     final uid = ref.watch(currentUidProvider);
+    final effectiveList = ref.watch(effectiveDefaultListProvider);
     final allTasksAsync = ref.watch(allTasksForCurrentUserProvider);
     final tagsAsync = ref.watch(tagsForCurrentUserProvider);
     final query = ref.watch(searchQueryProvider).toLowerCase();
     final completionFilter = ref.watch(searchCompletionFilterProvider);
+    final trimmedQuery = _searchController.text.trim();
+    final isActionEnabled =
+        effectiveList != null && !_isCreatingTask && uid != null;
 
     return Scaffold(
       appBar: AppBar(
@@ -190,6 +245,22 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             ),
           ),
           const Divider(height: 1),
+          if (trimmedQuery.isNotEmpty) ...[
+            ListTile(
+              key: const Key('searchAddTaskAction'),
+              leading: const Icon(Icons.add_circle_outline),
+              title: Text(
+                'Add "$trimmedQuery" as a task',
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+              enabled: isActionEnabled,
+              onTap: isActionEnabled
+                  ? () => _handleAddTask(uid, effectiveList, trimmedQuery)
+                  : null,
+            ),
+            const Divider(height: 1),
+          ],
           Expanded(
             child: tagsAsync.hasError
                 ? _buildErrorView(

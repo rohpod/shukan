@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:firebase_auth_mocks/firebase_auth_mocks.dart';
@@ -5,8 +7,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shukan/core/firebase/firebase_providers.dart';
+import 'package:shukan/features/lists/presentation/list_detail_screen.dart';
 import 'package:shukan/features/search/presentation/search_screen.dart';
 import 'package:shukan/features/tags/providers/tag_providers.dart';
+import 'package:shukan/features/tasks/data/task.dart';
+import 'package:shukan/features/tasks/data/task_repository.dart';
 import 'package:shukan/features/tasks/providers/task_providers.dart';
 
 void main() {
@@ -406,4 +411,271 @@ void main() {
       },
     );
   });
+
+  group('SearchScreen Add Task Action Tests', () {
+    const defaultListId = 'inbox-default-id';
+    const secondListId = 'work-list-id';
+
+    Future<void> seedDefaultLists() async {
+      await fakeFirestore.collection('users').doc(uid).set({
+        'uid': uid,
+        'email': 'search@example.com',
+        'defaultListId': defaultListId,
+      });
+      await fakeFirestore.collection('lists').doc(defaultListId).set({
+        'listId': defaultListId,
+        'uid': uid,
+        'name': 'Inbox',
+        'isDefault': true,
+      });
+      await fakeFirestore.collection('lists').doc(secondListId).set({
+        'listId': secondListId,
+        'uid': uid,
+        'name': 'Work',
+        'isDefault': false,
+      });
+    }
+
+    testWidgets(
+      'Row is hidden for an empty query and for whitespace-only; shown for a non-empty query, including when there are zero matching results',
+      (tester) async {
+        await seedDefaultLists();
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        // 1. Empty query -> hidden
+        expect(find.byKey(const Key('searchAddTaskAction')), findsNothing);
+
+        // 2. Whitespace-only query -> hidden
+        await tester.enterText(
+          find.byKey(const Key('searchQueryInput')),
+          '     ',
+        );
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('searchAddTaskAction')), findsNothing);
+
+        // 3. Non-empty query with 0 matching results -> shown
+        await tester.enterText(
+          find.byKey(const Key('searchQueryInput')),
+          'unique zero match xyz',
+        );
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('noSearchResultsText')), findsOneWidget);
+        expect(find.byKey(const Key('searchAddTaskAction')), findsOneWidget);
+        expect(
+          find.text('Add "unique zero match xyz" as a task'),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets('Row is disabled when no default list has resolved', (
+      tester,
+    ) async {
+      // Do NOT seed users or lists doc -> effectiveDefaultListProvider is null
+      await tester.pumpWidget(createWidgetUnderTest());
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const Key('searchQueryInput')),
+        'my task',
+      );
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('searchAddTaskAction')), findsOneWidget);
+      final listTile = tester.widget<ListTile>(
+        find.byKey(const Key('searchAddTaskAction')),
+      );
+      expect(listTile.onTap, isNull);
+      expect(listTile.enabled, isFalse);
+    });
+
+    testWidgets(
+      'Tapping creates exactly one task in the default list whose title equals the trimmed query, with dueDate and dueTime null, even for a query like "meeting friday"',
+      (tester) async {
+        await seedDefaultLists();
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        // Query with leading/trailing spaces and date-like word "meeting friday"
+        await tester.enterText(
+          find.byKey(const Key('searchQueryInput')),
+          '  meeting friday  ',
+        );
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Add "meeting friday" as a task'), findsOneWidget);
+
+        // Tap the action row
+        await tester.tap(find.byKey(const Key('searchAddTaskAction')));
+        await tester.pumpAndSettle();
+
+        // Verify task in fakeFirestore
+        final snapshot = await fakeFirestore
+            .collection('tasks')
+            .where('uid', isEqualTo: uid)
+            .where('title', isEqualTo: 'meeting friday')
+            .get();
+
+        expect(snapshot.docs.length, equals(1));
+        final data = snapshot.docs.first.data();
+        expect(data['title'], equals('meeting friday'));
+        expect(data['listId'], equals(defaultListId));
+        expect(data['dueDate'], isNull);
+        expect(data['dueTime'], isNull);
+      },
+    );
+
+    testWidgets(
+      'SnackBar shows "Added to Inbox"; tapping View opens ListDetailScreen for the default list',
+      (tester) async {
+        await seedDefaultLists();
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('searchQueryInput')),
+          'Check emails',
+        );
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('searchAddTaskAction')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Added to Inbox'), findsOneWidget);
+        expect(find.text('View'), findsOneWidget);
+
+        // Tap View action
+        await tester.tap(find.text('View'));
+        await tester.pumpAndSettle();
+
+        // Pushed ListDetailScreen
+        expect(find.byType(ListDetailScreen), findsOneWidget);
+        expect(find.text('Inbox'), findsWidgets);
+      },
+    );
+
+    testWidgets('Rapid double-tap creates only one task', (tester) async {
+      await seedDefaultLists();
+      final gate = Completer<void>();
+      final baseRepo = TaskRepository(fakeFirestore);
+      final delayedRepo = _DelayedTaskRepository(baseRepo, gate);
+
+      await tester.pumpWidget(
+        createWidgetUnderTest(
+          additionalOverrides: [
+            taskRepositoryProvider.overrideWithValue(delayedRepo),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const Key('searchQueryInput')),
+        'Rapid task test',
+      );
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pumpAndSettle();
+
+      final actionFinder = find.byKey(const Key('searchAddTaskAction'));
+      // First tap initiates task creation and sets in-flight flag
+      await tester.tap(actionFinder);
+      await tester.pump();
+
+      // Second rapid tap while creation is in flight
+      await tester.tap(actionFinder);
+      await tester.pump();
+
+      // Now complete the in-flight operation
+      gate.complete();
+      await tester.pumpAndSettle();
+
+      final snapshot = await fakeFirestore
+          .collection('tasks')
+          .where('uid', isEqualTo: uid)
+          .where('title', isEqualTo: 'Rapid task test')
+          .get();
+
+      expect(snapshot.docs.length, equals(1));
+    });
+
+    testWidgets(
+      'The new task appears in the results for the still-active query',
+      (tester) async {
+        await seedDefaultLists();
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('searchQueryInput')),
+          'Buy fresh apples',
+        );
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pumpAndSettle();
+
+        // Before adding, "Buy fresh apples" does not exist in results list
+        expect(
+          find.descendant(
+            of: find.byKey(const Key('searchResultsListView')),
+            matching: find.text('Buy fresh apples'),
+          ),
+          findsNothing,
+        );
+
+        await tester.tap(find.byKey(const Key('searchAddTaskAction')));
+        await tester.pumpAndSettle();
+
+        // The query is still active in the input
+        final input = tester.widget<TextField>(
+          find.byKey(const Key('searchQueryInput')),
+        );
+        expect(input.controller!.text, equals('Buy fresh apples'));
+
+        // The new task appears in the search results
+        expect(
+          find.descendant(
+            of: find.byKey(const Key('searchResultsListView')),
+            matching: find.text('Buy fresh apples'),
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+  });
+}
+
+class _DelayedTaskRepository extends TaskRepository {
+  final TaskRepository _inner;
+  final Completer<void> _gate;
+
+  _DelayedTaskRepository(this._inner, this._gate)
+    : super(FakeFirebaseFirestore());
+
+  @override
+  Future<Task> createTask({
+    required String uid,
+    required String listId,
+    required String title,
+    String notes = '',
+    String url = '',
+    DateTime? dueDate,
+    String? dueTime,
+  }) async {
+    await _gate.future;
+    return _inner.createTask(
+      uid: uid,
+      listId: listId,
+      title: title,
+      notes: notes,
+      url: url,
+      dueDate: dueDate,
+      dueTime: dueTime,
+    );
+  }
 }
