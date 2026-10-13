@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/notifications/web_reminder_scheduler.dart';
 import '../data/task.dart';
 import '../domain/quick_add_parser.dart';
 import '../providers/smart_view_providers.dart';
@@ -105,6 +106,10 @@ class _QuickAddBarState extends ConsumerState<QuickAddBar> {
               : (_rawInput ?? ''));
 
     if (titleToCreate.isEmpty) return;
+
+    if (_parsedDueDate != null) {
+      requestWebPermissionOnSave(ref: ref, context: context, mounted: mounted);
+    }
 
     setState(() => _isSaving = true);
     try {

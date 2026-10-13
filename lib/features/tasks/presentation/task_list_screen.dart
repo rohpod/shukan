@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/notifications/web_reminder_scheduler.dart';
 import '../../../core/ui/feedback_snackbar.dart';
 import '../../../core/ui/tag_format.dart';
 import '../../auth/providers/auth_providers.dart';
@@ -1050,6 +1051,9 @@ class _TaskDialogState extends ConsumerState<TaskDialog> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_dueDate != null) {
+      requestWebPermissionOnSave(ref: ref, context: context, mounted: mounted);
+    }
     setState(() => _isSaving = true);
     try {
       if (isEditing) {
