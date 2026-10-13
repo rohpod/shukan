@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shukan/core/firebase/firebase_providers.dart';
 import 'package:shukan/features/lists/data/list.dart';
 import 'package:shukan/features/lists/providers/list_providers.dart';
+import 'package:shukan/features/tasks/providers/task_providers.dart';
 
 void main() {
   late MockFirebaseAuth mockAuth;
@@ -88,5 +89,103 @@ void main() {
 
     expect(emitted.isNotEmpty, isTrue);
     expect(emitted.last, isEmpty);
+  });
+
+  group('effectiveDefaultListProvider', () {
+    test('returns matching list when default is found', () async {
+      final list1 = ListModel(
+        listId: 'list-1',
+        uid: 'u1',
+        name: 'Work',
+        isDefault: false,
+      );
+      final list2 = ListModel(
+        listId: 'list-2',
+        uid: 'u1',
+        name: 'Inbox',
+        isDefault: true,
+      );
+
+      final container = ProviderContainer(
+        overrides: [
+          defaultListIdProvider.overrideWith((ref) => Stream.value('list-2')),
+          listsForUserProvider.overrideWith(
+            (ref) => Stream.value([list1, list2]),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      container.listen(effectiveDefaultListProvider, (_, _) {});
+      await pumpEventQueue();
+
+      expect(container.read(effectiveDefaultListProvider), equals(list2));
+    });
+
+    test(
+      'falls back to lists.first when default is missing or does not match',
+      () async {
+        final list1 = ListModel(
+          listId: 'list-1',
+          uid: 'u1',
+          name: 'Work',
+          isDefault: false,
+        );
+        final list2 = ListModel(
+          listId: 'list-2',
+          uid: 'u1',
+          name: 'Personal',
+          isDefault: false,
+        );
+
+        final container = ProviderContainer(
+          overrides: [
+            defaultListIdProvider.overrideWith(
+              (ref) => Stream.value('non-existent'),
+            ),
+            listsForUserProvider.overrideWith(
+              (ref) => Stream.value([list1, list2]),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        container.listen(effectiveDefaultListProvider, (_, _) {});
+        await pumpEventQueue();
+
+        expect(container.read(effectiveDefaultListProvider), equals(list1));
+      },
+    );
+
+    test('returns null when lists is empty or still loading', () async {
+      final containerEmpty = ProviderContainer(
+        overrides: [
+          defaultListIdProvider.overrideWith((ref) => Stream.value('list-1')),
+          listsForUserProvider.overrideWith(
+            (ref) => Stream.value(<ListModel>[]),
+          ),
+        ],
+      );
+      addTearDown(containerEmpty.dispose);
+
+      containerEmpty.listen(effectiveDefaultListProvider, (_, _) {});
+      await pumpEventQueue();
+
+      expect(containerEmpty.read(effectiveDefaultListProvider), isNull);
+
+      final containerLoading = ProviderContainer(
+        overrides: [
+          defaultListIdProvider.overrideWith(
+            (ref) => const Stream<String?>.empty(),
+          ),
+          listsForUserProvider.overrideWith(
+            (ref) => const Stream<List<ListModel>>.empty(),
+          ),
+        ],
+      );
+      addTearDown(containerLoading.dispose);
+
+      expect(containerLoading.read(effectiveDefaultListProvider), isNull);
+    });
   });
 }
