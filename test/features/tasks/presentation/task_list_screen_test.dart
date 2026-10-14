@@ -1514,5 +1514,109 @@ void main() {
         );
       },
     );
+
+    testWidgets(
+      'renders priority markers between checkbox and title for none, low, medium, and high on TaskListScreen',
+      (tester) async {
+        await fakeFirestore.collection('tasks').doc('t-p-high').set({
+          'taskId': 't-p-high',
+          'uid': uid,
+          'listId': listId,
+          'title': 'High Priority Task',
+          'priority': 'high',
+          'order': 100.0,
+          'dueDate': null,
+          'subtasks': <Map<String, dynamic>>[],
+          'createdAt': Timestamp.now(),
+          'completedAt': null,
+          'deletedAt': null,
+        });
+        await fakeFirestore.collection('tasks').doc('t-p-med').set({
+          'taskId': 't-p-med',
+          'uid': uid,
+          'listId': listId,
+          'title': 'Medium Priority Task',
+          'priority': 'medium',
+          'order': 200.0,
+          'dueDate': null,
+          'subtasks': <Map<String, dynamic>>[],
+          'createdAt': Timestamp.now(),
+          'completedAt': null,
+          'deletedAt': null,
+        });
+        await fakeFirestore.collection('tasks').doc('t-p-low').set({
+          'taskId': 't-p-low',
+          'uid': uid,
+          'listId': listId,
+          'title': 'Low Priority Task',
+          'priority': 'low',
+          'order': 300.0,
+          'dueDate': null,
+          'subtasks': <Map<String, dynamic>>[],
+          'createdAt': Timestamp.now(),
+          'completedAt': null,
+          'deletedAt': null,
+        });
+        await fakeFirestore.collection('tasks').doc('t-p-none').set({
+          'taskId': 't-p-none',
+          'uid': uid,
+          'listId': listId,
+          'title': 'None Priority Task',
+          'priority': 'none',
+          'order': 400.0,
+          'dueDate': null,
+          'subtasks': <Map<String, dynamic>>[],
+          'createdAt': Timestamp.now(),
+          'completedAt': null,
+          'deletedAt': null,
+        });
+
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        // High priority
+        expect(
+          find.byKey(const Key('taskPriorityMarker_t-p-high')),
+          findsOneWidget,
+        );
+        expect(find.text('❗❗❗'), findsOneWidget);
+        final highTitle = tester.widget<Text>(
+          find.byKey(const Key('taskTitle_t-p-high')),
+        );
+        expect(highTitle.data, equals('High Priority Task'));
+
+        // Medium priority
+        expect(
+          find.byKey(const Key('taskPriorityMarker_t-p-med')),
+          findsOneWidget,
+        );
+        expect(find.text('❕❕'), findsOneWidget);
+        final medTitle = tester.widget<Text>(
+          find.byKey(const Key('taskTitle_t-p-med')),
+        );
+        expect(medTitle.data, equals('Medium Priority Task'));
+
+        // Low priority
+        expect(
+          find.byKey(const Key('taskPriorityMarker_t-p-low')),
+          findsOneWidget,
+        );
+        expect(find.text('!'), findsOneWidget);
+        final lowTitle = tester.widget<Text>(
+          find.byKey(const Key('taskTitle_t-p-low')),
+        );
+        expect(lowTitle.data, equals('Low Priority Task'));
+
+        // None priority
+        expect(
+          find.byKey(const Key('taskPriorityMarker_t-p-none')),
+          findsNothing,
+        );
+        final noneTitle = tester.widget<Text>(
+          find.byKey(const Key('taskTitle_t-p-none')),
+        );
+        expect(noneTitle.data, equals('None Priority Task'));
+      },
+    );
   });
 }

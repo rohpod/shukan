@@ -19,6 +19,7 @@ import '../providers/task_tag_filter_providers.dart';
 import 'task_list_screen.dart';
 import 'widgets/empty_state_view.dart';
 import 'widgets/task_priority_filter_selector.dart';
+import 'widgets/task_priority_marker.dart';
 import 'widgets/task_row_tag_chips.dart';
 import 'widgets/task_sort_selector.dart';
 import 'widgets/task_tag_filter_selector.dart';
@@ -309,15 +310,30 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                               }
                             },
                           ),
-                          title: Text(
-                            task.title,
-                            key: Key('taskTitle_${task.taskId}'),
-                            style: TextStyle(
-                              decoration: task.isCompleted
-                                  ? TextDecoration.lineThrough
-                                  : null,
-                              color: task.isCompleted ? Colors.grey : null,
-                            ),
+                          title: Row(
+                            children: [
+                              if (task.priority != 'none') ...[
+                                TaskPriorityMarker(
+                                  priority: task.priority,
+                                  taskId: task.taskId,
+                                ),
+                                const SizedBox(width: 6),
+                              ],
+                              Expanded(
+                                child: Text(
+                                  task.title,
+                                  key: Key('taskTitle_${task.taskId}'),
+                                  style: TextStyle(
+                                    decoration: task.isCompleted
+                                        ? TextDecoration.lineThrough
+                                        : null,
+                                    color: task.isCompleted
+                                        ? Colors.grey
+                                        : null,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                           subtitle: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -363,33 +379,6 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                                       color: Colors.grey,
                                     ),
                                   ),
-                                  if (task.priority != 'none')
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 6,
-                                        vertical: 2,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: task.priority == 'high'
-                                            ? Colors.red.shade100
-                                            : (task.priority == 'medium'
-                                                  ? Colors.orange.shade100
-                                                  : Colors.blue.shade100),
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                      child: Text(
-                                        task.priority.toUpperCase(),
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.bold,
-                                          color: task.priority == 'high'
-                                              ? Colors.red.shade900
-                                              : (task.priority == 'medium'
-                                                    ? Colors.orange.shade900
-                                                    : Colors.blue.shade900),
-                                        ),
-                                      ),
-                                    ),
                                 ],
                               ),
                               if (tagFilter.isNotEmpty)

@@ -96,7 +96,18 @@ void main() {
 
         // Task is rendered
         expect(find.text('Pay Electricity Bill'), findsOneWidget);
-        expect(find.text('HIGH'), findsOneWidget);
+        // Old priority chip no longer renders
+        expect(find.text('HIGH'), findsNothing);
+        // New priority marker renders
+        expect(
+          find.byKey(const Key('taskPriorityMarker_t-today-1')),
+          findsOneWidget,
+        );
+        expect(find.text('❗❗❗'), findsOneWidget);
+        final titleWidget = tester.widget<Text>(
+          find.byKey(const Key('taskTitle_t-today-1')),
+        );
+        expect(titleWidget.data, equals('Pay Electricity Bill'));
         expect(find.textContaining('15:00'), findsOneWidget);
         expect(find.textContaining('List: Inbox'), findsOneWidget);
       },
@@ -540,6 +551,114 @@ void main() {
 
         expect(find.text('Edit Task'), findsOneWidget);
         expect(find.text('Smart notes'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'renders priority markers correctly for none, low, medium, and high on SmartViewDetailScreen',
+      (tester) async {
+        final today = DateTime(2026, 10, 14, 10, 0);
+
+        await fakeFirestore.collection('tasks').doc('smart-p-high').set({
+          'taskId': 'smart-p-high',
+          'uid': uid,
+          'listId': defaultListId,
+          'title': 'High Smart Task',
+          'priority': 'high',
+          'createdAt': Timestamp.now(),
+          'dueDate': Timestamp.fromDate(today),
+          'completedAt': null,
+          'deletedAt': null,
+        });
+
+        await fakeFirestore.collection('tasks').doc('smart-p-med').set({
+          'taskId': 'smart-p-med',
+          'uid': uid,
+          'listId': defaultListId,
+          'title': 'Medium Smart Task',
+          'priority': 'medium',
+          'createdAt': Timestamp.now(),
+          'dueDate': Timestamp.fromDate(today),
+          'completedAt': null,
+          'deletedAt': null,
+        });
+
+        await fakeFirestore.collection('tasks').doc('smart-p-low').set({
+          'taskId': 'smart-p-low',
+          'uid': uid,
+          'listId': defaultListId,
+          'title': 'Low Smart Task',
+          'priority': 'low',
+          'createdAt': Timestamp.now(),
+          'dueDate': Timestamp.fromDate(today),
+          'completedAt': null,
+          'deletedAt': null,
+        });
+
+        await fakeFirestore.collection('tasks').doc('smart-p-none').set({
+          'taskId': 'smart-p-none',
+          'uid': uid,
+          'listId': defaultListId,
+          'title': 'None Smart Task',
+          'priority': 'none',
+          'createdAt': Timestamp.now(),
+          'dueDate': Timestamp.fromDate(today),
+          'completedAt': null,
+          'deletedAt': null,
+        });
+
+        await tester.pumpWidget(
+          createWidgetUnderTest(SmartViewType.today, overrideDate: today),
+        );
+        await tester.pumpAndSettle();
+
+        // High priority
+        expect(
+          find.byKey(const Key('taskPriorityMarker_smart-p-high')),
+          findsOneWidget,
+        );
+        expect(find.text('❗❗❗'), findsOneWidget);
+        final highTitle = tester.widget<Text>(
+          find.byKey(const Key('taskTitle_smart-p-high')),
+        );
+        expect(highTitle.data, equals('High Smart Task'));
+
+        // Medium priority
+        expect(
+          find.byKey(const Key('taskPriorityMarker_smart-p-med')),
+          findsOneWidget,
+        );
+        expect(find.text('❕❕'), findsOneWidget);
+        final medTitle = tester.widget<Text>(
+          find.byKey(const Key('taskTitle_smart-p-med')),
+        );
+        expect(medTitle.data, equals('Medium Smart Task'));
+
+        // Low priority
+        expect(
+          find.byKey(const Key('taskPriorityMarker_smart-p-low')),
+          findsOneWidget,
+        );
+        expect(find.text('!'), findsOneWidget);
+        final lowTitle = tester.widget<Text>(
+          find.byKey(const Key('taskTitle_smart-p-low')),
+        );
+        expect(lowTitle.data, equals('Low Smart Task'));
+
+        // None priority
+        expect(
+          find.byKey(const Key('taskPriorityMarker_smart-p-none')),
+          findsNothing,
+        );
+        final noneTitle = tester.widget<Text>(
+          find.byKey(const Key('taskTitle_smart-p-none')),
+        );
+        expect(noneTitle.data, equals('None Smart Task'));
+
+        // Confirm old chips do not render
+        expect(find.text('HIGH'), findsNothing);
+        expect(find.text('MEDIUM'), findsNothing);
+        expect(find.text('LOW'), findsNothing);
       },
     );
   });
