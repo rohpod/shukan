@@ -71,10 +71,15 @@ void main() {
 
       expect(find.text('Flow Task'), findsOneWidget);
 
-      // 3. Delete the task
-      final deleteButtons = find.byTooltip('Delete');
-      expect(deleteButtons, findsOneWidget);
-      await tester.tap(deleteButtons);
+      // 3. Delete the task via kebab menu
+      final taskMenuButton = find.byTooltip('Task actions');
+      expect(taskMenuButton, findsOneWidget);
+      await tester.tap(taskMenuButton);
+      await tester.pumpAndSettle();
+
+      final deleteMenuItem = find.text('Delete task');
+      expect(deleteMenuItem, findsOneWidget);
+      await tester.tap(deleteMenuItem);
       await tester.pumpAndSettle();
 
       // Task is gone from active list
