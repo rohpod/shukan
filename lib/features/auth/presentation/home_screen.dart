@@ -201,8 +201,10 @@ class HomeScreen extends ConsumerWidget {
             icon: const Icon(Icons.search),
             tooltip: 'Search',
             onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(builder: (_) => const SearchScreen()),
+              showDialog<void>(
+                context: context,
+                builder: (_) => const SearchScreen(),
+                barrierDismissible: true,
               );
             },
           ),

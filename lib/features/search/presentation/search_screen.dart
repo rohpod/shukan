@@ -23,6 +23,7 @@ class SearchScreen extends ConsumerStatefulWidget {
 }
 
 class _SearchScreenState extends ConsumerState<SearchScreen> {
+  final _scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
   late final TextEditingController _searchController;
   Timer? _debounceTimer;
   bool _isCreatingTask = false;
@@ -77,13 +78,18 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           .createTask(uid: uid, listId: list.listId, title: title);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        final navigator = Navigator.of(context);
+        _scaffoldMessengerKey.currentState?.showSnackBar(
           SnackBar(
             content: Text('Added to ${list.name}'),
             action: SnackBarAction(
               label: 'View',
               onPressed: () {
-                Navigator.of(context).push(
+                _scaffoldMessengerKey.currentState?.hideCurrentSnackBar();
+                if (navigator.canPop()) {
+                  navigator.pop();
+                }
+                navigator.push(
                   MaterialPageRoute<void>(
                     builder: (_) => ListDetailScreen(list: list),
                   ),
@@ -95,8 +101,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Failed to add task: $e')));
+        _scaffoldMessengerKey.currentState?.showSnackBar(
+          SnackBar(content: Text('Failed to add task: $e')),
+        );
       }
     } finally {
       if (mounted) {
@@ -166,225 +173,261 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final trimmedQuery = _searchController.text.trim();
     final isActionEnabled =
         effectiveList != null && !_isCreatingTask && uid != null;
-
-    return Scaffold(
-      appBar: AppBar(
-        title: TextField(
-          key: const Key('searchQueryInput'),
-          controller: _searchController,
-          autofocus: true,
-          decoration: InputDecoration(
-            hintText: 'Search tasks, notes, tags...',
-            border: InputBorder.none,
-            suffixIcon: _searchController.text.isNotEmpty
-                ? IconButton(
-                    key: const Key('clearSearchQueryButton'),
-                    icon: const Icon(Icons.clear, size: 20),
-                    onPressed: () {
-                      _searchController.clear();
-                      _debounceTimer?.cancel();
-                      ref.read(searchQueryProvider.notifier).setQuery('');
-                      setState(() {});
-                    },
-                  )
-                : null,
+    final scaffold = ScaffoldMessenger(
+      key: _scaffoldMessengerKey,
+      child: Scaffold(
+        appBar: AppBar(
+          automaticallyImplyLeading: false,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            tooltip: 'Back',
+            onPressed: () => Navigator.of(context).pop(),
           ),
-          onChanged: (val) {
-            setState(() {});
-            _onSearchChanged(val);
-          },
-        ),
-      ),
-      body: Column(
-        children: [
-          if (trimmedQuery.isNotEmpty) ...[
-            ListTile(
-              key: const Key('searchAddTaskAction'),
-              leading: const Icon(Icons.add_circle_outline),
-              title: Text(
-                'Add "$trimmedQuery" as a task',
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
-              ),
-              enabled: isActionEnabled,
-              onTap: isActionEnabled
-                  ? () => _handleAddTask(uid, effectiveList, trimmedQuery)
+          title: TextField(
+            key: const Key('searchQueryInput'),
+            controller: _searchController,
+            autofocus: true,
+            decoration: InputDecoration(
+              hintText: 'Search tasks, notes, tags...',
+              border: InputBorder.none,
+              suffixIcon: _searchController.text.isNotEmpty
+                  ? IconButton(
+                      key: const Key('clearSearchQueryButton'),
+                      icon: const Icon(Icons.clear, size: 20),
+                      onPressed: () {
+                        _searchController.clear();
+                        _debounceTimer?.cancel();
+                        ref.read(searchQueryProvider.notifier).setQuery('');
+                        setState(() {});
+                      },
+                    )
                   : null,
             ),
-            const Divider(height: 1),
-          ],
-          Expanded(
-            child: tagsAsync.hasError
-                ? _buildErrorView(
-                    tagsAsync.error!,
-                    tagsAsync.stackTrace,
-                    'Error in tagsForCurrentUserProvider',
-                  )
-                : allTasksAsync.when(
-                    data: (allTasks) {
-                      final tagMap = tagsAsync.when(
-                        data: (tags) => {
-                          for (final tag in tags) tag.tagId: tag.name,
-                        },
-                        loading: () => <String, String>{},
-                        error: (e, st) {
-                          debugPrint(
-                            'Error in tagsForCurrentUserProvider: $e\n$st',
-                          );
-                          return <String, String>{};
-                        },
-                      );
-
-                      // Filter tasks by search query
-                      final matchingTasks = allTasks.where((task) {
-                        if (query.isNotEmpty) {
-                          final titleMatches = task.title
-                              .toLowerCase()
-                              .contains(query);
-                          final notesMatches = task.notes
-                              .toLowerCase()
-                              .contains(query);
-                          final tagMatches = task.tagIds.any((tagId) {
-                            final tagName = tagMap[tagId];
-                            return tagName != null &&
-                                tagName.toLowerCase().contains(query);
-                          });
-
-                          if (!titleMatches && !notesMatches && !tagMatches) {
-                            return false;
-                          }
-                        }
-
-                        return true;
-                      }).toList();
-
-                      if (matchingTasks.isEmpty) {
-                        if (allTasks.isEmpty) {
-                          return const EmptyStateView(
-                            icon: Icons.search_off_outlined,
-                            message: 'No tasks found',
-                            messageKey: Key('noSearchResultsText'),
-                          );
-                        }
-
-                        return EmptyStateView(
-                          icon: Icons.filter_alt_off_outlined,
-                          message: 'No matching tasks found',
-                          messageKey: const Key('noSearchResultsText'),
-                          actionLabel: 'Clear search',
-                          actionIcon: Icons.clear,
-                          actionKey: const Key('clearSearchFiltersButton'),
-                          onAction: () {
-                            _searchController.clear();
-                            _debounceTimer?.cancel();
-                            ref.read(searchQueryProvider.notifier).setQuery('');
-                            setState(() {});
+            onChanged: (val) {
+              setState(() {});
+              _onSearchChanged(val);
+            },
+          ),
+        ),
+        body: Column(
+          children: [
+            if (trimmedQuery.isNotEmpty) ...[
+              ListTile(
+                key: const Key('searchAddTaskAction'),
+                leading: const Icon(Icons.add_circle_outline),
+                title: Text(
+                  'Add "$trimmedQuery" as a task',
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+                enabled: isActionEnabled,
+                onTap: isActionEnabled
+                    ? () => _handleAddTask(uid, effectiveList, trimmedQuery)
+                    : null,
+              ),
+              const Divider(height: 1),
+            ],
+            Expanded(
+              child: tagsAsync.hasError
+                  ? _buildErrorView(
+                      tagsAsync.error!,
+                      tagsAsync.stackTrace,
+                      'Error in tagsForCurrentUserProvider',
+                    )
+                  : allTasksAsync.when(
+                      data: (allTasks) {
+                        final tagMap = tagsAsync.when(
+                          data: (tags) => {
+                            for (final tag in tags) tag.tagId: tag.name,
+                          },
+                          loading: () => <String, String>{},
+                          error: (e, st) {
+                            debugPrint(
+                              'Error in tagsForCurrentUserProvider: $e\n$st',
+                            );
+                            return <String, String>{};
                           },
                         );
-                      }
 
-                      return ListView.separated(
-                        key: const Key('searchResultsListView'),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        itemCount: matchingTasks.length,
-                        separatorBuilder: (context, index) =>
-                            const Divider(height: 1),
-                        itemBuilder: (context, index) {
-                          final task = matchingTasks[index];
-                          return ListTile(
-                            key: Key('taskItem_${task.taskId}'),
-                            onTap: uid != null
-                                ? () => _showEditDialog(context, uid, task)
-                                : null,
-                            leading: Checkbox(
-                              key: Key('taskCompleteCheckbox_${task.taskId}'),
-                              value: task.isCompleted,
-                              onChanged: (val) async {
-                                await ref
-                                    .read(taskRepositoryProvider)
-                                    .toggleTaskCompleted(
-                                      task.taskId,
-                                      isCompleted: val ?? false,
-                                    );
-                              },
-                            ),
-                            title: Text(
-                              task.title,
-                              key: Key('taskTitle_${task.taskId}'),
-                              style: TextStyle(
-                                decoration: task.isCompleted
-                                    ? TextDecoration.lineThrough
-                                    : null,
-                                color: task.isCompleted ? Colors.grey : null,
-                              ),
-                            ),
-                            subtitle:
-                                (task.notes.isNotEmpty || task.url.isNotEmpty)
-                                ? Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      if (task.notes.isNotEmpty)
-                                        Text(
-                                          task.notes,
-                                          key: Key('taskNotes_${task.taskId}'),
-                                          style: TextStyle(
-                                            color: task.isCompleted
-                                                ? Colors.grey
-                                                : Colors.grey[700],
-                                          ),
-                                        ),
-                                      if (task.url.isNotEmpty)
-                                        Text(
-                                          task.url,
-                                          key: Key('taskUrl_${task.taskId}'),
-                                          style: const TextStyle(
-                                            color: Colors.blue,
-                                            decoration:
-                                                TextDecoration.underline,
-                                          ),
-                                        ),
-                                    ],
-                                  )
-                                : null,
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  key: Key('deleteTaskButton_${task.taskId}'),
-                                  icon: const Icon(
-                                    Icons.delete_outline,
-                                    size: 20,
-                                    color: Colors.redAccent,
-                                  ),
-                                  tooltip: 'Delete',
-                                  onPressed: () async {
-                                    await ref
-                                        .read(taskRepositoryProvider)
-                                        .softDeleteTask(task.taskId);
-                                  },
-                                ),
-                              ],
-                            ),
+                        // Filter tasks by search query
+                        final matchingTasks = allTasks.where((task) {
+                          if (query.isNotEmpty) {
+                            final titleMatches = task.title
+                                .toLowerCase()
+                                .contains(query);
+                            final notesMatches = task.notes
+                                .toLowerCase()
+                                .contains(query);
+                            final tagMatches = task.tagIds.any((tagId) {
+                              final tagName = tagMap[tagId];
+                              return tagName != null &&
+                                  tagName.toLowerCase().contains(query);
+                            });
+
+                            if (!titleMatches && !notesMatches && !tagMatches) {
+                              return false;
+                            }
+                          }
+
+                          return true;
+                        }).toList();
+
+                        if (matchingTasks.isEmpty) {
+                          if (allTasks.isEmpty) {
+                            return const EmptyStateView(
+                              icon: Icons.search_off_outlined,
+                              message: 'No tasks found',
+                              messageKey: Key('noSearchResultsText'),
+                            );
+                          }
+
+                          return EmptyStateView(
+                            icon: Icons.filter_alt_off_outlined,
+                            message: 'No matching tasks found',
+                            messageKey: const Key('noSearchResultsText'),
+                            actionLabel: 'Clear search',
+                            actionIcon: Icons.clear,
+                            actionKey: const Key('clearSearchFiltersButton'),
+                            onAction: () {
+                              _searchController.clear();
+                              _debounceTimer?.cancel();
+                              ref
+                                  .read(searchQueryProvider.notifier)
+                                  .setQuery('');
+                              setState(() {});
+                            },
                           );
-                        },
-                      );
-                    },
-                    loading: () => const Center(
-                      key: Key('searchTasksLoadingIndicator'),
-                      child: CircularProgressIndicator(),
+                        }
+
+                        return ListView.separated(
+                          key: const Key('searchResultsListView'),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          itemCount: matchingTasks.length,
+                          separatorBuilder: (context, index) =>
+                              const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            final task = matchingTasks[index];
+                            return ListTile(
+                              key: Key('taskItem_${task.taskId}'),
+                              onTap: uid != null
+                                  ? () => _showEditDialog(context, uid, task)
+                                  : null,
+                              leading: Checkbox(
+                                key: Key('taskCompleteCheckbox_${task.taskId}'),
+                                value: task.isCompleted,
+                                onChanged: (val) async {
+                                  await ref
+                                      .read(taskRepositoryProvider)
+                                      .toggleTaskCompleted(
+                                        task.taskId,
+                                        isCompleted: val ?? false,
+                                      );
+                                },
+                              ),
+                              title: Text(
+                                task.title,
+                                key: Key('taskTitle_${task.taskId}'),
+                                style: TextStyle(
+                                  decoration: task.isCompleted
+                                      ? TextDecoration.lineThrough
+                                      : null,
+                                  color: task.isCompleted ? Colors.grey : null,
+                                ),
+                              ),
+                              subtitle:
+                                  (task.notes.isNotEmpty || task.url.isNotEmpty)
+                                  ? Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        if (task.notes.isNotEmpty)
+                                          Text(
+                                            task.notes,
+                                            key: Key(
+                                              'taskNotes_${task.taskId}',
+                                            ),
+                                            style: TextStyle(
+                                              color: task.isCompleted
+                                                  ? Colors.grey
+                                                  : Colors.grey[700],
+                                            ),
+                                          ),
+                                        if (task.url.isNotEmpty)
+                                          Text(
+                                            task.url,
+                                            key: Key('taskUrl_${task.taskId}'),
+                                            style: const TextStyle(
+                                              color: Colors.blue,
+                                              decoration:
+                                                  TextDecoration.underline,
+                                            ),
+                                          ),
+                                      ],
+                                    )
+                                  : null,
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    key: Key('deleteTaskButton_${task.taskId}'),
+                                    icon: const Icon(
+                                      Icons.delete_outline,
+                                      size: 20,
+                                      color: Colors.redAccent,
+                                    ),
+                                    tooltip: 'Delete',
+                                    onPressed: () async {
+                                      await ref
+                                          .read(taskRepositoryProvider)
+                                          .softDeleteTask(task.taskId);
+                                    },
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        );
+                      },
+                      loading: () => const Center(
+                        key: Key('searchTasksLoadingIndicator'),
+                        child: CircularProgressIndicator(),
+                      ),
+                      error: (e, st) => _buildErrorView(
+                        e,
+                        st,
+                        'Error in allTasksForCurrentUserProvider',
+                      ),
                     ),
-                    error: (e, st) => _buildErrorView(
-                      e,
-                      st,
-                      'Error in allTasksForCurrentUserProvider',
-                    ),
-                  ),
-          ),
-        ],
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final size = MediaQuery.sizeOf(context);
+    final isSmallScreen = size.width < 600;
+
+    if (isSmallScreen) {
+      return Dialog.fullscreen(child: scaffold);
+    }
+
+    return Dialog(
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      child: ConstrainedBox(
+        key: const Key('searchDialogConstrainedBox'),
+        constraints: BoxConstraints(
+          maxWidth: 600,
+          maxHeight: size.height * 0.85,
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: scaffold,
+        ),
       ),
     );
   }
