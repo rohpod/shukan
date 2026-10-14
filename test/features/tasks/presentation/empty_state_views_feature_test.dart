@@ -140,6 +140,122 @@ void main() {
         expect(find.text('Low Task 2'), findsOneWidget);
       },
     );
+
+    testWidgets(
+      'renders "No tasks yet" with "Add task" button and shows Completed section when all tasks are completed (no filters)',
+      (tester) async {
+        // Create 2 completed tasks in the list
+        await fakeFirestore.collection('tasks').doc('t-comp-1').set({
+          'taskId': 't-comp-1',
+          'uid': uid,
+          'listId': listId,
+          'title': 'Completed Task 1',
+          'completedAt': Timestamp.now(),
+          'deletedAt': null,
+          'priority': 'none',
+          'tagIds': [],
+          'order': 0,
+        });
+        await fakeFirestore.collection('tasks').doc('t-comp-2').set({
+          'taskId': 't-comp-2',
+          'uid': uid,
+          'listId': listId,
+          'title': 'Completed Task 2',
+          'completedAt': Timestamp.now(),
+          'deletedAt': null,
+          'priority': 'none',
+          'tagIds': [],
+          'order': 1,
+        });
+
+        await tester.pumpWidget(
+          wrapWithScope(const TaskListScreen(listId: listId)),
+        );
+        await tester.pumpAndSettle();
+
+        // Renders "No tasks yet" + "Add task" button
+        expect(find.byIcon(Icons.inbox_outlined), findsOneWidget);
+        expect(find.text('No tasks yet'), findsOneWidget);
+        expect(find.byKey(const Key('noTasksText')), findsOneWidget);
+        expect(
+          find.byKey(const Key('emptyStateAddTaskButton')),
+          findsOneWidget,
+        );
+
+        // Does NOT render "Clear filters" or "No tasks match your filters"
+        expect(find.text('No tasks match your filters'), findsNothing);
+        expect(find.byKey(Key('clearFiltersButton_$listId')), findsNothing);
+
+        // Still renders the Completed section
+        expect(find.byKey(Key('completedSection_$listId')), findsOneWidget);
+        expect(find.text('Completed (2)'), findsOneWidget);
+
+        // Tapping Add task opens TaskDialog
+        await tester.tap(find.byKey(const Key('emptyStateAddTaskButton')));
+        await tester.pumpAndSettle();
+        expect(find.text('New Task'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'renders "No tasks yet" with "Add task" button when all tasks are completed even while a filter is active',
+      (tester) async {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('task_priority_filter_$listId', 'high');
+
+        // Create 2 completed tasks with non-matching priority
+        await fakeFirestore.collection('tasks').doc('t-comp-1').set({
+          'taskId': 't-comp-1',
+          'uid': uid,
+          'listId': listId,
+          'title': 'Completed Task 1',
+          'completedAt': Timestamp.now(),
+          'deletedAt': null,
+          'priority': 'none',
+          'tagIds': [],
+          'order': 0,
+        });
+        await fakeFirestore.collection('tasks').doc('t-comp-2').set({
+          'taskId': 't-comp-2',
+          'uid': uid,
+          'listId': listId,
+          'title': 'Completed Task 2',
+          'completedAt': Timestamp.now(),
+          'deletedAt': null,
+          'priority': 'none',
+          'tagIds': [],
+          'order': 1,
+        });
+
+        await tester.pumpWidget(
+          wrapWithScope(
+            const TaskListScreen(listId: listId),
+            extraOverrides: [
+              sharedPreferencesProvider.overrideWithValue(prefs),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Even with high priority filter active, because there are 0 active tasks in total,
+        // it renders "No tasks yet" + "Add task", NOT "No tasks match your filters"
+        expect(find.byIcon(Icons.inbox_outlined), findsOneWidget);
+        expect(find.text('No tasks yet'), findsOneWidget);
+        expect(find.byKey(const Key('noTasksText')), findsOneWidget);
+        expect(
+          find.byKey(const Key('emptyStateAddTaskButton')),
+          findsOneWidget,
+        );
+
+        // Does NOT render "Clear filters" or "No tasks match your filters"
+        expect(find.text('No tasks match your filters'), findsNothing);
+        expect(find.byKey(Key('clearFiltersButton_$listId')), findsNothing);
+
+        // Still renders the Completed section (completed tasks are independent of filters)
+        expect(find.byKey(Key('completedSection_$listId')), findsOneWidget);
+        expect(find.text('Completed (2)'), findsOneWidget);
+      },
+    );
   });
 
   group('SmartViewDetailScreen Empty State Tests', () {
