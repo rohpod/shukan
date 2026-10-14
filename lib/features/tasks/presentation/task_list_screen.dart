@@ -326,19 +326,6 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                           : () => _showMoveTaskDialog(context, task),
                     ),
                     IconButton(
-                      key: Key('editTaskButton_${task.taskId}'),
-                      icon: const Icon(Icons.edit_outlined, size: 20),
-                      tooltip: 'Edit Task',
-                      onPressed: isSelectionMode
-                          ? null
-                          : () => _showTaskDialog(
-                              context,
-                              uid,
-                              listId,
-                              task: task,
-                            ),
-                    ),
-                    IconButton(
                       key: Key('deleteTaskButton_${task.taskId}'),
                       icon: const Icon(Icons.delete_outline, size: 20),
                       tooltip: 'Delete',

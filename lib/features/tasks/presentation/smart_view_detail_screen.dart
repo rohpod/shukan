@@ -400,17 +400,6 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               IconButton(
-                                key: Key('editTaskButton_${task.taskId}'),
-                                icon: const Icon(Icons.edit_outlined, size: 20),
-                                tooltip: 'Edit Task',
-                                onPressed: () => _openTaskDialog(
-                                  context,
-                                  uid,
-                                  task.listId,
-                                  task: task,
-                                ),
-                              ),
-                              IconButton(
                                 key: Key('deleteTaskButton_${task.taskId}'),
                                 icon: const Icon(
                                   Icons.delete_outline,

@@ -417,17 +417,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                if (uid != null)
-                                  IconButton(
-                                    key: Key('editTaskButton_${task.taskId}'),
-                                    icon: const Icon(
-                                      Icons.edit_outlined,
-                                      size: 20,
-                                    ),
-                                    tooltip: 'Edit',
-                                    onPressed: () =>
-                                        _showEditDialog(context, uid, task),
-                                  ),
                                 IconButton(
                                   key: Key('deleteTaskButton_${task.taskId}'),
                                   icon: const Icon(
