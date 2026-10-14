@@ -18,6 +18,7 @@ import '../providers/task_sort_providers.dart';
 import '../providers/task_tag_filter_providers.dart';
 import 'widgets/empty_state_view.dart';
 import 'widgets/task_priority_filter_selector.dart';
+import 'widgets/task_priority_marker.dart';
 import 'widgets/task_row_tag_chips.dart';
 import 'widgets/task_sort_selector.dart';
 import 'widgets/task_tag_filter_selector.dart';
@@ -237,15 +238,28 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                               .toggle(task.taskId)
                         : () =>
                               _showTaskDialog(context, uid, listId, task: task),
-                    title: Text(
-                      task.title,
-                      key: Key('taskTitle_${task.taskId}'),
-                      style: TextStyle(
-                        decoration: task.isCompleted
-                            ? TextDecoration.lineThrough
-                            : null,
-                        color: task.isCompleted ? Colors.grey : null,
-                      ),
+                    title: Row(
+                      children: [
+                        if (task.priority != 'none') ...[
+                          TaskPriorityMarker(
+                            priority: task.priority,
+                            taskId: task.taskId,
+                          ),
+                          const SizedBox(width: 6),
+                        ],
+                        Expanded(
+                          child: Text(
+                            task.title,
+                            key: Key('taskTitle_${task.taskId}'),
+                            style: TextStyle(
+                              decoration: task.isCompleted
+                                  ? TextDecoration.lineThrough
+                                  : null,
+                              color: task.isCompleted ? Colors.grey : null,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                     subtitle:
                         (task.notes.isNotEmpty ||

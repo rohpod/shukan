@@ -622,6 +622,79 @@ void main() {
         );
       },
     );
+
+    testWidgets(
+      'renders priority markers for none, low, medium, and high on search results',
+      (tester) async {
+        // Seed an extra low-priority task
+        await fakeFirestore.collection('tasks').doc('t-search-low').set({
+          'taskId': 't-search-low',
+          'uid': uid,
+          'listId': 'list-1',
+          'title': 'Low priority call',
+          'notes': 'test note',
+          'url': '',
+          'priority': 'low',
+          'tagIds': <String>[],
+          'dueDate': null,
+          'dueTime': null,
+          'earlyReminderMinutes': 0,
+          'repeatRule': 'none',
+          'repeatCustomConfig': null,
+          'order': 5,
+          'subtasks': <Map<String, dynamic>>[],
+          'createdAt': DateTime(2026, 1, 1, 14, 0),
+          'completedAt': null,
+          'deletedAt': null,
+        });
+
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        // High priority: t-active-2 ('Prepare presentation')
+        expect(
+          find.byKey(const Key('taskPriorityMarker_t-active-2')),
+          findsOneWidget,
+        );
+        expect(find.text('❗❗❗'), findsOneWidget);
+        final highTitle = tester.widget<Text>(
+          find.byKey(const Key('taskTitle_t-active-2')),
+        );
+        expect(highTitle.data, equals('Prepare presentation'));
+
+        // Medium priority: t-completed-1 ('Submit report')
+        expect(
+          find.byKey(const Key('taskPriorityMarker_t-completed-1')),
+          findsOneWidget,
+        );
+        expect(find.text('❕❕'), findsOneWidget);
+        final medTitle = tester.widget<Text>(
+          find.byKey(const Key('taskTitle_t-completed-1')),
+        );
+        expect(medTitle.data, equals('Submit report'));
+
+        // Low priority: t-search-low ('Low priority call')
+        expect(
+          find.byKey(const Key('taskPriorityMarker_t-search-low')),
+          findsOneWidget,
+        );
+        expect(find.text('!'), findsOneWidget);
+        final lowTitle = tester.widget<Text>(
+          find.byKey(const Key('taskTitle_t-search-low')),
+        );
+        expect(lowTitle.data, equals('Low priority call'));
+
+        // None priority: t-active-1 ('Buy groceries')
+        expect(
+          find.byKey(const Key('taskPriorityMarker_t-active-1')),
+          findsNothing,
+        );
+        final noneTitle = tester.widget<Text>(
+          find.byKey(const Key('taskTitle_t-active-1')),
+        );
+        expect(noneTitle.data, equals('Buy groceries'));
+      },
+    );
   });
 }
 

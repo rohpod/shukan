@@ -12,6 +12,7 @@ import '../../tags/providers/tag_providers.dart';
 import '../../tasks/data/task.dart';
 import '../../tasks/presentation/task_list_screen.dart';
 import '../../tasks/presentation/widgets/empty_state_view.dart';
+import '../../tasks/presentation/widgets/task_priority_marker.dart';
 import '../../tasks/providers/task_providers.dart';
 import '../providers/search_providers.dart';
 
@@ -327,15 +328,30 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                                       );
                                 },
                               ),
-                              title: Text(
-                                task.title,
-                                key: Key('taskTitle_${task.taskId}'),
-                                style: TextStyle(
-                                  decoration: task.isCompleted
-                                      ? TextDecoration.lineThrough
-                                      : null,
-                                  color: task.isCompleted ? Colors.grey : null,
-                                ),
+                              title: Row(
+                                children: [
+                                  if (task.priority != 'none') ...[
+                                    TaskPriorityMarker(
+                                      priority: task.priority,
+                                      taskId: task.taskId,
+                                    ),
+                                    const SizedBox(width: 6),
+                                  ],
+                                  Expanded(
+                                    child: Text(
+                                      task.title,
+                                      key: Key('taskTitle_${task.taskId}'),
+                                      style: TextStyle(
+                                        decoration: task.isCompleted
+                                            ? TextDecoration.lineThrough
+                                            : null,
+                                        color: task.isCompleted
+                                            ? Colors.grey
+                                            : null,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                               subtitle:
                                   (task.notes.isNotEmpty || task.url.isNotEmpty)
