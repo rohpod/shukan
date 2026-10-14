@@ -192,6 +192,32 @@ void main() {
       expect(doc.data()!['uid'], equals(uid));
     });
 
+    test(
+      'updateListIcon updates icon only, leaving other fields unchanged',
+      () async {
+        const uid = 'user-123';
+        const listId = 'icon-list';
+        final createdAt = Timestamp.fromDate(DateTime(2026, 1, 1));
+
+        await fakeFirestore.collection('lists').doc(listId).set({
+          'listId': listId,
+          'uid': uid,
+          'name': 'Work List',
+          'isDefault': false,
+          'createdAt': createdAt,
+        });
+
+        await repository.updateListIcon(listId, 'work');
+
+        final doc = await fakeFirestore.collection('lists').doc(listId).get();
+        expect(doc.data()!['icon'], equals('work'));
+        expect(doc.data()!['name'], equals('Work List'));
+        expect(doc.data()!['isDefault'], isFalse);
+        expect(doc.data()!['uid'], equals(uid));
+        expect(doc.data()!['createdAt'], equals(createdAt));
+      },
+    );
+
     test('getActiveTaskCountForList counts active tasks only', () async {
       const uid = 'user-123';
       const listId = 'active-count-list';

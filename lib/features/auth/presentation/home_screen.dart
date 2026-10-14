@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/ui/feedback_snackbar.dart';
 import '../../lists/data/list.dart';
+import '../../lists/domain/list_icons.dart';
 import '../../lists/presentation/list_detail_screen.dart';
+import '../../lists/presentation/list_icon_picker_dialog.dart';
 import '../../lists/providers/list_providers.dart';
 import '../../search/presentation/search_screen.dart';
 import '../../tags/presentation/widgets/tag_chips_section.dart';
@@ -380,11 +382,24 @@ class HomeScreen extends ConsumerWidget {
           MaterialPageRoute<void>(builder: (_) => ListDetailScreen(list: list)),
         );
       },
-      icon: Icon(
-        list.isDefault ? Icons.inbox : Icons.folder_outlined,
-        color: list.isDefault
-            ? theme.colorScheme.primary
-            : theme.colorScheme.onSurfaceVariant,
+      icon: IconButton(
+        key: Key('changeListIconButton_${list.listId}'),
+        tooltip: 'Change icon',
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(),
+        visualDensity: VisualDensity.compact,
+        icon: Icon(
+          resolveListIcon(list),
+          color: list.isDefault
+              ? theme.colorScheme.primary
+              : theme.colorScheme.onSurfaceVariant,
+        ),
+        onPressed: () {
+          showDialog<void>(
+            context: context,
+            builder: (_) => ListIconPickerDialog(list: list),
+          );
+        },
       ),
       tag: list.isDefault
           ? Container(
