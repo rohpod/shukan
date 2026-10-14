@@ -80,7 +80,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Task is now in Today view
-      expect(find.text('Dentist Appointment'), findsOneWidget);
+      expect(find.text('Dentist Appointment today'), findsOneWidget);
 
       // 3. Return to HomeScreen
       await tester.tap(find.byTooltip('Back'));
@@ -93,7 +93,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(SmartViewDetailScreen), findsOneWidget);
-      expect(find.text('Dentist Appointment'), findsOneWidget);
+      expect(find.text('Dentist Appointment today'), findsOneWidget);
 
       // Add Saturday task by seeding and editing date via tap-to-edit
       await fakeFirestore.collection('tasks').doc('concert-task').set({
@@ -133,13 +133,13 @@ void main() {
       await tester.pumpAndSettle();
 
       // Both tasks visible in This Week
-      expect(find.text('Dentist Appointment'), findsOneWidget);
+      expect(find.text('Dentist Appointment today'), findsOneWidget);
       expect(find.text('Saturday Concert'), findsOneWidget);
 
       // 5. Check off Dentist Appointment
       final dentistTaskDoc = await fakeFirestore
           .collection('tasks')
-          .where('title', isEqualTo: 'Dentist Appointment')
+          .where('title', isEqualTo: 'Dentist Appointment today')
           .get();
       final dentistTaskId = dentistTaskDoc.docs.first.id;
 
@@ -147,7 +147,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Dentist appointment is hidden because completed tasks are permanently hidden in smart views
-      expect(find.text('Dentist Appointment'), findsNothing);
+      expect(find.text('Dentist Appointment today'), findsNothing);
       expect(
         find.byKey(const Key('toggleShowCompleted_thisWeek')),
         findsNothing,

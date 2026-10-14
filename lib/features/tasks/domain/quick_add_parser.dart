@@ -1,11 +1,11 @@
 class QuickAddParseResult {
-  final String strippedTitle;
+  final String title;
   final DateTime? dueDate;
   final String? dueTime; // "HH:mm" 24-hour format
   final String? matchedPhrase; // raw substring that was recognized
 
   const QuickAddParseResult({
-    required this.strippedTitle,
+    required this.title,
     this.dueDate,
     this.dueTime,
     this.matchedPhrase,
@@ -13,7 +13,7 @@ class QuickAddParseResult {
 
   @override
   String toString() =>
-      'QuickAddParseResult(title: "$strippedTitle", dueDate: $dueDate, dueTime: $dueTime, matched: "$matchedPhrase")';
+      'QuickAddParseResult(title: "$title", dueDate: $dueDate, dueTime: $dueTime, matched: "$matchedPhrase")';
 }
 
 class _SpanMatch {
@@ -26,7 +26,8 @@ class _SpanMatch {
 
 /// Parses free-form text input to extract natural-language date and time phrases.
 ///
-/// Strips recognized date/time phrases from [input] to produce [QuickAddParseResult.strippedTitle].
+/// Preserves [input] trimmed as [QuickAddParseResult.title] while extracting recognized
+/// date/time phrases into [QuickAddParseResult.dueDate] and [QuickAddParseResult.dueTime].
 /// Supports:
 /// - Relative days: "today", "tomorrow", "tmrw", "yesterday"
 /// - Weekdays: optional "this"/"next" + weekday name/abbreviation (e.g. "mon", "monday", "next friday")
@@ -39,7 +40,7 @@ QuickAddParseResult parseQuickAdd(String input, {DateTime? now}) {
   final today = DateTime(clock.year, clock.month, clock.day);
 
   if (input.trim().isEmpty) {
-    return const QuickAddParseResult(strippedTitle: '');
+    return const QuickAddParseResult(title: '');
   }
 
   DateTime? parsedDate;
@@ -233,25 +234,16 @@ QuickAddParseResult parseQuickAdd(String input, {DateTime? now}) {
   // If nothing was parsed, return unmodified title
   if (parsedDate == null && parsedTime == null) {
     return QuickAddParseResult(
-      strippedTitle: input.trim(),
+      title: input.trim(),
       dueDate: null,
       dueTime: null,
       matchedPhrase: null,
     );
   }
 
-  // Determine spans to remove from title
-  final spansToRemove = <_SpanMatch>[];
-  if (dateSpan != null) spansToRemove.add(dateSpan);
-  if (timeSpan != null) spansToRemove.add(timeSpan);
-
-  // Sort spans in descending order of start position so we can remove them cleanly
-  spansToRemove.sort((a, b) => b.start.compareTo(a.start));
-
-  var stripped = text;
   final matchedTexts = <String>[];
 
-  // Also check if spans overlap or are contiguous
+  // Check if spans overlap or are contiguous
   if (dateSpan != null && timeSpan != null) {
     final first = dateSpan.start < timeSpan.start ? dateSpan : timeSpan;
     final second = dateSpan.start < timeSpan.start ? timeSpan : dateSpan;
@@ -262,29 +254,17 @@ QuickAddParseResult parseQuickAdd(String input, {DateTime? now}) {
       final combinedStart = first.start;
       final combinedEnd = second.end;
       final fullMatched = text.substring(combinedStart, combinedEnd).trim();
-      stripped = text.replaceRange(combinedStart, combinedEnd, ' ');
       matchedTexts.add(fullMatched);
     } else {
-      // Remove separately
-      for (final span in spansToRemove) {
-        stripped = stripped.replaceRange(span.start, span.end, ' ');
-        matchedTexts.add(span.text.trim());
-      }
+      matchedTexts.add(dateSpan.text.trim());
+      matchedTexts.add(timeSpan.text.trim());
       matchedTexts.sort(); // consistent ordering
     }
-  } else {
-    for (final span in spansToRemove) {
-      stripped = stripped.replaceRange(span.start, span.end, ' ');
-      matchedTexts.add(span.text.trim());
-    }
+  } else if (dateSpan != null) {
+    matchedTexts.add(dateSpan.text.trim());
+  } else if (timeSpan != null) {
+    matchedTexts.add(timeSpan.text.trim());
   }
-
-  // Clean up any dangling prepositions (e.g. "by", "on", "at", "due") left at the boundaries
-  stripped = stripped
-      .replaceAll(RegExp(r'\b(?:on|by|due|at)\s*$', caseSensitive: false), '')
-      .replaceAll(RegExp(r'^\s*(?:on|by|due|at)\b', caseSensitive: false), '')
-      .replaceAll(RegExp(r'\s+'), ' ')
-      .trim();
 
   // Combine matched phrases
   String? matchedPhrase;
@@ -293,7 +273,7 @@ QuickAddParseResult parseQuickAdd(String input, {DateTime? now}) {
   }
 
   return QuickAddParseResult(
-    strippedTitle: stripped,
+    title: input.trim(),
     dueDate: parsedDate,
     dueTime: parsedTime,
     matchedPhrase: matchedPhrase,

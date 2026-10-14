@@ -76,7 +76,7 @@ void main() {
     );
 
     testWidgets(
-      'typing + submitting date phrase shows preview chip and stripped title, second submit creates task',
+      'typing + submitting date phrase shows preview chip and preserves title, second submit creates task',
       (tester) async {
         await tester.pumpWidget(createWidgetUnderTest());
         await tester.pumpAndSettle();
@@ -96,8 +96,8 @@ void main() {
         expect(find.byKey(const Key('quickAddDateChip')), findsOneWidget);
         expect(find.text('Tomorrow 5:00 PM'), findsOneWidget);
 
-        // Text field should now contain stripped title
-        expect(find.text('Submit assignment'), findsOneWidget);
+        // Text field should preserve original title
+        expect(find.text('Submit assignment tomorrow 5pm'), findsOneWidget);
 
         // Task should NOT be created in Firestore yet
         final snapshotBefore = await fakeFirestore.collection('tasks').get();
@@ -118,56 +118,57 @@ void main() {
         final snapshotAfter = await fakeFirestore.collection('tasks').get();
         expect(snapshotAfter.docs.length, 1);
         final taskData = snapshotAfter.docs.first.data();
-        expect(taskData['title'], 'Submit assignment');
+        expect(taskData['title'], 'Submit assignment tomorrow 5pm');
         expect(taskData['dueTime'], '17:00');
         expect(taskData['dueDate'], isNotNull);
       },
     );
 
-    testWidgets('dismissing preview chip reverts title and clears date/time', (
-      tester,
-    ) async {
-      await tester.pumpWidget(createWidgetUnderTest());
-      await tester.pumpAndSettle();
+    testWidgets(
+      'dismissing preview chip preserves title and clears date/time',
+      (tester) async {
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
 
-      // Enter task
-      await tester.enterText(
-        find.byKey(const Key('quickAddTextInput')),
-        'Buy milk tmrw 10am',
-      );
-      await tester.pumpAndSettle();
+        // Enter task
+        await tester.enterText(
+          find.byKey(const Key('quickAddTextInput')),
+          'Buy milk tmrw 10am',
+        );
+        await tester.pumpAndSettle();
 
-      // Submit once -> preview chip shows
-      await tester.tap(find.byKey(const Key('quickAddSubmitButton')));
-      await tester.pumpAndSettle();
+        // Submit once -> preview chip shows
+        await tester.tap(find.byKey(const Key('quickAddSubmitButton')));
+        await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('quickAddDateChip')), findsOneWidget);
-      expect(find.text('Buy milk'), findsOneWidget);
+        expect(find.byKey(const Key('quickAddDateChip')), findsOneWidget);
+        expect(find.text('Buy milk tmrw 10am'), findsOneWidget);
 
-      // Tap delete icon on Chip
-      await tester.tap(find.byIcon(Icons.close));
-      await tester.pumpAndSettle();
+        // Tap delete icon on Chip
+        await tester.tap(find.byIcon(Icons.close));
+        await tester.pumpAndSettle();
 
-      // Preview chip should be dismissed
-      expect(find.byKey(const Key('quickAddDateChip')), findsNothing);
+        // Preview chip should be dismissed
+        expect(find.byKey(const Key('quickAddDateChip')), findsNothing);
 
-      // Title should revert to original unstripped input
-      expect(find.text('Buy milk tmrw 10am'), findsOneWidget);
+        // Title should remain unchanged in text field
+        expect(find.text('Buy milk tmrw 10am'), findsOneWidget);
 
-      // Inline hint should show no date detected
-      expect(find.byKey(const Key('quickAddHintText')), findsOneWidget);
+        // Inline hint should show no date detected
+        expect(find.byKey(const Key('quickAddHintText')), findsOneWidget);
 
-      // Submit task -> created with raw title and null due date/time
-      await tester.tap(find.byKey(const Key('quickAddSubmitButton')));
-      await tester.pumpAndSettle();
+        // Submit task -> created with raw title and null due date/time
+        await tester.tap(find.byKey(const Key('quickAddSubmitButton')));
+        await tester.pumpAndSettle();
 
-      final snapshot = await fakeFirestore.collection('tasks').get();
-      expect(snapshot.docs.length, 1);
-      final taskData = snapshot.docs.first.data();
-      expect(taskData['title'], 'Buy milk tmrw 10am');
-      expect(taskData['dueDate'], isNull);
-      expect(taskData['dueTime'], isNull);
-    });
+        final snapshot = await fakeFirestore.collection('tasks').get();
+        expect(snapshot.docs.length, 1);
+        final taskData = snapshot.docs.first.data();
+        expect(taskData['title'], 'Buy milk tmrw 10am');
+        expect(taskData['dueDate'], isNull);
+        expect(taskData['dueTime'], isNull);
+      },
+    );
 
     testWidgets(
       'submitting without date phrase shows inline hint, second submit creates title-only task',
@@ -220,7 +221,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('quickAddDateChip')), findsOneWidget);
-      expect(find.text('Pay utility bill'), findsOneWidget);
+      expect(find.text('Pay utility bill in 2 days'), findsOneWidget);
 
       // Submit 2 via testTextInput (confirm)
       await tester.showKeyboard(find.byKey(const Key('quickAddTextInput')));
@@ -230,7 +231,7 @@ void main() {
       final snapshot = await fakeFirestore.collection('tasks').get();
       expect(snapshot.docs.length, 1);
       final taskData = snapshot.docs.first.data();
-      expect(taskData['title'], 'Pay utility bill');
+      expect(taskData['title'], 'Pay utility bill in 2 days');
       expect(taskData['dueDate'], isNotNull);
     });
 

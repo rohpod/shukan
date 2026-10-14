@@ -30,7 +30,7 @@ class _QuickAddBarState extends ConsumerState<QuickAddBar> {
   late final FocusNode _focusNode;
 
   String? _rawInput;
-  String? _strippedTitle;
+  String? _parsedTitle;
   DateTime? _parsedDueDate;
   String? _parsedDueTime;
 
@@ -54,7 +54,7 @@ class _QuickAddBarState extends ConsumerState<QuickAddBar> {
   void _reset() {
     _controller.clear();
     _rawInput = null;
-    _strippedTitle = null;
+    _parsedTitle = null;
     _parsedDueDate = null;
     _parsedDueTime = null;
     _hasParsed = false;
@@ -83,8 +83,7 @@ class _QuickAddBarState extends ConsumerState<QuickAddBar> {
           _hasParsed = true;
           _parsedDueDate = parseResult.dueDate;
           _parsedDueTime = parseResult.dueTime;
-          _strippedTitle = parseResult.strippedTitle;
-          _controller.text = parseResult.strippedTitle;
+          _parsedTitle = parseResult.title;
         });
       } else {
         // No date phrase recognized
@@ -92,7 +91,7 @@ class _QuickAddBarState extends ConsumerState<QuickAddBar> {
           _hasParsed = true;
           _parsedDueDate = null;
           _parsedDueTime = null;
-          _strippedTitle = currentText;
+          _parsedTitle = currentText;
         });
       }
       return;
@@ -101,8 +100,8 @@ class _QuickAddBarState extends ConsumerState<QuickAddBar> {
     // Phase 2: Second submit confirms and creates the task
     final titleToCreate = _controller.text.trim().isNotEmpty
         ? _controller.text.trim()
-        : (_strippedTitle?.isNotEmpty == true
-              ? _strippedTitle!
+        : (_parsedTitle?.isNotEmpty == true
+              ? _parsedTitle!
               : (_rawInput ?? ''));
 
     if (titleToCreate.isEmpty) return;
@@ -142,9 +141,6 @@ class _QuickAddBarState extends ConsumerState<QuickAddBar> {
     setState(() {
       _parsedDueDate = null;
       _parsedDueTime = null;
-      if (_rawInput != null) {
-        _controller.text = _rawInput!;
-      }
       _hasParsed = true;
     });
   }
