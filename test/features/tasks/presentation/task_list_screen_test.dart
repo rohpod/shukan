@@ -149,7 +149,8 @@ void main() {
         await tester.pumpAndSettle();
 
         // 3. Edit task
-        await tester.tap(find.byKey(Key('editTaskButton_$taskId')));
+        await tester.tap(find.byKey(Key('taskItem_$taskId')));
+        await tester.pump(const Duration(milliseconds: 350));
         await tester.pumpAndSettle();
 
         expect(find.text('Edit Task'), findsOneWidget);
@@ -235,11 +236,8 @@ void main() {
         await tester.pumpAndSettle();
 
         // 1. Open edit dialog
-        expect(
-          find.byKey(const Key('editTaskButton_task-abc')),
-          findsOneWidget,
-        );
-        await tester.tap(find.byKey(const Key('editTaskButton_task-abc')));
+        await tester.tap(find.byKey(const Key('taskItem_task-abc')));
+        await tester.pump(const Duration(milliseconds: 350));
         await tester.pumpAndSettle();
 
         expect(find.text('Edit Task'), findsOneWidget);
@@ -351,9 +349,8 @@ void main() {
         await tester.pumpAndSettle();
 
         // Open edit dialog
-        await tester.tap(
-          find.byKey(const Key('editTaskButton_task-with-date')),
-        );
+        await tester.tap(find.byKey(const Key('taskItem_task-with-date')));
+        await tester.pump(const Duration(milliseconds: 350));
         await tester.pumpAndSettle();
 
         // Tap clear date button
@@ -436,9 +433,8 @@ void main() {
         await tester.pumpAndSettle();
 
         // Open edit dialog
-        await tester.tap(
-          find.byKey(const Key('editTaskButton_task-reminder-test')),
-        );
+        await tester.tap(find.byKey(const Key('taskItem_task-reminder-test')));
+        await tester.pump(const Duration(milliseconds: 350));
         await tester.pumpAndSettle();
 
         // Verify dropdown exists
@@ -569,9 +565,8 @@ void main() {
         await tester.pumpAndSettle();
 
         // Open edit dialog
-        await tester.tap(
-          find.byKey(const Key('editTaskButton_task-reminder-reset')),
-        );
+        await tester.tap(find.byKey(const Key('taskItem_task-reminder-reset')));
+        await tester.pump(const Duration(milliseconds: 350));
         await tester.pumpAndSettle();
 
         // Open dropdown

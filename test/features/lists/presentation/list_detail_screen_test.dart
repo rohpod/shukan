@@ -305,14 +305,10 @@ void main() {
         final moveBtn = tester.widget<IconButton>(
           find.byKey(const Key('moveTaskButton_t1')),
         );
-        final editBtn = tester.widget<IconButton>(
-          find.byKey(const Key('editTaskButton_t1')),
-        );
         final delBtn = tester.widget<IconButton>(
           find.byKey(const Key('deleteTaskButton_t1')),
         );
         expect(moveBtn.onPressed, isNull);
-        expect(editBtn.onPressed, isNull);
         expect(delBtn.onPressed, isNull);
 
         // Verify drag handle is hidden
