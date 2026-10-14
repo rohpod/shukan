@@ -5,15 +5,9 @@ import 'package:timezone/timezone.dart' as tz;
 const int kDefaultDateOnlyHour = 9;
 const int kDefaultDateOnlyMinute = 0;
 
-/// Resolves the local [tz.TZDateTime] representing the exact calendar date and time for a task.
-///
-/// If [dueTime] is omitted or malformed, defaults to 9:00 AM local time.
-tz.TZDateTime? resolveTaskDueDateTime({
-  required DateTime? dueDate,
-  String? dueTime,
-}) {
-  if (dueDate == null) return null;
-
+/// Parses a "HH:mm" time string, returning `(hour, minute)`.
+/// Defaults to (kDefaultDateOnlyHour, kDefaultDateOnlyMinute) (09:00) if missing or malformed.
+(int, int) parseDueTime(String? dueTime) {
   int hour = kDefaultDateOnlyHour;
   int minute = kDefaultDateOnlyMinute;
 
@@ -34,6 +28,20 @@ tz.TZDateTime? resolveTaskDueDateTime({
     }
   }
 
+  return (hour, minute);
+}
+
+/// Resolves the local [tz.TZDateTime] representing the exact calendar date and time for a task.
+///
+/// If [dueTime] is omitted or malformed, defaults to 9:00 AM local time.
+tz.TZDateTime? resolveTaskDueDateTime({
+  required DateTime? dueDate,
+  String? dueTime,
+}) {
+  if (dueDate == null) return null;
+
+  final (hour, minute) = parseDueTime(dueTime);
+
   // Ensure calendar day components are interpreted in local time.
   final localDate = dueDate.toLocal();
   return tz.TZDateTime(
@@ -44,6 +52,22 @@ tz.TZDateTime? resolveTaskDueDateTime({
     hour,
     minute,
   );
+}
+
+/// Resolves a plain local [DateTime] representing the exact calendar date and time for a task.
+///
+/// It does NOT use [tz.local], because the web timezone lookup can fail and leave [tz.local] as UTC.
+/// Defaults to 9:00 AM local time when [dueTime] is missing or malformed.
+DateTime? resolveTaskDueDateTimeLocal({
+  required DateTime? dueDate,
+  String? dueTime,
+}) {
+  if (dueDate == null) return null;
+
+  final (hour, minute) = parseDueTime(dueTime);
+
+  final localDate = dueDate.toLocal();
+  return DateTime(localDate.year, localDate.month, localDate.day, hour, minute);
 }
 
 /// Pure utility that computes the exact [tz.TZDateTime] at which the main task notification should fire.

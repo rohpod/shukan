@@ -1,6 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +9,7 @@ import 'package:timezone/data/latest_all.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 
 import 'core/notifications/notification_service.dart';
+import 'core/notifications/web_reminder_scheduler.dart';
 import 'core/sync/sync_banner.dart';
 import 'features/auth/presentation/auth_gate.dart';
 import 'features/tasks/providers/task_sort_providers.dart';
@@ -24,7 +24,9 @@ void main() async {
     final timezoneInfo = await FlutterTimezone.getLocalTimezone();
     tz.setLocalLocation(tz.getLocation(timezoneInfo.identifier));
   } catch (e) {
-    debugPrint('Failed to resolve device local timezone: $e');
+    debugPrint(
+      'Warning: Failed to resolve device local timezone ($e). Timezone fallback remains UTC.',
+    );
   }
 
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
@@ -37,8 +39,10 @@ void main() async {
 
   final notificationPlugin = FlutterLocalNotificationsPlugin();
   final notificationService = NotificationService(notificationPlugin);
-  if (!kIsWeb) {
+  try {
     await notificationService.initialize();
+  } catch (e) {
+    debugPrint('Failed to initialize notifications service worker: $e');
   }
 
   runApp(
@@ -62,16 +66,19 @@ class ShukanApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'shukan',
+      scaffoldMessengerKey: rootScaffoldMessengerKey,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
       builder: (context, child) {
-        return Column(
-          children: [
-            const SyncBanner(),
-            Expanded(child: child ?? const SizedBox.shrink()),
-          ],
+        return WebReminderHost(
+          child: Column(
+            children: [
+              const SyncBanner(),
+              Expanded(child: child ?? const SizedBox.shrink()),
+            ],
+          ),
         );
       },
       home: const AuthGate(),

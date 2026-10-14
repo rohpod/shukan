@@ -363,5 +363,163 @@ void main() {
 
       verify(() => mockPlugin.cancel(id: earlyId)).called(1);
     });
+
+    group('Web platform behavior', () {
+      late NotificationService webService;
+
+      setUp(() {
+        webService = NotificationService(mockPlugin, isWeb: true);
+      });
+
+      test(
+        'scheduleForTask and cancelForTask make no plugin calls on web',
+        () async {
+          final task = Task(
+            taskId: 'task-web-1',
+            uid: 'user-1',
+            listId: 'list-1',
+            title: 'Web Task',
+            dueDate: DateTime.utc(2026, 12, 1),
+            dueTime: '15:00',
+          );
+
+          await webService.scheduleForTask(task);
+          await webService.cancelForTask('task-web-1');
+
+          verifyNever(
+            () => mockPlugin.zonedSchedule(
+              id: any(named: 'id'),
+              title: any(named: 'title'),
+              body: any(named: 'body'),
+              scheduledDate: any(named: 'scheduledDate'),
+              notificationDetails: any(named: 'notificationDetails'),
+              androidScheduleMode: any(named: 'androidScheduleMode'),
+              payload: any(named: 'payload'),
+            ),
+          );
+          verifyNever(() => mockPlugin.cancel(id: any(named: 'id')));
+        },
+      );
+
+      test('requestWebPermissionIfNeeded returns notWeb and touches nothing when isWeb is false', () async {
+        final nonWebService = NotificationService(mockPlugin, isWeb: false);
+        final result = await nonWebService.requestWebPermissionIfNeeded();
+
+        expect(result, WebPermissionResult.notWeb);
+        expect(nonWebService.webNotificationsGranted, isFalse);
+        verifyNever(
+          () => mockPlugin
+              .resolvePlatformSpecificImplementation<
+                WebFlutterLocalNotificationsPlugin
+              >(),
+        );
+      });
+
+      test('showWebReminder returns false when isWeb is false', () async {
+        final nonWebService = NotificationService(mockPlugin, isWeb: false);
+        final reminder = WebReminder(
+          task: Task(
+            taskId: 'task-w',
+            uid: 'u',
+            listId: 'l',
+            title: 'T',
+            dueDate: DateTime(2026, 1, 1),
+          ),
+          kind: WebReminderKind.due,
+          fireTime: DateTime(2026, 1, 1, 9, 0),
+        );
+
+        final shown = await nonWebService.showWebReminder(reminder);
+        expect(shown, isFalse);
+        verifyNever(
+          () => mockPlugin.show(
+            id: any(named: 'id'),
+            title: any(named: 'title'),
+            body: any(named: 'body'),
+            payload: any(named: 'payload'),
+          ),
+        );
+      });
+
+      test('showWebReminder calls plugin.show with correct due and early parameters', () async {
+        when(
+          () => mockPlugin.show(
+            id: any(named: 'id'),
+            title: any(named: 'title'),
+            body: any(named: 'body'),
+            payload: any(named: 'payload'),
+          ),
+        ).thenAnswer((_) async {});
+
+        final task = Task(
+          taskId: 'task-w',
+          uid: 'u',
+          listId: 'l',
+          title: 'Review PR',
+          notes: 'Notes here',
+          dueDate: DateTime(2026, 1, 1),
+        );
+
+        // Due reminder
+        final dueReminder = WebReminder(
+          task: task,
+          kind: WebReminderKind.due,
+          fireTime: DateTime(2026, 1, 1, 9, 0),
+        );
+        final dueShown = await webService.showWebReminder(dueReminder);
+        expect(dueShown, isTrue);
+        verify(
+          () => mockPlugin.show(
+            id: taskNotificationId(task.taskId),
+            title: 'Review PR',
+            body: 'Notes here',
+            payload: 'task-w',
+          ),
+        ).called(1);
+
+        // Early reminder
+        final earlyReminder = WebReminder(
+          task: task,
+          kind: WebReminderKind.early,
+          fireTime: DateTime(2026, 1, 1, 8, 45),
+        );
+        final earlyShown = await webService.showWebReminder(earlyReminder);
+        expect(earlyShown, isTrue);
+        verify(
+          () => mockPlugin.show(
+            id: taskEarlyReminderNotificationId(task.taskId),
+            title: 'Upcoming: Review PR',
+            body: 'Notes here',
+            payload: 'task-w',
+          ),
+        ).called(1);
+      });
+
+      test('showWebReminder catches StateError and returns false', () async {
+        when(
+          () => mockPlugin.show(
+            id: any(named: 'id'),
+            title: any(named: 'title'),
+            body: any(named: 'body'),
+            payload: any(named: 'payload'),
+          ),
+        ).thenThrow(StateError('No active service worker'));
+
+        final reminder = WebReminder(
+          task: Task(
+            taskId: 'task-err',
+            uid: 'u',
+            listId: 'l',
+            title: 'Error task',
+            dueDate: DateTime(2026, 1, 1),
+          ),
+          kind: WebReminderKind.due,
+          fireTime: DateTime(2026, 1, 1, 9, 0),
+        );
+
+        final shown = await webService.showWebReminder(reminder);
+        expect(shown, isFalse);
+      });
+    });
   });
 }
