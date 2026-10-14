@@ -39,7 +39,8 @@ tags/{tagId}
   uid: string,
   name: string,
   createdAt: timestamp,
-  isDefault: boolean
+  isDefault: boolean,
+  icon: string | null        // key into kListIcons; null falls back to inbox (default) or folder (custom)
 }
 ```
 ---

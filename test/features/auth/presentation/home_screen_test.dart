@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shukan/core/firebase/firebase_providers.dart';
 import 'package:shukan/features/auth/presentation/home_screen.dart';
 import 'package:shukan/features/lists/presentation/list_detail_screen.dart';
+import 'package:shukan/features/lists/presentation/list_icon_picker_dialog.dart';
 import 'package:shukan/features/tags/presentation/widgets/tag_tasks_popup.dart';
 import 'package:shukan/features/tasks/presentation/recently_deleted_screen.dart';
 import 'package:timezone/data/latest_all.dart' as tz_data;
@@ -205,6 +206,67 @@ void main() {
 
       expect(find.text('Primary Inbox'), findsOneWidget);
     });
+
+    testWidgets(
+      'tapping changeListIconButton opens picker, highlights current icon, and selecting new icon updates card icon and Firestore',
+      (tester) async {
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        final cardIconButtonFinder = find.byKey(
+          Key('changeListIconButton_$customListId'),
+        );
+        expect(cardIconButtonFinder, findsOneWidget);
+        expect(
+          find.descendant(
+            of: cardIconButtonFinder,
+            matching: find.byIcon(Icons.folder_outlined),
+          ),
+          findsOneWidget,
+        );
+
+        // Tap change icon button on custom list card
+        await tester.tap(cardIconButtonFinder);
+        await tester.pumpAndSettle();
+
+        // Verify picker dialog is displayed and fallback 'folder' is highlighted
+        expect(find.byType(ListIconPickerDialog), findsOneWidget);
+        expect(
+          find.byKey(const Key('selectedListIconOption_folder')),
+          findsOneWidget,
+        );
+
+        // Tap 'work' icon
+        await tester.tap(find.byKey(const Key('listIconOption_work')));
+        await tester.pumpAndSettle();
+
+        // Dialog should be dismissed
+        expect(find.byType(ListIconPickerDialog), findsNothing);
+
+        // Verify updated in Firestore
+        final doc = await fakeFirestore
+            .collection('lists')
+            .doc(customListId)
+            .get();
+        expect(doc.data()!['icon'], equals('work'));
+
+        // Verify card's icon refreshed via stream to reflect 'work' (Icons.work_outline)
+        expect(
+          find.descendant(
+            of: cardIconButtonFinder,
+            matching: find.byIcon(Icons.work_outline),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: cardIconButtonFinder,
+            matching: find.byIcon(Icons.folder_outlined),
+          ),
+          findsNothing,
+        );
+      },
+    );
 
     testWidgets('tapping a list navigates to ListDetailScreen and back', (
       tester,

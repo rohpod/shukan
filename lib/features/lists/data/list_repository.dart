@@ -67,6 +67,11 @@ class ListRepository {
     await _listsCollection.doc(listId).update({'name': newName.trim()});
   }
 
+  /// Updates a list's icon.
+  Future<void> updateListIcon(String listId, String iconKey) async {
+    await _listsCollection.doc(listId).update({'icon': iconKey});
+  }
+
   /// Returns the number of active (non-soft-deleted) tasks belonging to [listId].
   Future<int> getActiveTaskCountForList({
     required String uid,
