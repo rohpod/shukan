@@ -301,15 +301,11 @@ void main() {
         // Enter selection mode
         await _doubleTapRow(tester, find.byKey(const Key('taskItem_t1')));
 
-        // Verify row buttons disabled
-        final moveBtn = tester.widget<IconButton>(
-          find.byKey(const Key('moveTaskButton_t1')),
+        // Verify kebab menu button disabled
+        final menuBtn = tester.widget<PopupMenuButton>(
+          find.byKey(const Key('taskMenuButton_t1')),
         );
-        final delBtn = tester.widget<IconButton>(
-          find.byKey(const Key('deleteTaskButton_t1')),
-        );
-        expect(moveBtn.onPressed, isNull);
-        expect(delBtn.onPressed, isNull);
+        expect(menuBtn.enabled, isFalse);
 
         // Verify drag handle is hidden
         expect(find.byKey(const Key('taskDragHandle_t1')), findsNothing);

@@ -5,7 +5,9 @@ import '../../../core/notifications/web_reminder_scheduler.dart';
 import '../../../core/ui/feedback_snackbar.dart';
 import '../../../core/ui/tag_format.dart';
 import '../../auth/providers/auth_providers.dart';
+import '../../lists/data/list.dart';
 import '../../lists/providers/list_providers.dart';
+
 import '../../tags/presentation/widgets/tag_chips_section.dart';
 import '../../tags/providers/tag_providers.dart';
 import '../data/task.dart';
@@ -24,6 +26,35 @@ import 'widgets/task_sort_selector.dart';
 import 'widgets/task_tag_filter_selector.dart';
 import 'quick_add_bar.dart';
 
+sealed class _TaskMenuAction {
+  const _TaskMenuAction();
+}
+
+class _AddSubtaskAction extends _TaskMenuAction {
+  const _AddSubtaskAction();
+}
+
+class _EditTaskAction extends _TaskMenuAction {
+  const _EditTaskAction();
+}
+
+class _DeleteTaskAction extends _TaskMenuAction {
+  const _DeleteTaskAction();
+}
+
+class _MoveToListAction extends _TaskMenuAction {
+  final ListModel list;
+  const _MoveToListAction(this.list);
+}
+
+class _CurrentListAction extends _TaskMenuAction {
+  const _CurrentListAction();
+}
+
+class _CreateNewListAction extends _TaskMenuAction {
+  const _CreateNewListAction();
+}
+
 class TaskListScreen extends ConsumerStatefulWidget {
   final String? listId;
 
@@ -35,6 +66,7 @@ class TaskListScreen extends ConsumerStatefulWidget {
 
 class _TaskListScreenState extends ConsumerState<TaskListScreen> {
   final Set<String> _expandedTaskIds = <String>{};
+  String? _focusedSubtaskTaskId;
 
   Future<void> _showTaskDialog(
     BuildContext context,
@@ -49,17 +81,18 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
     );
   }
 
-  Future<void> _showMoveTaskDialog(BuildContext context, Task task) async {
-    final messenger = ScaffoldMessenger.of(context);
+  Future<void> _moveTaskToTargetList(
+    Task task,
+    String targetListId,
+    String targetListName,
+    ScaffoldMessengerState messenger,
+  ) async {
     final taskRepo = ref.read(taskRepositoryProvider);
     final originalListId = task.listId;
 
-    final targetListName = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => _MoveTaskDialog(task: task),
-    );
-
-    if (targetListName != null && context.mounted) {
+    try {
+      await taskRepo.moveTaskToList(task.taskId, targetListId);
+      if (!mounted) return;
       showFeedbackSnackBar(
         messenger,
         'Task moved to "$targetListName"',
@@ -67,6 +100,84 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
         actionKey: const Key('undoMoveTasksButton'),
         onAction: () => taskRepo.moveTaskToList(task.taskId, originalListId),
         actionErrorPrefix: 'Failed to undo move',
+      );
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text('Failed to move task: $e')),
+      );
+    }
+  }
+
+  Future<void> _handleCreateNewListAndMove(
+    BuildContext context,
+    String uid,
+    Task task,
+    ScaffoldMessengerState messenger,
+  ) async {
+    final controller = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    final createdList = await showDialog<ListModel>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Create New List'),
+        content: Form(
+          key: formKey,
+          child: TextFormField(
+            key: const Key('createListNameInput'),
+            controller: controller,
+            autofocus: true,
+            decoration: const InputDecoration(
+              labelText: 'List Name',
+              hintText: 'e.g. Work, Groceries',
+            ),
+            validator: (val) {
+              if (val == null || val.trim().isEmpty) {
+                return 'Please enter a list name.';
+              }
+              return null;
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            key: const Key('cancelCreateListButton'),
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            key: const Key('confirmCreateListButton'),
+            onPressed: () async {
+              if (!formKey.currentState!.validate()) return;
+              final name = controller.text.trim();
+              try {
+                final newList = await ref
+                    .read(listRepositoryProvider)
+                    .createList(uid: uid, name: name);
+                if (dialogContext.mounted) {
+                  Navigator.of(dialogContext).pop(newList);
+                }
+              } catch (e) {
+                if (dialogContext.mounted) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    SnackBar(content: Text('Failed to create list: $e')),
+                  );
+                }
+              }
+            },
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+
+    if (createdList != null && context.mounted) {
+      await _moveTaskToTargetList(
+        task,
+        createdList.listId,
+        createdList.name,
+        messenger,
       );
     }
   }
@@ -184,6 +295,7 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
     required bool isSelectionMode,
     required ScaffoldMessengerState scaffoldMessenger,
     required Set<String> tagFilter,
+    required List<ListModel> userLists,
   }) {
     final isExpanded = _expandedTaskIds.contains(task.taskId);
     final isSelected = selectedTaskIds.contains(task.taskId);
@@ -300,79 +412,221 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (task.subtasks.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 2),
-                        child: Text(
-                          '${task.subtasks.where((s) => s['completed'] == true).length}/${task.subtasks.length}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[600],
-                            fontWeight: FontWeight.w500,
+                    if (task.subtasks.isNotEmpty || isExpanded) ...[
+                      if (task.subtasks.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 2),
+                          child: Text(
+                            '${task.subtasks.where((s) => s['completed'] == true).length}/${task.subtasks.length}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                         ),
+                      IconButton(
+                        key: Key('toggleSubtasksButton_${task.taskId}'),
+                        icon: Icon(
+                          isExpanded ? Icons.expand_less : Icons.expand_more,
+                          size: 20,
+                        ),
+                        tooltip: isExpanded ? 'Hide subtasks' : 'Show subtasks',
+                        onPressed: () {
+                          setState(() {
+                            if (isExpanded) {
+                              _expandedTaskIds.remove(task.taskId);
+                            } else {
+                              _expandedTaskIds.add(task.taskId);
+                            }
+                          });
+                        },
                       ),
-                    IconButton(
-                      key: Key('toggleSubtasksButton_${task.taskId}'),
-                      icon: Icon(
-                        isExpanded ? Icons.expand_less : Icons.expand_more,
-                        size: 20,
-                      ),
-                      tooltip: isExpanded ? 'Hide subtasks' : 'Show subtasks',
-                      onPressed: () {
-                        setState(() {
-                          if (isExpanded) {
-                            _expandedTaskIds.remove(task.taskId);
-                          } else {
-                            _expandedTaskIds.add(task.taskId);
-                          }
-                        });
+                    ],
+                    PopupMenuButton<_TaskMenuAction>(
+                      key: Key('taskMenuButton_${task.taskId}'),
+                      icon: const Icon(Icons.more_vert, size: 20),
+                      tooltip: 'Task actions',
+                      enabled: !isSelectionMode,
+                      onSelected: (action) async {
+                        switch (action) {
+                          case _AddSubtaskAction():
+                            setState(() {
+                              _expandedTaskIds.add(task.taskId);
+                              _focusedSubtaskTaskId = task.taskId;
+                            });
+                            break;
+                          case _EditTaskAction():
+                            await _showTaskDialog(
+                              context,
+                              uid,
+                              listId,
+                              task: task,
+                            );
+                            break;
+                          case _DeleteTaskAction():
+                            final messenger = scaffoldMessenger;
+                            final taskRepo = ref.read(taskRepositoryProvider);
+                            try {
+                              await taskRepo.softDeleteTask(task.taskId);
+                              if (!mounted) return;
+                              showFeedbackSnackBar(
+                                messenger,
+                                'Deleted "${task.title}"',
+                                actionLabel: 'Undo',
+                                actionKey: const Key('undoDeleteTaskButton'),
+                                onAction: () => taskRepo.restoreTask(
+                                  uid: uid,
+                                  taskId: task.taskId,
+                                  defaultListId: listId,
+                                ),
+                                actionErrorPrefix: 'Failed to undo deletion',
+                              );
+                            } catch (e) {
+                              if (!mounted) return;
+                              messenger.showSnackBar(
+                                SnackBar(
+                                  content: Text('Failed to delete task: $e'),
+                                ),
+                              );
+                            }
+                            break;
+                          case _CurrentListAction():
+                            break;
+                          case _MoveToListAction(:final list):
+                            await _moveTaskToTargetList(
+                              task,
+                              list.listId,
+                              list.name,
+                              scaffoldMessenger,
+                            );
+                            break;
+                          case _CreateNewListAction():
+                            await _handleCreateNewListAndMove(
+                              context,
+                              uid,
+                              task,
+                              scaffoldMessenger,
+                            );
+                            break;
+                        }
                       },
-                    ),
-                    IconButton(
-                      key: Key('moveTaskButton_${task.taskId}'),
-                      icon: const Icon(
-                        Icons.drive_file_move_outlined,
-                        size: 20,
-                      ),
-                      tooltip: 'Move to List',
-                      onPressed: isSelectionMode
-                          ? null
-                          : () => _showMoveTaskDialog(context, task),
-                    ),
-                    IconButton(
-                      key: Key('deleteTaskButton_${task.taskId}'),
-                      icon: const Icon(Icons.delete_outline, size: 20),
-                      tooltip: 'Delete',
-                      onPressed: isSelectionMode
-                          ? null
-                          : () async {
-                              final messenger = scaffoldMessenger;
-                              final taskRepo = ref.read(taskRepositoryProvider);
-                              try {
-                                await taskRepo.softDeleteTask(task.taskId);
-                                if (!mounted) return;
-                                showFeedbackSnackBar(
-                                  messenger,
-                                  'Deleted "${task.title}"',
-                                  actionLabel: 'Undo',
-                                  actionKey: const Key('undoDeleteTaskButton'),
-                                  onAction: () => taskRepo.restoreTask(
-                                    uid: uid,
-                                    taskId: task.taskId,
-                                    defaultListId: listId,
+                      itemBuilder: (menuContext) {
+                        final entries = <PopupMenuEntry<_TaskMenuAction>>[];
+
+                        // 1. Standard Actions Group
+                        entries.add(
+                          PopupMenuItem<_TaskMenuAction>(
+                            key: Key('menuActionAddSubtask_${task.taskId}'),
+                            value: const _AddSubtaskAction(),
+                            child: const Row(
+                              children: [
+                                Icon(Icons.add_task, size: 20),
+                                SizedBox(width: 12),
+                                Text('Add subtask'),
+                              ],
+                            ),
+                          ),
+                        );
+                        entries.add(
+                          PopupMenuItem<_TaskMenuAction>(
+                            key: Key('menuActionEditTask_${task.taskId}'),
+                            value: const _EditTaskAction(),
+                            child: const Row(
+                              children: [
+                                Icon(Icons.edit_outlined, size: 20),
+                                SizedBox(width: 12),
+                                Text('Edit task'),
+                              ],
+                            ),
+                          ),
+                        );
+                        entries.add(
+                          PopupMenuItem<_TaskMenuAction>(
+                            key: Key('deleteTaskButton_${task.taskId}'),
+                            value: const _DeleteTaskAction(),
+                            child: const Row(
+                              children: [
+                                Icon(Icons.delete_outline, size: 20),
+                                SizedBox(width: 12),
+                                Text('Delete task'),
+                              ],
+                            ),
+                          ),
+                        );
+
+                        // 2. Divider + "Move to list" Header
+                        entries.add(const PopupMenuDivider());
+                        entries.add(
+                          const PopupMenuItem<_TaskMenuAction>(
+                            enabled: false,
+                            height: 32,
+                            child: Text(
+                              'Move to list',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        );
+
+                        // 3. Inline List Selection (All User Lists)
+                        for (final list in userLists) {
+                          final isCurrent = list.listId == task.listId;
+                          entries.add(
+                            PopupMenuItem<_TaskMenuAction>(
+                              key: Key(
+                                'moveTaskToList_${task.taskId}_${list.listId}',
+                              ),
+                              value: isCurrent
+                                  ? const _CurrentListAction()
+                                  : _MoveToListAction(list),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      list.name,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                                   ),
-                                  actionErrorPrefix: 'Failed to undo deletion',
-                                );
-                              } catch (e) {
-                                if (!mounted) return;
-                                messenger.showSnackBar(
-                                  SnackBar(
-                                    content: Text('Failed to delete task: $e'),
-                                  ),
-                                );
-                              }
-                            },
+                                  if (isCurrent) ...[
+                                    const SizedBox(width: 8),
+                                    Icon(
+                                      Icons.check,
+                                      key: Key(
+                                        'currentListCheck_${task.taskId}_${list.listId}',
+                                      ),
+                                      size: 18,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .primary,
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          );
+                        }
+
+                        // 4. Pinned "Create new list" Option at Bottom
+                        entries.add(const PopupMenuDivider());
+                        entries.add(
+                          PopupMenuItem<_TaskMenuAction>(
+                            key: Key('menuActionCreateNewList_${task.taskId}'),
+                            value: const _CreateNewListAction(),
+                            child: const Row(
+                              children: [
+                                Icon(Icons.add, size: 20),
+                                SizedBox(width: 12),
+                                Text('Create new list'),
+                              ],
+                            ),
+                          ),
+                        );
+
+                        return entries;
+                      },
                     ),
                   ],
                 ),
@@ -409,6 +663,7 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
     required bool isSelectionMode,
     required ScaffoldMessengerState scaffoldMessenger,
     required Set<String> tagFilter,
+    required List<ListModel> userLists,
   }) {
     if (completedTasks.isEmpty) {
       return const SizedBox.shrink();
@@ -485,6 +740,7 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
               isSelectionMode: isSelectionMode,
               scaffoldMessenger: scaffoldMessenger,
               tagFilter: tagFilter,
+              userLists: userLists,
             ),
           ),
       ],
@@ -505,6 +761,8 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
     final activeRawTasks = rawTasks.where((t) => !t.isCompleted).toList();
     final unfilteredActiveCount = activeRawTasks.length;
     final completedTasks = completedTasksAsync.value ?? const <Task>[];
+    final userLists =
+        ref.watch(listsForUserProvider).value ?? const <ListModel>[];
     final listTagEntries =
         ref.watch(tagBrowserEntriesForListProvider(listId)).value ??
         const <TagBrowserEntry>[];
@@ -576,6 +834,7 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                   isSelectionMode: isSelectionMode,
                   scaffoldMessenger: scaffoldMessenger,
                   tagFilter: tagFilter,
+                  userLists: userLists,
                 );
 
                 if (activeTasks.isEmpty) {
@@ -721,6 +980,7 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                       isSelectionMode: isSelectionMode,
                       scaffoldMessenger: scaffoldMessenger,
                       tagFilter: tagFilter,
+                      userLists: userLists,
                     );
                   },
                   footer: completedSectionWidget,
@@ -856,7 +1116,10 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
               },
             ),
           const SizedBox(height: 6),
-          _AddSubtaskInputRow(taskId: task.taskId),
+          _AddSubtaskInputRow(
+            taskId: task.taskId,
+            autofocus: _focusedSubtaskTaskId == task.taskId,
+          ),
         ],
       ),
     );
@@ -865,8 +1128,12 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
 
 class _AddSubtaskInputRow extends ConsumerStatefulWidget {
   final String taskId;
+  final bool autofocus;
 
-  const _AddSubtaskInputRow({required this.taskId});
+  const _AddSubtaskInputRow({
+    required this.taskId,
+    this.autofocus = false,
+  });
 
   @override
   ConsumerState<_AddSubtaskInputRow> createState() =>
@@ -922,6 +1189,7 @@ class _AddSubtaskInputRowState extends ConsumerState<_AddSubtaskInputRow> {
           child: TextField(
             key: Key('addSubtaskInput_${widget.taskId}'),
             controller: _controller,
+            autofocus: widget.autofocus,
             style: const TextStyle(fontSize: 13),
             decoration: const InputDecoration(
               hintText: 'Add subtask...',
@@ -1396,88 +1664,6 @@ class _TaskDialogState extends ConsumerState<TaskDialog> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : Text(isEditing ? 'Save' : 'Create'),
-        ),
-      ],
-    );
-  }
-}
-
-class _MoveTaskDialog extends ConsumerWidget {
-  final Task task;
-
-  const _MoveTaskDialog({required this.task});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final listsAsync = ref.watch(listsForUserProvider);
-
-    return AlertDialog(
-      title: const Text('Move Task to List'),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: listsAsync.when(
-          data: (lists) {
-            final targetLists = lists
-                .where((l) => l.listId != task.listId)
-                .toList();
-
-            if (targetLists.isEmpty) {
-              return const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16),
-                child: Text(
-                  'No other lists available',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.grey),
-                ),
-              );
-            }
-
-            return ListView.separated(
-              shrinkWrap: true,
-              itemCount: targetLists.length,
-              separatorBuilder: (context, index) => const Divider(height: 1),
-              itemBuilder: (context, index) {
-                final list = targetLists[index];
-                return ListTile(
-                  key: Key('moveToListOption_${list.listId}'),
-                  title: Text(list.name),
-                  onTap: () async {
-                    final navigator = Navigator.of(context);
-                    final messenger = ScaffoldMessenger.of(context);
-                    try {
-                      await ref
-                          .read(taskRepositoryProvider)
-                          .moveTaskToList(task.taskId, list.listId);
-                      if (context.mounted) {
-                        navigator.pop(list.name);
-                      }
-                    } catch (e) {
-                      if (context.mounted) {
-                        navigator.pop();
-                      }
-                      messenger.showSnackBar(
-                        SnackBar(content: Text('Failed to move task: $e')),
-                      );
-                    }
-                  },
-                );
-              },
-            );
-          },
-          loading: () => const Center(
-            child: Padding(
-              padding: EdgeInsets.all(16),
-              child: CircularProgressIndicator(),
-            ),
-          ),
-          error: (e, _) => Center(child: Text('Error loading lists: $e')),
-        ),
-      ),
-      actions: [
-        TextButton(
-          key: const Key('cancelMoveTaskButton'),
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
         ),
       ],
     );

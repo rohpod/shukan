@@ -173,6 +173,8 @@ void main() {
         expect(doc.data()!['notes'], equals('Barista edition'));
 
         // 4. Soft delete task
+        await tester.tap(find.byKey(Key('taskMenuButton_$taskId')));
+        await tester.pumpAndSettle();
         await tester.tap(find.byKey(Key('deleteTaskButton_$taskId')));
         await tester.pumpAndSettle();
 
@@ -927,24 +929,31 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // 1. Verify task item and move button are present
-        final moveButtonFinder = find.byKey(
-          const Key('moveTaskButton_task-move-1'),
+        // 1. Verify task item and menu button are present
+        final menuButtonFinder = find.byKey(
+          const Key('taskMenuButton_task-move-1'),
         );
-        expect(moveButtonFinder, findsOneWidget);
+        expect(menuButtonFinder, findsOneWidget);
 
-        // 2. Tap the move button to open the list picker dialog
-        await tester.tap(moveButtonFinder);
+        // 2. Tap the menu button to open the kebab menu
+        await tester.tap(menuButtonFinder);
         await tester.pumpAndSettle();
 
-        expect(find.text('Move Task to List'), findsOneWidget);
+        expect(find.text('Move to list'), findsOneWidget);
 
-        // Current list (Inbox) should be excluded
-        expect(find.byKey(const Key('moveToListOption_$listId')), findsNothing);
+        // Current list (Inbox) should be visible with checkmark
+        expect(
+          find.byKey(const Key('moveTaskToList_task-move-1_$listId')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('currentListCheck_task-move-1_$listId')),
+          findsOneWidget,
+        );
 
         // Target list (Work Projects) should be visible
         final targetListOption = find.byKey(
-          const Key('moveToListOption_$targetListId'),
+          const Key('moveTaskToList_task-move-1_$targetListId'),
         );
         expect(targetListOption, findsOneWidget);
         expect(find.text('Work Projects'), findsOneWidget);
@@ -998,12 +1007,14 @@ void main() {
       await tester.pumpWidget(createWidgetUnderTest(customListId: listId));
       await tester.pumpAndSettle();
 
-      // Tap move button
-      await tester.tap(find.byKey(const Key('moveTaskButton_$taskId')));
+      // Tap menu button
+      await tester.tap(find.byKey(const Key('taskMenuButton_$taskId')));
       await tester.pumpAndSettle();
 
       // Tap target list option
-      await tester.tap(find.byKey(const Key('moveToListOption_$targetListId')));
+      await tester.tap(
+        find.byKey(const Key('moveTaskToList_${taskId}_$targetListId')),
+      );
       await tester.pumpAndSettle();
 
       // Verify SnackBar with Undo action
@@ -1050,7 +1061,9 @@ void main() {
         expect(find.text('Task to undo'), findsOneWidget);
 
         // Tap delete
-        await tester.tap(find.byKey(const Key('deleteTaskButton_$taskId')));
+        await tester.tap(find.byKey(Key('taskMenuButton_$taskId')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(Key('deleteTaskButton_$taskId')));
         await tester.pumpAndSettle();
 
         // Task removed from view, SnackBar shown
@@ -1100,7 +1113,9 @@ void main() {
       expect(find.text('Task to timeout'), findsOneWidget);
 
       // Tap delete
-      await tester.tap(find.byKey(const Key('deleteTaskButton_$taskId')));
+      await tester.tap(find.byKey(Key('taskMenuButton_$taskId')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(Key('deleteTaskButton_$taskId')));
       await tester.pumpAndSettle();
 
       // Verify SnackBar is shown
@@ -1146,7 +1161,9 @@ void main() {
         expect(find.text('Task to swipe'), findsOneWidget);
 
         // Tap delete
-        await tester.tap(find.byKey(const Key('deleteTaskButton_$taskId')));
+        await tester.tap(find.byKey(Key('taskMenuButton_$taskId')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(Key('deleteTaskButton_$taskId')));
         await tester.pumpAndSettle();
 
         // SnackBar shown
@@ -1212,7 +1229,9 @@ void main() {
         expect(find.text('Task unmounted'), findsOneWidget);
 
         // Tap delete
-        await tester.tap(find.byKey(const Key('deleteTaskButton_$taskId')));
+        await tester.tap(find.byKey(Key('taskMenuButton_$taskId')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(Key('deleteTaskButton_$taskId')));
         await tester.pump(); // Starts softDeleteTask, awaiting completer
 
         // Simulate live Firestore stream updating and rebuilding list while softDeleteTask is awaiting
@@ -1616,6 +1635,396 @@ void main() {
           find.byKey(const Key('taskTitle_t-p-none')),
         );
         expect(noneTitle.data, equals('None Priority Task'));
+      },
+    );
+  });
+
+  group('Issue #53: Task Kebab Menu & Inline List Selection', () {
+    testWidgets(
+      'kebab menu displays Add subtask, Edit task, Delete task, inline list options with checkmark, and Create new list',
+      (tester) async {
+        const taskId = 'task-menu-test-1';
+        const otherListId = 'other-list-menu-1';
+
+        await fakeFirestore.collection('lists').doc(otherListId).set({
+          'listId': otherListId,
+          'uid': uid,
+          'name': 'Other List',
+          'isDefault': false,
+          'createdAt': Timestamp.now(),
+        });
+
+        await fakeFirestore.collection('tasks').doc(taskId).set({
+          'taskId': taskId,
+          'uid': uid,
+          'listId': listId,
+          'title': 'Kebab Menu Task',
+          'notes': '',
+          'url': '',
+          'priority': 'none',
+          'tagIds': <String>[],
+          'dueDate': null,
+          'dueTime': null,
+          'earlyReminderMinutes': 0,
+          'repeatRule': 'none',
+          'repeatCustomConfig': null,
+          'order': 0,
+          'subtasks': <Map<String, dynamic>>[],
+          'createdAt': Timestamp.now(),
+          'completedAt': null,
+          'deletedAt': null,
+        });
+
+        await tester.pumpWidget(createWidgetUnderTest(customListId: listId));
+        await tester.pumpAndSettle();
+
+        // Subtask chevron should not be rendered when 0 subtasks and not expanded
+        expect(
+          find.byKey(const Key('toggleSubtasksButton_$taskId')),
+          findsNothing,
+        );
+
+        // Kebab menu button is present
+        final menuBtn = find.byKey(const Key('taskMenuButton_$taskId'));
+        expect(menuBtn, findsOneWidget);
+
+        // Tap kebab menu button to open menu
+        await tester.tap(menuBtn);
+        await tester.pumpAndSettle();
+
+        // 1. Grouped actions at the top
+        expect(
+          find.byKey(const Key('menuActionAddSubtask_$taskId')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('menuActionEditTask_$taskId')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('deleteTaskButton_$taskId')),
+          findsOneWidget,
+        );
+
+        // 2. Move to list header
+        expect(find.text('Move to list'), findsOneWidget);
+
+        // 3. Inline list options
+        expect(
+          find.byKey(const Key('moveTaskToList_${taskId}_$listId')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('moveTaskToList_${taskId}_$otherListId')),
+          findsOneWidget,
+        );
+
+        // 4. Current list indicator (checkmark)
+        expect(
+          find.byKey(const Key('currentListCheck_${taskId}_$listId')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('currentListCheck_${taskId}_$otherListId')),
+          findsNothing,
+        );
+
+        // 5. Pinned Create new list option
+        expect(
+          find.byKey(const Key('menuActionCreateNewList_$taskId')),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'current list displays checkmark, and tapping it simply closes menu without writing or showing snackbar',
+      (tester) async {
+        const taskId = 'task-current-list-test';
+        await fakeFirestore.collection('tasks').doc(taskId).set({
+          'taskId': taskId,
+          'uid': uid,
+          'listId': listId,
+          'title': 'Current List Check Task',
+          'notes': '',
+          'url': '',
+          'priority': 'none',
+          'tagIds': <String>[],
+          'dueDate': null,
+          'dueTime': null,
+          'earlyReminderMinutes': 0,
+          'repeatRule': 'none',
+          'repeatCustomConfig': null,
+          'order': 0,
+          'subtasks': <Map<String, dynamic>>[],
+          'createdAt': Timestamp.now(),
+          'completedAt': null,
+          'deletedAt': null,
+        });
+
+        await tester.pumpWidget(createWidgetUnderTest(customListId: listId));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('taskMenuButton_$taskId')));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('currentListCheck_${taskId}_$listId')),
+          findsOneWidget,
+        );
+
+        // Tap current list option
+        await tester.tap(
+          find.byKey(const Key('moveTaskToList_${taskId}_$listId')),
+        );
+        await tester.pumpAndSettle();
+
+        // Menu is dismissed
+        expect(
+          find.byKey(const Key('moveTaskToList_${taskId}_$listId')),
+          findsNothing,
+        );
+
+        // No snackbar shown
+        expect(find.byType(SnackBar), findsNothing);
+
+        // Task remains in original list
+        final doc = await fakeFirestore.collection('tasks').doc(taskId).get();
+        expect(doc.data()!['listId'], equals(listId));
+      },
+    );
+
+    testWidgets(
+      'selecting another list inline moves task immediately without a dialog and shows Undo snackbar',
+      (tester) async {
+        const taskId = 'task-move-inline-test';
+        const targetListId = 'target-inline-list-id';
+
+        await fakeFirestore.collection('lists').doc(targetListId).set({
+          'listId': targetListId,
+          'uid': uid,
+          'name': 'Personal Projects',
+          'isDefault': false,
+          'createdAt': Timestamp.now(),
+        });
+
+        await fakeFirestore.collection('tasks').doc(taskId).set({
+          'taskId': taskId,
+          'uid': uid,
+          'listId': listId,
+          'title': 'Task to move inline',
+          'notes': '',
+          'url': '',
+          'priority': 'none',
+          'tagIds': <String>[],
+          'dueDate': null,
+          'dueTime': null,
+          'earlyReminderMinutes': 0,
+          'repeatRule': 'none',
+          'repeatCustomConfig': null,
+          'order': 0,
+          'subtasks': <Map<String, dynamic>>[],
+          'createdAt': Timestamp.now(),
+          'completedAt': null,
+          'deletedAt': null,
+        });
+
+        await tester.pumpWidget(createWidgetUnderTest(customListId: listId));
+        await tester.pumpAndSettle();
+
+        // Open menu
+        await tester.tap(find.byKey(const Key('taskMenuButton_$taskId')));
+        await tester.pumpAndSettle();
+
+        // No AlertDialog opened
+        expect(find.byType(AlertDialog), findsNothing);
+
+        // Tap target list
+        await tester.tap(
+          find.byKey(const Key('moveTaskToList_${taskId}_$targetListId')),
+        );
+        await tester.pumpAndSettle();
+
+        // Task moved to target list
+        expect(find.text('Task moved to "Personal Projects"'), findsOneWidget);
+        expect(find.byKey(const Key('undoMoveTasksButton')), findsOneWidget);
+
+        final doc = await fakeFirestore.collection('tasks').doc(taskId).get();
+        expect(doc.data()!['listId'], equals(targetListId));
+      },
+    );
+
+    testWidgets(
+      'selecting Add subtask expands subtask section and reveals addSubtaskInput',
+      (tester) async {
+        const taskId = 'task-add-sub-test';
+        await fakeFirestore.collection('tasks').doc(taskId).set({
+          'taskId': taskId,
+          'uid': uid,
+          'listId': listId,
+          'title': 'Task with no subtasks yet',
+          'notes': '',
+          'url': '',
+          'priority': 'none',
+          'tagIds': <String>[],
+          'dueDate': null,
+          'dueTime': null,
+          'earlyReminderMinutes': 0,
+          'repeatRule': 'none',
+          'repeatCustomConfig': null,
+          'order': 0,
+          'subtasks': <Map<String, dynamic>>[],
+          'createdAt': Timestamp.now(),
+          'completedAt': null,
+          'deletedAt': null,
+        });
+
+        await tester.pumpWidget(createWidgetUnderTest(customListId: listId));
+        await tester.pumpAndSettle();
+
+        // Initially collapsed, subtask input hidden, toggle button hidden
+        expect(
+          find.byKey(const Key('addSubtaskInput_$taskId')),
+          findsNothing,
+        );
+        expect(
+          find.byKey(const Key('toggleSubtasksButton_$taskId')),
+          findsNothing,
+        );
+
+        // Open menu
+        await tester.tap(find.byKey(const Key('taskMenuButton_$taskId')));
+        await tester.pumpAndSettle();
+
+        // Tap Add subtask
+        await tester.tap(find.byKey(const Key('menuActionAddSubtask_$taskId')));
+        await tester.pumpAndSettle();
+
+        // Subtask section is now expanded, showing input and chevron
+        expect(
+          find.byKey(const Key('addSubtaskInput_$taskId')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('toggleSubtasksButton_$taskId')),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets('selecting Edit task opens the edit task dialog', (
+      tester,
+    ) async {
+      const taskId = 'task-edit-dialog-test';
+      await fakeFirestore.collection('tasks').doc(taskId).set({
+        'taskId': taskId,
+        'uid': uid,
+        'listId': listId,
+        'title': 'Task to edit via menu',
+        'notes': '',
+        'url': '',
+        'priority': 'none',
+        'tagIds': <String>[],
+        'dueDate': null,
+        'dueTime': null,
+        'earlyReminderMinutes': 0,
+        'repeatRule': 'none',
+        'repeatCustomConfig': null,
+        'order': 0,
+        'subtasks': <Map<String, dynamic>>[],
+        'createdAt': Timestamp.now(),
+        'completedAt': null,
+        'deletedAt': null,
+      });
+
+      await tester.pumpWidget(createWidgetUnderTest(customListId: listId));
+      await tester.pumpAndSettle();
+
+      // Open menu
+      await tester.tap(find.byKey(const Key('taskMenuButton_$taskId')));
+      await tester.pumpAndSettle();
+
+      // Tap Edit task
+      await tester.tap(find.byKey(const Key('menuActionEditTask_$taskId')));
+      await tester.pumpAndSettle();
+
+      // Edit Task dialog is opened
+      expect(find.text('Edit Task'), findsOneWidget);
+      expect(find.byKey(const Key('saveTaskButton')), findsOneWidget);
+
+      // Cancel dialog
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(find.text('Edit Task'), findsNothing);
+    });
+
+    testWidgets(
+      'selecting Create new list creates the new list and moves the task into it',
+      (tester) async {
+        const taskId = 'task-create-list-move-test';
+        await fakeFirestore.collection('tasks').doc(taskId).set({
+          'taskId': taskId,
+          'uid': uid,
+          'listId': listId,
+          'title': 'Task to move to newly created list',
+          'notes': '',
+          'url': '',
+          'priority': 'none',
+          'tagIds': <String>[],
+          'dueDate': null,
+          'dueTime': null,
+          'earlyReminderMinutes': 0,
+          'repeatRule': 'none',
+          'repeatCustomConfig': null,
+          'order': 0,
+          'subtasks': <Map<String, dynamic>>[],
+          'createdAt': Timestamp.now(),
+          'completedAt': null,
+          'deletedAt': null,
+        });
+
+        await tester.pumpWidget(createWidgetUnderTest(customListId: listId));
+        await tester.pumpAndSettle();
+
+        // Open menu
+        await tester.tap(find.byKey(const Key('taskMenuButton_$taskId')));
+        await tester.pumpAndSettle();
+
+        // Tap Create new list option
+        await tester.tap(
+          find.byKey(const Key('menuActionCreateNewList_$taskId')),
+        );
+        await tester.pumpAndSettle();
+
+        // Create New List dialog is opened
+        expect(find.text('Create New List'), findsOneWidget);
+        expect(find.byKey(const Key('createListNameInput')), findsOneWidget);
+
+        // Enter new list name
+        await tester.enterText(
+          find.byKey(const Key('createListNameInput')),
+          'Urgent Tasks',
+        );
+        await tester.tap(find.byKey(const Key('confirmCreateListButton')));
+        await tester.pumpAndSettle();
+
+        // Confirmation SnackBar is shown
+        expect(find.text('Task moved to "Urgent Tasks"'), findsOneWidget);
+        expect(find.byKey(const Key('undoMoveTasksButton')), findsOneWidget);
+
+        // Verify new list was created in Firestore
+        final listsSnapshot = await fakeFirestore
+            .collection('lists')
+            .where('uid', isEqualTo: uid)
+            .where('name', isEqualTo: 'Urgent Tasks')
+            .get();
+        expect(listsSnapshot.docs.length, equals(1));
+        final createdListId = listsSnapshot.docs.first.id;
+
+        // Verify task was moved to the newly created list in Firestore
+        final taskDoc =
+            await fakeFirestore.collection('tasks').doc(taskId).get();
+        expect(taskDoc.data()!['listId'], equals(createdListId));
       },
     );
   });
