@@ -163,7 +163,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final allTasksAsync = ref.watch(allTasksForCurrentUserProvider);
     final tagsAsync = ref.watch(tagsForCurrentUserProvider);
     final query = ref.watch(searchQueryProvider).toLowerCase();
-    final completionFilter = ref.watch(searchCompletionFilterProvider);
     final trimmedQuery = _searchController.text.trim();
     final isActionEnabled =
         effectiveList != null && !_isCreatingTask && uid != null;
@@ -198,53 +197,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       ),
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Row(
-              children: [
-                FilterChip(
-                  key: const Key('filterChip_all'),
-                  label: const Text('All'),
-                  selected: completionFilter == SearchCompletionFilter.all,
-                  onSelected: (selected) {
-                    if (selected) {
-                      ref
-                          .read(searchCompletionFilterProvider.notifier)
-                          .setFilter(SearchCompletionFilter.all);
-                    }
-                  },
-                ),
-                const SizedBox(width: 8),
-                FilterChip(
-                  key: const Key('filterChip_active'),
-                  label: const Text('Active'),
-                  selected: completionFilter == SearchCompletionFilter.active,
-                  onSelected: (selected) {
-                    if (selected) {
-                      ref
-                          .read(searchCompletionFilterProvider.notifier)
-                          .setFilter(SearchCompletionFilter.active);
-                    }
-                  },
-                ),
-                const SizedBox(width: 8),
-                FilterChip(
-                  key: const Key('filterChip_completed'),
-                  label: const Text('Completed'),
-                  selected:
-                      completionFilter == SearchCompletionFilter.completed,
-                  onSelected: (selected) {
-                    if (selected) {
-                      ref
-                          .read(searchCompletionFilterProvider.notifier)
-                          .setFilter(SearchCompletionFilter.completed);
-                    }
-                  },
-                ),
-              ],
-            ),
-          ),
-          const Divider(height: 1),
           if (trimmedQuery.isNotEmpty) ...[
             ListTile(
               key: const Key('searchAddTaskAction'),
@@ -283,21 +235,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                         },
                       );
 
-                      // Filter tasks by completion state and search query
+                      // Filter tasks by search query
                       final matchingTasks = allTasks.where((task) {
-                        // a) Completion filter
-                        switch (completionFilter) {
-                          case SearchCompletionFilter.all:
-                            break;
-                          case SearchCompletionFilter.active:
-                            if (task.isCompleted) return false;
-                            break;
-                          case SearchCompletionFilter.completed:
-                            if (!task.isCompleted) return false;
-                            break;
-                        }
-
-                        // b) Search query match
                         if (query.isNotEmpty) {
                           final titleMatches = task.title
                               .toLowerCase()
@@ -339,9 +278,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                             _searchController.clear();
                             _debounceTimer?.cancel();
                             ref.read(searchQueryProvider.notifier).setQuery('');
-                            ref
-                                .read(searchCompletionFilterProvider.notifier)
-                                .setFilter(SearchCompletionFilter.active);
                             setState(() {});
                           },
                         );

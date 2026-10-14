@@ -140,21 +140,20 @@ void main() {
   }
 
   group('SearchScreen Widget & Filter Tests', () {
-    testWidgets(
-      'empty query defaults to Active filter (hiding completed tasks)',
-      (tester) async {
-        await tester.pumpWidget(createWidgetUnderTest());
-        await tester.pumpAndSettle();
+    testWidgets('empty query shows all tasks regardless of completion status', (
+      tester,
+    ) async {
+      await tester.pumpWidget(createWidgetUnderTest());
+      await tester.pumpAndSettle();
 
-        // "Active" chip is selected by default
-        expect(find.text('Buy groceries'), findsOneWidget);
-        expect(find.text('Prepare presentation'), findsOneWidget);
-        // Completed task is hidden
-        expect(find.text('Submit report'), findsNothing);
-        // Deleted task is hidden
-        expect(find.text('Deleted task with groceries'), findsNothing);
-      },
-    );
+      // Active tasks show up
+      expect(find.text('Buy groceries'), findsOneWidget);
+      expect(find.text('Prepare presentation'), findsOneWidget);
+      // Completed task also shows up
+      expect(find.text('Submit report'), findsOneWidget);
+      // Deleted task is hidden
+      expect(find.text('Deleted task with groceries'), findsNothing);
+    });
 
     testWidgets('matching by title with case-insensitivity', (tester) async {
       await tester.pumpWidget(createWidgetUnderTest());
@@ -205,36 +204,6 @@ void main() {
       expect(find.text('Prepare presentation'), findsNothing);
     });
 
-    testWidgets('completion filter: All, Completed, Active', (tester) async {
-      await tester.pumpWidget(createWidgetUnderTest());
-      await tester.pumpAndSettle();
-
-      // 1. Switch to 'All'
-      await tester.tap(find.byKey(const Key('filterChip_all')));
-      await tester.pumpAndSettle();
-
-      // All 3 non-deleted tasks show up
-      expect(find.text('Buy groceries'), findsOneWidget);
-      expect(find.text('Prepare presentation'), findsOneWidget);
-      expect(find.text('Submit report'), findsOneWidget);
-
-      // 2. Switch to 'Completed'
-      await tester.tap(find.byKey(const Key('filterChip_completed')));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Submit report'), findsOneWidget);
-      expect(find.text('Buy groceries'), findsNothing);
-      expect(find.text('Prepare presentation'), findsNothing);
-
-      // 3. Switch back to 'Active'
-      await tester.tap(find.byKey(const Key('filterChip_active')));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Buy groceries'), findsOneWidget);
-      expect(find.text('Prepare presentation'), findsOneWidget);
-      expect(find.text('Submit report'), findsNothing);
-    });
-
     testWidgets('shows empty results placeholder when no tasks match', (
       tester,
     ) async {
@@ -267,8 +236,13 @@ void main() {
         await tester.tap(checkboxFinder);
         await tester.pumpAndSettle();
 
-        // In Active filter, completing it causes it to disappear from the active view
-        expect(find.text('Buy groceries'), findsNothing);
+        // Task remains visible with completed styling (strikethrough, grey)
+        expect(find.text('Buy groceries'), findsOneWidget);
+        final titleText = tester.widget<Text>(
+          find.byKey(const Key('taskTitle_t-active-1')),
+        );
+        expect(titleText.style?.decoration, TextDecoration.lineThrough);
+        expect(titleText.style?.color, Colors.grey);
 
         // In Firestore, completedAt should now be populated
         final doc = await fakeFirestore
@@ -299,9 +273,10 @@ void main() {
       await tester.tap(find.byKey(const Key('clearSearchQueryButton')));
       await tester.pumpAndSettle();
 
-      // All active tasks reappear
+      // All tasks reappear
       expect(find.text('Buy groceries'), findsOneWidget);
       expect(find.text('Prepare presentation'), findsOneWidget);
+      expect(find.text('Submit report'), findsOneWidget);
     });
 
     testWidgets(
