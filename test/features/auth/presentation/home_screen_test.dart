@@ -249,6 +249,119 @@ void main() {
       expect(find.byType(HomeScreen), findsOneWidget);
     });
 
+    testWidgets(
+      'search dialog is full-screen below 600 width and a constrained modal at or above 600 width',
+      (tester) async {
+        // Below 600 width (e.g. mobile 450x800)
+        tester.view.physicalSize = const Size(450, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('searchButton')));
+        await tester.pumpAndSettle();
+
+        // Below 600: Dialog is fullscreen (zero inset padding, full screen dimensions, no ConstrainedBox wrapper)
+        final smallDialog = tester.widget<Dialog>(find.byType(Dialog));
+        expect(smallDialog.insetPadding, EdgeInsets.zero);
+        expect(tester.getSize(find.byType(Dialog)), const Size(450, 800));
+        expect(
+          find.byKey(const Key('searchDialogConstrainedBox')),
+          findsNothing,
+        );
+
+        // Dismiss search dialog
+        await tester.tap(find.byTooltip('Back'));
+        await tester.pumpAndSettle();
+
+        // At or above 600 width (e.g. desktop 800x800)
+        tester.view.physicalSize = const Size(800, 800);
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('searchButton')));
+        await tester.pumpAndSettle();
+
+        // At or above 600: Dialog is a constrained modal
+        final largeDialog = tester.widget<Dialog>(find.byType(Dialog));
+        expect(
+          largeDialog.insetPadding,
+          const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+        );
+
+        final constrainedBoxFinder = find.byKey(
+          const Key('searchDialogConstrainedBox'),
+        );
+        expect(constrainedBoxFinder, findsOneWidget);
+        final constrainedBox = tester.widget<ConstrainedBox>(
+          constrainedBoxFinder,
+        );
+        expect(constrainedBox.constraints.maxWidth, 600);
+        expect(
+          constrainedBox.constraints.maxHeight,
+          closeTo(800 * 0.85, 0.001),
+        );
+        expect(tester.getSize(constrainedBoxFinder), Size(600, 800 * 0.85));
+
+        // Dismiss search dialog
+        await tester.tap(find.byTooltip('Back'));
+        await tester.pumpAndSettle();
+      },
+    );
+
+    testWidgets(
+      'tapping View on add-task SnackBar closes search dialog and opens ListDetailScreen',
+      (tester) async {
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        // Open search dialog
+        await tester.tap(find.byKey(const Key('searchButton')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('searchQueryInput')), findsOneWidget);
+
+        // Enter task query to show add task action
+        await tester.enterText(
+          find.byKey(const Key('searchQueryInput')),
+          'Buy fresh apples',
+        );
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('searchAddTaskAction')), findsOneWidget);
+
+        // Tap Add as task
+        await tester.tap(find.byKey(const Key('searchAddTaskAction')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Added to Inbox'), findsOneWidget);
+        expect(find.text('View'), findsOneWidget);
+
+        // Tap View action
+        await tester.tap(find.text('View'));
+        await tester.pumpAndSettle();
+
+        // ListDetailScreen is pushed
+        expect(find.byType(ListDetailScreen), findsOneWidget);
+        expect(find.text('Inbox'), findsWidgets);
+        // The search dialog is closed/popped
+        expect(find.byKey(const Key('searchQueryInput')), findsNothing);
+
+        // Tapping Back from ListDetailScreen returns to HomeScreen, NOT search dialog
+        await tester.tap(find.byTooltip('Back'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(ListDetailScreen), findsNothing);
+        expect(find.byKey(const Key('searchQueryInput')), findsNothing);
+        expect(find.byType(HomeScreen), findsOneWidget);
+      },
+    );
+
     testWidgets('logout button signs user out', (tester) async {
       await tester.pumpWidget(createWidgetUnderTest());
       await tester.pumpAndSettle();
