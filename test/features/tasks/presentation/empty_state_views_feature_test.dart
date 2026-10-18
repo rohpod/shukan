@@ -346,50 +346,6 @@ void main() {
         expect(find.text('Done Today'), findsNothing);
       },
     );
-
-    testWidgets(
-      'Smart view: filtered-to-zero when active tasks are filtered out by priority, tapping "Clear filters" reveals them',
-      (tester) async {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('task_priority_filter_today', 'high');
-
-        await fakeFirestore.collection('tasks').doc('t-today-med').set({
-          'taskId': 't-today-med',
-          'uid': uid,
-          'listId': listId,
-          'title': 'Medium Task Today',
-          'isCompleted': false,
-          'completedAt': null,
-          'dueDate': Timestamp.fromDate(fixedDate),
-          'deletedAt': null,
-          'priority': 'medium',
-          'tagIds': [],
-        });
-
-        await tester.pumpWidget(
-          wrapWithScope(
-            const SmartViewDetailScreen(viewType: SmartViewType.today),
-            extraOverrides: [
-              sharedPreferencesProvider.overrideWithValue(prefs),
-            ],
-          ),
-        );
-        await tester.pumpAndSettle();
-
-        expect(find.byIcon(Icons.filter_alt_off_outlined), findsOneWidget);
-        expect(find.text('No tasks match your filters'), findsOneWidget);
-        expect(
-          find.byKey(const Key('clearFiltersButton_today')),
-          findsOneWidget,
-        );
-
-        // Tap Clear filters -> resets priority filter
-        await tester.tap(find.byKey(const Key('clearFiltersButton_today')));
-        await tester.pumpAndSettle();
-
-        expect(find.text('Medium Task Today'), findsOneWidget);
-      },
-    );
   });
 
   group('SearchScreen Empty State Tests', () {

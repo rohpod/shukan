@@ -208,38 +208,11 @@ void main() {
   });
 
   group('TaskPriorityFilter - SmartViewDetailScreen', () {
-    testWidgets('filters tasks by priority in Today smart view', (
+    testWidgets('priority filter selector is absent on smart views', (
       tester,
     ) async {
       final prefs = await SharedPreferences.getInstance();
       final today = DateTime(2026, 9, 20, 10, 0);
-
-      await fakeFirestore.collection('tasks').doc('st-high').set({
-        'taskId': 'st-high',
-        'uid': uid,
-        'listId': listId,
-        'title': 'Today Urgent',
-        'priority': 'high',
-        'order': 100.0,
-        'dueDate': Timestamp.fromDate(DateTime(2026, 9, 20, 14, 0)),
-        'subtasks': [],
-        'createdAt': Timestamp.now(),
-        'completedAt': null,
-        'deletedAt': null,
-      });
-      await fakeFirestore.collection('tasks').doc('st-low').set({
-        'taskId': 'st-low',
-        'uid': uid,
-        'listId': listId,
-        'title': 'Today Minor',
-        'priority': 'low',
-        'order': 200.0,
-        'dueDate': Timestamp.fromDate(DateTime(2026, 9, 20, 15, 0)),
-        'subtasks': [],
-        'createdAt': Timestamp.now(),
-        'completedAt': null,
-        'deletedAt': null,
-      });
 
       await tester.pumpWidget(
         createSmartViewWidget(
@@ -250,34 +223,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Today Urgent'), findsOneWidget);
-      expect(find.text('Today Minor'), findsOneWidget);
-
-      // Select High
-      await tester.tap(find.byKey(const Key('taskPriorityDropdown_today')));
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(const Key('taskPriorityOption_today_high')).last,
-        warnIfMissed: false,
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.text('Today Urgent'), findsOneWidget);
-      expect(find.text('Today Minor'), findsNothing);
-
-      // Select Low
-      await tester.tap(find.byKey(const Key('taskPriorityDropdown_today')));
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(const Key('taskPriorityOption_today_low')).last,
-        warnIfMissed: false,
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.text('Today Urgent'), findsNothing);
-      expect(find.text('Today Minor'), findsOneWidget);
-
-      expect(prefs.getString('task_priority_filter_today'), equals('low'));
+      expect(find.byType(TaskPriorityFilterSelector), findsNothing);
     });
   });
 

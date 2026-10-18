@@ -41,7 +41,7 @@ class TaskSortUtils {
 
     switch (sortOption) {
       case TaskSortOption.dueDate:
-        list.sort(_compareByDueDate);
+        list.sort(compareByDueDate);
         break;
       case TaskSortOption.priority:
         list.sort(_compareByPriority);
@@ -56,7 +56,7 @@ class TaskSortUtils {
 
   /// Due date: ascending, nulls last.
   /// Tie-break: dueTime ("HH:mm") -> priority -> order -> createdAt.
-  static int _compareByDueDate(Task a, Task b) {
+  static int compareByDueDate(Task a, Task b) {
     if (a.dueDate == null && b.dueDate != null) return 1;
     if (a.dueDate != null && b.dueDate == null) return -1;
 

@@ -5,10 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../auth/providers/auth_providers.dart';
 import '../data/task.dart';
 import '../domain/smart_view_models.dart';
-import '../domain/task_priority_filter.dart';
 import 'task_providers.dart';
-import 'task_sort_providers.dart';
-import 'task_tag_filter_providers.dart';
 
 /// Stream that emits the current local time and automatically emits again
 /// as soon as the clock crosses local midnight.
@@ -176,56 +173,23 @@ final unfilteredSmartViewTasksProvider =
 
 /// Family provider that streams tasks for a specific [SmartViewType].
 ///
-/// Filters [unfilteredSmartViewTasksProvider] in-memory by hiding completed tasks,
-/// and applying active priority and tag filters without issuing extra Firestore queries.
+/// Filters [unfilteredSmartViewTasksProvider] in-memory by hiding completed tasks.
 final smartViewTasksProvider = StreamProvider.family<List<Task>, SmartViewType>(
   (ref, viewType) {
     final unfilteredAsync = ref.watch(
       unfilteredSmartViewTasksProvider(viewType),
     );
-    final priorityFilter = ref.watch(taskPriorityFilterProvider(viewType.name));
-    final tagFilter = ref.watch(taskTagFilterProvider(viewType.name));
 
     return unfilteredAsync.when(
       data: (tasks) {
-        final filtered = tasks.where((t) {
-          if (t.isCompleted) {
-            return false;
-          }
-
-          if (priorityFilter != TaskPriorityFilter.all &&
-              t.priority != priorityFilter.firestoreValue) {
-            return false;
-          }
-
-          if (tagFilter.isNotEmpty && !t.tagIds.any(tagFilter.contains)) {
-            return false;
-          }
-
-          return true;
-        }).toList();
-        return Stream.value(filtered);
+        final active = tasks.where((t) => !t.isCompleted).toList();
+        return Stream.value(active);
       },
       loading: () => Stream<List<Task>>.fromFuture(
         ref.watch(unfilteredSmartViewTasksProvider(viewType).future).then((
           tasks,
         ) {
-          return tasks.where((t) {
-            if (t.isCompleted) {
-              return false;
-            }
-
-            if (priorityFilter != TaskPriorityFilter.all &&
-                t.priority != priorityFilter.firestoreValue) {
-              return false;
-            }
-
-            if (tagFilter.isNotEmpty && !t.tagIds.any(tagFilter.contains)) {
-              return false;
-            }
-
-            return true;
-          }).toList();
+          return tasks.where((t) => !t.isCompleted).toList();
         }),
       ),
       error: (e, st) => Stream<List<Task>>.error(e, st),

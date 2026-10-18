@@ -463,7 +463,7 @@ void main() {
       },
     );
 
-    test('smartViewTasksProvider filters by priority when set', () async {
+    test('smartViewTasksProvider does not filter by priority when priority filter is set', () async {
       final today = DateTime(2026, 10, 14, 10, 0);
       final container = createContainer(overrideDate: today);
 
@@ -513,7 +513,11 @@ void main() {
 
       await pumpEventQueue();
 
-      expect(emitted.last.map((t) => t.taskId).toList(), equals(['t-high']));
+      // Priority filter is ignored by smart views: both tasks remain present
+      expect(
+        emitted.last.map((t) => t.taskId).toSet(),
+        equals({'t-high', 't-low'}),
+      );
     });
   });
 }
