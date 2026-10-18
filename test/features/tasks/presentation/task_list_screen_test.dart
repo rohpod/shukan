@@ -1641,7 +1641,7 @@ void main() {
 
   group('Issue #53: Task Kebab Menu & Inline List Selection', () {
     testWidgets(
-      'kebab menu displays Add subtask, Edit task, Delete task, inline list options with checkmark, and Create new list',
+      'kebab menu displays Add subtask, Delete task, inline list options with checkmark, and Create new list (no Edit task)',
       (tester) async {
         const taskId = 'task-menu-test-1';
         const otherListId = 'other-list-menu-1';
@@ -1692,14 +1692,18 @@ void main() {
         await tester.tap(menuBtn);
         await tester.pumpAndSettle();
 
-        // 1. Grouped actions at the top
+        // 1. Grouped actions at the top (Add subtask, Delete task; no Edit task)
         expect(
           find.byKey(const Key('menuActionAddSubtask_$taskId')),
           findsOneWidget,
         );
         expect(
           find.byKey(const Key('menuActionEditTask_$taskId')),
-          findsOneWidget,
+          findsNothing,
+        );
+        expect(
+          find.text('Edit task'),
+          findsNothing,
         );
         expect(
           find.byKey(const Key('deleteTaskButton_$taskId')),
@@ -1912,51 +1916,64 @@ void main() {
       },
     );
 
-    testWidgets('selecting Edit task opens the edit task dialog', (
-      tester,
-    ) async {
-      const taskId = 'task-edit-dialog-test';
-      await fakeFirestore.collection('tasks').doc(taskId).set({
-        'taskId': taskId,
-        'uid': uid,
-        'listId': listId,
-        'title': 'Task to edit via menu',
-        'notes': '',
-        'url': '',
-        'priority': 'none',
-        'tagIds': <String>[],
-        'dueDate': null,
-        'dueTime': null,
-        'earlyReminderMinutes': 0,
-        'repeatRule': 'none',
-        'repeatCustomConfig': null,
-        'order': 0,
-        'subtasks': <Map<String, dynamic>>[],
-        'createdAt': Timestamp.now(),
-        'completedAt': null,
-        'deletedAt': null,
-      });
+    testWidgets(
+      'kebab menu does not contain Edit task, and tapping row opens edit dialog',
+      (tester) async {
+        const taskId = 'task-edit-dialog-test';
+        await fakeFirestore.collection('tasks').doc(taskId).set({
+          'taskId': taskId,
+          'uid': uid,
+          'listId': listId,
+          'title': 'Task to edit via row tap',
+          'notes': '',
+          'url': '',
+          'priority': 'none',
+          'tagIds': <String>[],
+          'dueDate': null,
+          'dueTime': null,
+          'earlyReminderMinutes': 0,
+          'repeatRule': 'none',
+          'repeatCustomConfig': null,
+          'order': 0,
+          'subtasks': <Map<String, dynamic>>[],
+          'createdAt': Timestamp.now(),
+          'completedAt': null,
+          'deletedAt': null,
+        });
 
-      await tester.pumpWidget(createWidgetUnderTest(customListId: listId));
-      await tester.pumpAndSettle();
+        await tester.pumpWidget(createWidgetUnderTest(customListId: listId));
+        await tester.pumpAndSettle();
 
-      // Open menu
-      await tester.tap(find.byKey(const Key('taskMenuButton_$taskId')));
-      await tester.pumpAndSettle();
+        // Open menu
+        await tester.tap(find.byKey(const Key('taskMenuButton_$taskId')));
+        await tester.pumpAndSettle();
 
-      // Tap Edit task
-      await tester.tap(find.byKey(const Key('menuActionEditTask_$taskId')));
-      await tester.pumpAndSettle();
+        // Verify Edit task is absent from menu
+        expect(
+          find.byKey(const Key('menuActionEditTask_$taskId')),
+          findsNothing,
+        );
+        expect(find.text('Edit task'), findsNothing);
 
-      // Edit Task dialog is opened
-      expect(find.text('Edit Task'), findsOneWidget);
-      expect(find.byKey(const Key('saveTaskButton')), findsOneWidget);
+        // Dismiss menu
+        await tester.tapAt(Offset.zero);
+        await tester.pumpAndSettle();
 
-      // Cancel dialog
-      await tester.tap(find.text('Cancel'));
-      await tester.pumpAndSettle();
-      expect(find.text('Edit Task'), findsNothing);
-    });
+        // Tap task row directly
+        await tester.tap(find.byKey(const Key('taskItem_$taskId')));
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pumpAndSettle();
+
+        // Edit Task dialog is opened
+        expect(find.text('Edit Task'), findsOneWidget);
+        expect(find.byKey(const Key('saveTaskButton')), findsOneWidget);
+
+        // Cancel dialog
+        await tester.tap(find.text('Cancel'));
+        await tester.pumpAndSettle();
+        expect(find.text('Edit Task'), findsNothing);
+      },
+    );
 
     testWidgets(
       'selecting Create new list creates the new list and moves the task into it',
