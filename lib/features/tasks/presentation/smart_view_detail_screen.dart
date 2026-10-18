@@ -10,20 +10,13 @@ import '../../lists/presentation/list_detail_screen.dart';
 import '../../lists/providers/list_providers.dart';
 import '../data/task.dart';
 import '../domain/smart_view_models.dart';
-import '../domain/task_priority_filter.dart';
-import '../domain/task_sort_options.dart';
 import '../providers/smart_view_providers.dart';
 import '../providers/task_providers.dart';
 import '../providers/task_sort_providers.dart';
-import '../providers/task_tag_filter_providers.dart';
+import 'quick_add_bar.dart';
 import 'task_list_screen.dart';
 import 'widgets/empty_state_view.dart';
-import 'widgets/task_priority_filter_selector.dart';
 import 'widgets/task_priority_marker.dart';
-import 'widgets/task_row_tag_chips.dart';
-import 'widgets/task_sort_selector.dart';
-import 'widgets/task_tag_filter_selector.dart';
-import 'quick_add_bar.dart';
 
 class SmartViewDetailScreen extends ConsumerStatefulWidget {
   final SmartViewType viewType;
@@ -78,8 +71,6 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
     }
 
     final tasksAsync = ref.watch(sortedSmartViewTasksProvider(widget.viewType));
-    final sortOption = ref.watch(taskSortModeProvider(widget.viewType.name));
-    final tagFilter = ref.watch(taskTagFilterProvider(widget.viewType.name));
     final defaultListId = ref.watch(defaultListIdProvider).value;
     final lists = ref.watch(listsForUserProvider).value ?? const <ListModel>[];
     final listNames = {for (final l in lists) l.listId: l.name};
@@ -88,15 +79,6 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
     final destinationListName = effectiveList?.name;
 
     final currentDate = ref.watch(currentDateProvider);
-
-    final viewKey = widget.viewType.name;
-    final unfilteredTasks =
-        ref.watch(unfilteredSmartViewTasksProvider(widget.viewType)).value ??
-        const <Task>[];
-    final unfilteredActiveTasks = unfilteredTasks
-        .where((t) => !t.isCompleted)
-        .toList();
-    final unfilteredCount = unfilteredActiveTasks.length;
 
     return Scaffold(
       appBar: AppBar(
@@ -107,45 +89,11 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
       ),
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  TaskSortSelector(viewKey: viewKey),
-                  const SizedBox(width: 8),
-                  TaskPriorityFilterSelector(viewKey: viewKey),
-                  const SizedBox(width: 8),
-                  TaskTagFilterSelector(viewKey: viewKey),
-                ],
-              ),
-            ),
-          ),
-          const Divider(height: 1),
           Expanded(
             child: tasksAsync.when(
               skipLoadingOnReload: true,
               data: (tasks) {
                 if (tasks.isEmpty) {
-                  if (unfilteredCount > 0) {
-                    return EmptyStateView(
-                      icon: Icons.filter_alt_off_outlined,
-                      message: 'No tasks match your filters',
-                      messageKey: const Key('noTasksText'),
-                      actionLabel: 'Clear filters',
-                      actionKey: Key('clearFiltersButton_$viewKey'),
-                      onAction: () {
-                        ref
-                            .read(taskPriorityFilterProvider(viewKey).notifier)
-                            .setFilter(TaskPriorityFilter.all);
-                        ref
-                            .read(taskTagFilterProvider(viewKey).notifier)
-                            .clearAll();
-                      },
-                    );
-                  }
-
                   final IconData emptyIcon;
                   final String emptyMessage;
                   final bool canAdd =
@@ -193,85 +141,10 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                   );
                 }
 
-                return ReorderableListView.builder(
+                return ListView.builder(
                   key: Key('smartViewsListView_${widget.viewType.name}'),
                   padding: const EdgeInsets.all(12),
-                  buildDefaultDragHandles: false,
-                  proxyDecorator: (child, index, animation) {
-                    return Material(
-                      elevation: 4,
-                      color: Theme.of(context)
-                          .colorScheme
-                          .surfaceContainerHighest,
-                      shadowColor: Theme.of(context).shadowColor
-                          .withValues(alpha: 0.3),
-                      borderRadius: BorderRadius.circular(8),
-                      clipBehavior: Clip.antiAlias,
-                      child: child,
-                    );
-                  },
                   itemCount: tasks.length,
-                  onReorderItem: (oldIndex, newIndex) async {
-                    if (oldIndex == newIndex) return;
-
-                    final priorSortOption = sortOption;
-
-                    final movedTask = tasks[oldIndex];
-                    final remainingTasks = List<Task>.from(tasks)
-                      ..removeAt(oldIndex);
-
-                    int targetIndex = newIndex;
-                    if (oldIndex < newIndex) {
-                      targetIndex -= 1;
-                    }
-                    targetIndex = targetIndex.clamp(0, remainingTasks.length);
-
-                    final Task? before = targetIndex > 0
-                        ? remainingTasks[targetIndex - 1]
-                        : null;
-                    final Task? after = targetIndex < remainingTasks.length
-                        ? remainingTasks[targetIndex]
-                        : null;
-
-                    if (before != null &&
-                        after != null &&
-                        TaskSortUtils.needsRenumbering(
-                          before: before,
-                          after: after,
-                        )) {
-                      final updatedList = List<Task>.from(remainingTasks)
-                        ..insert(targetIndex, movedTask);
-                      final batchMap = <String, double>{};
-                      for (int i = 0; i < updatedList.length; i++) {
-                        batchMap[updatedList[i].taskId] = (i + 1) * 1000.0;
-                      }
-                      await ref
-                          .read(taskRepositoryProvider)
-                          .batchUpdateTaskOrders(batchMap);
-                    } else {
-                      final newOrder = TaskSortUtils.computeMidpointOrder(
-                        before: before,
-                        after: after,
-                      );
-                      await ref
-                          .read(taskRepositoryProvider)
-                          .updateTaskOrder(movedTask.taskId, newOrder);
-                    }
-
-                    if (priorSortOption != TaskSortOption.manual) {
-                      await ref
-                          .read(
-                            taskSortModeProvider(widget.viewType.name).notifier,
-                          )
-                          .setSortMode(TaskSortOption.manual);
-                      if (context.mounted) {
-                        showFeedbackSnackBar(
-                          ScaffoldMessenger.of(context),
-                          'Sort changed from ${priorSortOption.label} to Manual',
-                        );
-                      }
-                    }
-                  },
                   itemBuilder: (context, index) {
                     final task = tasks[index];
                     final listName = listNames[task.listId] ?? 'Inbox';
@@ -381,8 +254,6 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                                   ),
                                 ],
                               ),
-                              if (tagFilter.isNotEmpty)
-                                TaskRowTagChips(task: task),
                             ],
                           ),
                           trailing: Row(
@@ -426,11 +297,7 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                       ],
                     );
 
-                    return ReorderableDelayedDragStartListener(
-                      key: ValueKey('smartTaskItemWrapper_${task.taskId}'),
-                      index: index,
-                      child: row,
-                    );
+                    return row;
                   },
                 );
               },

@@ -264,13 +264,28 @@ final completedTasksForListProvider =
       });
     });
 
-/// Streams tasks for [viewType] sorted by that smart view's independent [TaskSortOption].
+/// Streams tasks for [viewType] with fixed due-date ordering.
 final sortedSmartViewTasksProvider =
     Provider.family<AsyncValue<List<Task>>, SmartViewType>((ref, viewType) {
       final tasksAsync = ref.watch(smartViewTasksProvider(viewType));
-      final sortOption = ref.watch(taskSortModeProvider(viewType.name));
-
-      return _mapSortedTasks(tasksAsync, sortOption);
+      if (tasksAsync.hasError && !tasksAsync.hasValue) {
+        return AsyncError(
+          tasksAsync.error!,
+          tasksAsync.stackTrace ?? StackTrace.current,
+        );
+      }
+      if (tasksAsync.hasValue) {
+        final sorted = List<Task>.from(tasksAsync.value!)
+          ..sort(TaskSortUtils.compareByDueDate);
+        return AsyncData(sorted);
+      }
+      if (tasksAsync.hasError) {
+        return AsyncError(
+          tasksAsync.error!,
+          tasksAsync.stackTrace ?? StackTrace.current,
+        );
+      }
+      return const AsyncLoading();
     });
 
 /// One-time backfill provider that ensures existing tasks for the user have an initial `order`.
