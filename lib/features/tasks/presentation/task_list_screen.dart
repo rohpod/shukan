@@ -34,10 +34,6 @@ class _AddSubtaskAction extends _TaskMenuAction {
   const _AddSubtaskAction();
 }
 
-class _EditTaskAction extends _TaskMenuAction {
-  const _EditTaskAction();
-}
-
 class _DeleteTaskAction extends _TaskMenuAction {
   const _DeleteTaskAction();
 }
@@ -456,14 +452,6 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                               _focusedSubtaskTaskId = task.taskId;
                             });
                             break;
-                          case _EditTaskAction():
-                            await _showTaskDialog(
-                              context,
-                              uid,
-                              listId,
-                              task: task,
-                            );
-                            break;
                           case _DeleteTaskAction():
                             final messenger = scaffoldMessenger;
                             final taskRepo = ref.read(taskRepositoryProvider);
@@ -524,19 +512,6 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                                 Icon(Icons.add_task, size: 20),
                                 SizedBox(width: 12),
                                 Text('Add subtask'),
-                              ],
-                            ),
-                          ),
-                        );
-                        entries.add(
-                          PopupMenuItem<_TaskMenuAction>(
-                            key: Key('menuActionEditTask_${task.taskId}'),
-                            value: const _EditTaskAction(),
-                            child: const Row(
-                              children: [
-                                Icon(Icons.edit_outlined, size: 20),
-                                SizedBox(width: 12),
-                                Text('Edit task'),
                               ],
                             ),
                           ),
