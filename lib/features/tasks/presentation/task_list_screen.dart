@@ -1105,10 +1105,7 @@ class _AddSubtaskInputRow extends ConsumerStatefulWidget {
   final String taskId;
   final bool autofocus;
 
-  const _AddSubtaskInputRow({
-    required this.taskId,
-    this.autofocus = false,
-  });
+  const _AddSubtaskInputRow({required this.taskId, this.autofocus = false});
 
   @override
   ConsumerState<_AddSubtaskInputRow> createState() =>

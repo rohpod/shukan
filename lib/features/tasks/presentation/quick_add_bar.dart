@@ -63,7 +63,7 @@ class _QuickAddBarState extends ConsumerState<QuickAddBar> {
   Future<void> _handleSubmit() async {
     final currentText = _controller.text.trim();
 
-    if (widget.listId == null) return;
+    if (widget.listId == null || _isSaving) return;
 
     // If nothing typed and no parsed state, do nothing
     if (currentText.isEmpty &&
@@ -72,7 +72,7 @@ class _QuickAddBarState extends ConsumerState<QuickAddBar> {
       return;
     }
 
-    // Phase 1: First submit runs the natural-language parser and displays preview chip / hint
+    // Phase 1: First submit runs the natural-language parser
     if (!_hasParsed) {
       _rawInput = currentText;
       final now = ref.read(currentDateProvider);
@@ -83,18 +83,19 @@ class _QuickAddBarState extends ConsumerState<QuickAddBar> {
           _hasParsed = true;
           _parsedDueDate = parseResult.dueDate;
           _parsedDueTime = parseResult.dueTime;
-          _parsedTitle = parseResult.title;
+          _parsedTitle = parseResult.strippedTitle;
         });
+        final newText = parseResult.strippedTitle;
+        _controller.value = TextEditingValue(
+          text: newText,
+          selection: TextSelection.collapsed(offset: newText.length),
+        );
+        return;
       } else {
-        // No date phrase recognized
-        setState(() {
-          _hasParsed = true;
-          _parsedDueDate = null;
-          _parsedDueTime = null;
-          _parsedTitle = currentText;
-        });
+        // No date phrase recognized: create task immediately in this same press
+        await _createTask(title: currentText, dueDate: null, dueTime: null);
+        return;
       }
-      return;
     }
 
     // Phase 2: Second submit confirms and creates the task
@@ -106,7 +107,21 @@ class _QuickAddBarState extends ConsumerState<QuickAddBar> {
 
     if (titleToCreate.isEmpty) return;
 
-    if (_parsedDueDate != null) {
+    await _createTask(
+      title: titleToCreate,
+      dueDate: _parsedDueDate,
+      dueTime: _parsedDueTime,
+    );
+  }
+
+  Future<void> _createTask({
+    required String title,
+    DateTime? dueDate,
+    String? dueTime,
+  }) async {
+    if (title.isEmpty) return;
+
+    if (dueDate != null) {
       requestWebPermissionOnSave(ref: ref, context: context, mounted: mounted);
     }
 
@@ -117,9 +132,9 @@ class _QuickAddBarState extends ConsumerState<QuickAddBar> {
           .createTask(
             uid: widget.uid,
             listId: widget.listId!,
-            title: titleToCreate,
-            dueDate: _parsedDueDate,
-            dueTime: _parsedDueTime,
+            title: title,
+            dueDate: dueDate,
+            dueTime: dueTime,
           );
       if (mounted) {
         setState(() {
@@ -143,6 +158,12 @@ class _QuickAddBarState extends ConsumerState<QuickAddBar> {
       _parsedDueTime = null;
       _hasParsed = true;
     });
+    if (_rawInput != null) {
+      _controller.value = TextEditingValue(
+        text: _rawInput!,
+        selection: TextSelection.collapsed(offset: _rawInput!.length),
+      );
+    }
   }
 
   String _formatDueTime12Hour(String dueTime24) {
@@ -250,8 +271,7 @@ class _QuickAddBarState extends ConsumerState<QuickAddBar> {
                   decoration: InputDecoration(
                     hintText: !isEnabled
                         ? 'Loading...'
-                        : (widget.hintText ??
-                              'Add a task (e.g. Buy milk tomorrow 5pm)...'),
+                        : (widget.hintText ?? 'Add a task'),
                     hintStyle: TextStyle(
                       fontSize: 13,
                       color: theme.hintColor.withValues(alpha: 0.6),
@@ -266,12 +286,11 @@ class _QuickAddBarState extends ConsumerState<QuickAddBar> {
                     border: InputBorder.none,
                   ),
                   onChanged: (val) {
-                    // Reset parse status on typing if previously parsed
-                    if (_hasParsed) {
+                    final hasDateOrTime =
+                        _parsedDueDate != null || _parsedDueTime != null;
+                    if (!hasDateOrTime && _hasParsed) {
                       setState(() {
                         _hasParsed = false;
-                        _parsedDueDate = null;
-                        _parsedDueTime = null;
                       });
                     }
                   },
@@ -300,19 +319,6 @@ class _QuickAddBarState extends ConsumerState<QuickAddBar> {
               ),
             ],
           ),
-          if (_hasParsed && !hasDateOrTime)
-            Padding(
-              padding: const EdgeInsets.only(left: 14, top: 2),
-              child: Text(
-                'No date detected. Press Enter to create.',
-                key: const Key('quickAddHintText'),
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Colors.grey[600],
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
-            ),
         ],
       ),
     );

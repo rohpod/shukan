@@ -36,13 +36,21 @@ void requestWebPermissionOnSave({
   final preparer = ref.read(chimePreparerProvider);
   preparer();
 
+  final prefs = ref.read(sharedPreferencesProvider);
+  const promptShownKey = 'web_notifications_prompt_shown';
+  final alreadyPrompted = prefs?.getBool(promptShownKey) ?? false;
+  if (alreadyPrompted) {
+    return;
+  }
+
   final permFuture = ref
       .read(notificationServiceProvider)
       .requestWebPermissionIfNeeded();
 
+  unawaited(prefs?.setBool(promptShownKey, true));
+
   permFuture.then((result) async {
     if (result == WebPermissionResult.denied) {
-      final prefs = ref.read(sharedPreferencesProvider);
       const flagKey = 'web_notifications_denied_snack_shown';
       final alreadyShown = prefs?.getBool(flagKey) ?? false;
       if (!alreadyShown) {

@@ -315,7 +315,10 @@ void main() {
           expect(find.byType(TaskPriorityFilterSelector), findsNothing);
           expect(find.byType(TaskTagFilterSelector), findsNothing);
           expect(find.byType(ReorderableListView), findsNothing);
-          expect(find.byType(ReorderableDelayedDragStartListener), findsNothing);
+          expect(
+            find.byType(ReorderableDelayedDragStartListener),
+            findsNothing,
+          );
         }
       },
     );
@@ -394,11 +397,7 @@ void main() {
             .toList();
         expect(
           titles,
-          equals([
-            'Earlier Medium Task',
-            'Later High Task',
-            'Later Low Task',
-          ]),
+          equals(['Earlier Medium Task', 'Later High Task', 'Later Low Task']),
         );
       },
     );
