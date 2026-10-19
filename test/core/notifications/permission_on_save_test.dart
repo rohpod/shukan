@@ -130,6 +130,37 @@ void main() {
 
         verify(() => mockNotifService.requestWebPermissionIfNeeded()).called(1);
         expect(chimePrepareCount, 1);
+        expect(prefs.getBool('web_notifications_prompt_shown'), isTrue);
+      },
+    );
+
+    testWidgets(
+      'second dated save does NOT call permission when prompt flag is already set',
+      (tester) async {
+        await prefs.setBool('web_notifications_prompt_shown', true);
+
+        await tester.pumpWidget(
+          buildScope(
+            child: TaskDialog(
+              uid: uid,
+              listId: listId,
+              initialDueDate: DateTime(2026, 10, 16),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('taskTitleInput')),
+          'Second dated task',
+        );
+        await tester.pump();
+
+        await tester.tap(find.byKey(const Key('saveTaskButton')));
+        await tester.pumpAndSettle();
+
+        verifyNever(() => mockNotifService.requestWebPermissionIfNeeded());
+        expect(chimePrepareCount, 1);
       },
     );
 
@@ -188,6 +219,7 @@ void main() {
 
         verify(() => mockNotifService.requestWebPermissionIfNeeded()).called(1);
         expect(chimePrepareCount, 1);
+        expect(prefs.getBool('web_notifications_prompt_shown'), isTrue);
       },
     );
 
