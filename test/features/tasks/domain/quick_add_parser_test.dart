@@ -235,5 +235,117 @@ void main() {
         expect(res.dueTime, '17:00');
       });
     });
+
+    group('strippedTitle tests', () {
+      test('date only: removes date phrase and preserves title', () {
+        final res = parseQuickAdd('Submit essay tomorrow', now: fixedNow);
+        expect(res.title, 'Submit essay tomorrow');
+        expect(res.strippedTitle, 'Submit essay');
+        expect(res.dueDate, DateTime(2026, 10, 15));
+      });
+
+      test('time only: removes time phrase and preserves title', () {
+        final res = parseQuickAdd('Water plants 5pm', now: fixedNow);
+        expect(res.title, 'Water plants 5pm');
+        expect(res.strippedTitle, 'Water plants');
+        expect(res.dueTime, '17:00');
+      });
+
+      test('date + time: removes both phrases', () {
+        final res1 = parseQuickAdd('run tomorrow at 5am', now: fixedNow);
+        expect(res1.title, 'run tomorrow at 5am');
+        expect(res1.strippedTitle, 'run');
+
+        final res2 = parseQuickAdd('run at 5am tomorrow', now: fixedNow);
+        expect(res2.title, 'run at 5am tomorrow');
+        expect(res2.strippedTitle, 'run');
+
+        final res3 = parseQuickAdd('buy milk tomorrow morning', now: fixedNow);
+        expect(res3.title, 'buy milk tomorrow morning');
+        expect(res3.strippedTitle, 'buy milk');
+      });
+
+      test(
+        'non-contiguous spans: removes both date and time across the string',
+        () {
+          final res = parseQuickAdd('tomorrow buy milk at 5pm', now: fixedNow);
+          expect(res.title, 'tomorrow buy milk at 5pm');
+          expect(res.strippedTitle, 'buy milk');
+          expect(res.dueDate, DateTime(2026, 10, 15));
+          expect(res.dueTime, '17:00');
+        },
+      );
+
+      test(
+        'preposition before the phrase is removed when immediately preceding',
+        () {
+          final resBy = parseQuickAdd(
+            'Finish slides by tomorrow',
+            now: fixedNow,
+          );
+          expect(resBy.title, 'Finish slides by tomorrow');
+          expect(resBy.strippedTitle, 'Finish slides');
+
+          final resBefore = parseQuickAdd(
+            'Submit essay before friday',
+            now: fixedNow,
+          );
+          expect(resBefore.title, 'Submit essay before friday');
+          expect(resBefore.strippedTitle, 'Submit essay');
+
+          final resFor = parseQuickAdd('Pack bags for tomorrow', now: fixedNow);
+          expect(resFor.title, 'Pack bags for tomorrow');
+          expect(resFor.strippedTitle, 'Pack bags');
+        },
+      );
+
+      test('phrase in the middle: removes phrase without removing prepositions in real title', () {
+        final resMiddle = parseQuickAdd(
+          'Doctor appointment tomorrow with Dr Smith',
+          now: fixedNow,
+        );
+        expect(resMiddle.title, 'Doctor appointment tomorrow with Dr Smith');
+        expect(resMiddle.strippedTitle, 'Doctor appointment with Dr Smith');
+
+        final resPrepInTitle = parseQuickAdd(
+          'Apply for passport tomorrow',
+          now: fixedNow,
+        );
+        expect(resPrepInTitle.title, 'Apply for passport tomorrow');
+        expect(resPrepInTitle.strippedTitle, 'Apply for passport');
+
+        final resCoffee = parseQuickAdd(
+          'Meet for coffee tomorrow at 5pm',
+          now: fixedNow,
+        );
+        expect(resCoffee.title, 'Meet for coffee tomorrow at 5pm');
+        expect(resCoffee.strippedTitle, 'Meet for coffee');
+      });
+
+      test(
+        'whole input is a date phrase: keeps original input as strippedTitle',
+        () {
+          final res1 = parseQuickAdd('tomorrow 5am', now: fixedNow);
+          expect(res1.title, 'tomorrow 5am');
+          expect(res1.strippedTitle, 'tomorrow 5am');
+
+          final res2 = parseQuickAdd('at 5pm', now: fixedNow);
+          expect(res2.title, 'at 5pm');
+          expect(res2.strippedTitle, 'at 5pm');
+
+          final res3 = parseQuickAdd('tomorrow', now: fixedNow);
+          expect(res3.title, 'tomorrow');
+          expect(res3.strippedTitle, 'tomorrow');
+        },
+      );
+
+      test('nothing matched: strippedTitle is the trimmed input', () {
+        final res = parseQuickAdd('Buy groceries at the market', now: fixedNow);
+        expect(res.title, 'Buy groceries at the market');
+        expect(res.strippedTitle, 'Buy groceries at the market');
+        expect(res.dueDate, isNull);
+        expect(res.dueTime, isNull);
+      });
+    });
   });
 }

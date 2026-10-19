@@ -1,11 +1,13 @@
 class QuickAddParseResult {
   final String title;
+  final String strippedTitle;
   final DateTime? dueDate;
   final String? dueTime; // "HH:mm" 24-hour format
   final String? matchedPhrase; // raw substring that was recognized
 
   const QuickAddParseResult({
     required this.title,
+    required this.strippedTitle,
     this.dueDate,
     this.dueTime,
     this.matchedPhrase,
@@ -13,7 +15,7 @@ class QuickAddParseResult {
 
   @override
   String toString() =>
-      'QuickAddParseResult(title: "$title", dueDate: $dueDate, dueTime: $dueTime, matched: "$matchedPhrase")';
+      'QuickAddParseResult(title: "$title", strippedTitle: "$strippedTitle", dueDate: $dueDate, dueTime: $dueTime, matched: "$matchedPhrase")';
 }
 
 class _SpanMatch {
@@ -40,7 +42,7 @@ QuickAddParseResult parseQuickAdd(String input, {DateTime? now}) {
   final today = DateTime(clock.year, clock.month, clock.day);
 
   if (input.trim().isEmpty) {
-    return const QuickAddParseResult(title: '');
+    return const QuickAddParseResult(title: '', strippedTitle: '');
   }
 
   DateTime? parsedDate;
@@ -133,7 +135,7 @@ QuickAddParseResult parseQuickAdd(String input, {DateTime? now}) {
   // Optionally preceded by (on|by|due\s+)?
 
   final relativeDayRegex = RegExp(
-    r'\b(?:(?:on|by|due)\s+)?(today|tomorrow|tmrw|yesterday)\b',
+    r'\b(?:(?:on|by|due)\s+)?(today|tomorrow|tmrw|yesterday)(?:\s+(morning|afternoon|evening|night))?\b',
     caseSensitive: false,
   );
 
@@ -235,6 +237,7 @@ QuickAddParseResult parseQuickAdd(String input, {DateTime? now}) {
   if (parsedDate == null && parsedTime == null) {
     return QuickAddParseResult(
       title: input.trim(),
+      strippedTitle: input.trim(),
       dueDate: null,
       dueTime: null,
       matchedPhrase: null,
@@ -242,6 +245,7 @@ QuickAddParseResult parseQuickAdd(String input, {DateTime? now}) {
   }
 
   final matchedTexts = <String>[];
+  final spansToRemove = <_SpanMatch>[];
 
   // Check if spans overlap or are contiguous
   if (dateSpan != null && timeSpan != null) {
@@ -255,15 +259,26 @@ QuickAddParseResult parseQuickAdd(String input, {DateTime? now}) {
       final combinedEnd = second.end;
       final fullMatched = text.substring(combinedStart, combinedEnd).trim();
       matchedTexts.add(fullMatched);
+      spansToRemove.add(
+        _SpanMatch(
+          combinedStart,
+          combinedEnd,
+          text.substring(combinedStart, combinedEnd),
+        ),
+      );
     } else {
       matchedTexts.add(dateSpan.text.trim());
       matchedTexts.add(timeSpan.text.trim());
       matchedTexts.sort(); // consistent ordering
+      spansToRemove.add(first);
+      spansToRemove.add(second);
     }
   } else if (dateSpan != null) {
     matchedTexts.add(dateSpan.text.trim());
+    spansToRemove.add(dateSpan);
   } else if (timeSpan != null) {
     matchedTexts.add(timeSpan.text.trim());
+    spansToRemove.add(timeSpan);
   }
 
   // Combine matched phrases
@@ -272,8 +287,35 @@ QuickAddParseResult parseQuickAdd(String input, {DateTime? now}) {
     matchedPhrase = matchedTexts.join(' ').trim();
   }
 
+  // Remove the span with the higher start index first so earlier indices stay valid
+  spansToRemove.sort((a, b) => b.start.compareTo(a.start));
+
+  var stripped = text;
+  final prepRegex = RegExp(
+    r'\b(at|on|by|in|from|before|after|for)\s*$',
+    caseSensitive: false,
+  );
+
+  for (final span in spansToRemove) {
+    final prefix = stripped.substring(0, span.start);
+    final prepMatch = prepRegex.firstMatch(prefix);
+    var removeStart = prepMatch != null ? prepMatch.start : span.start;
+    final minStart = (spansToRemove.length == 2 && span == spansToRemove.first)
+        ? spansToRemove.last.end
+        : 0;
+    if (removeStart < minStart) {
+      removeStart = span.start;
+    }
+    final removeEnd = span.end;
+    stripped = stripped.replaceRange(removeStart, removeEnd, ' ');
+  }
+
+  stripped = stripped.replaceAll(RegExp(r'\s+'), ' ').trim();
+  final strippedTitle = stripped.isEmpty ? input.trim() : stripped;
+
   return QuickAddParseResult(
     title: input.trim(),
+    strippedTitle: strippedTitle,
     dueDate: parsedDate,
     dueTime: parsedTime,
     matchedPhrase: matchedPhrase,

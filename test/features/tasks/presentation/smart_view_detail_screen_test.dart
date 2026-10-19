@@ -496,11 +496,7 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // First tap -> parse
-        await tester.tap(find.byKey(const Key('quickAddSubmitButton')));
-        await tester.pumpAndSettle();
-
-        // Second tap -> create
+        // Tap -> create immediately
         await tester.tap(find.byKey(const Key('quickAddSubmitButton')));
         await tester.pumpAndSettle();
 

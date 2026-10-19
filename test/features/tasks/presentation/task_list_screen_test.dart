@@ -1701,10 +1701,7 @@ void main() {
           find.byKey(const Key('menuActionEditTask_$taskId')),
           findsNothing,
         );
-        expect(
-          find.text('Edit task'),
-          findsNothing,
-        );
+        expect(find.text('Edit task'), findsNothing);
         expect(
           find.byKey(const Key('deleteTaskButton_$taskId')),
           findsOneWidget,
@@ -1887,10 +1884,7 @@ void main() {
         await tester.pumpAndSettle();
 
         // Initially collapsed, subtask input hidden, toggle button hidden
-        expect(
-          find.byKey(const Key('addSubtaskInput_$taskId')),
-          findsNothing,
-        );
+        expect(find.byKey(const Key('addSubtaskInput_$taskId')), findsNothing);
         expect(
           find.byKey(const Key('toggleSubtasksButton_$taskId')),
           findsNothing,
@@ -2039,8 +2033,10 @@ void main() {
         final createdListId = listsSnapshot.docs.first.id;
 
         // Verify task was moved to the newly created list in Firestore
-        final taskDoc =
-            await fakeFirestore.collection('tasks').doc(taskId).get();
+        final taskDoc = await fakeFirestore
+            .collection('tasks')
+            .doc(taskId)
+            .get();
         expect(taskDoc.data()!['listId'], equals(createdListId));
       },
     );
