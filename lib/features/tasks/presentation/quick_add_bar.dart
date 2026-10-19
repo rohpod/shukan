@@ -250,8 +250,7 @@ class _QuickAddBarState extends ConsumerState<QuickAddBar> {
                   decoration: InputDecoration(
                     hintText: !isEnabled
                         ? 'Loading...'
-                        : (widget.hintText ??
-                              'Add a task (e.g. Buy milk tomorrow 5pm)...'),
+                        : (widget.hintText ?? 'Add a task'),
                     hintStyle: TextStyle(
                       fontSize: 13,
                       color: theme.hintColor.withValues(alpha: 0.6),

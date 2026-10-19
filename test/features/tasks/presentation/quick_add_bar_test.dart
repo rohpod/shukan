@@ -244,6 +244,16 @@ void main() {
       expect(find.text('Add task to Work...'), findsOneWidget);
     });
 
+    testWidgets(
+      'renders default hint text when no custom hintText is provided',
+      (tester) async {
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        expect(find.text('Add a task'), findsOneWidget);
+      },
+    );
+
     testWidgets('disabled and shows loading hint when listId is null', (
       tester,
     ) async {
