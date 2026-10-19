@@ -496,13 +496,10 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // First tap -> parse
+        // Tap submit -> creates task immediately on first submit
         await tester.tap(find.byKey(const Key('quickAddSubmitButton')));
-        await tester.pumpAndSettle();
-
-        // Second tap -> create
-        await tester.tap(find.byKey(const Key('quickAddSubmitButton')));
-        await tester.pumpAndSettle();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
 
         // Verify SnackBar appeared with "Added to Inbox" and "View" action
         expect(find.text('Added to Inbox'), findsOneWidget);

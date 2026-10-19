@@ -27,6 +27,36 @@ class _DelayedSoftDeleteTaskRepository extends TaskRepository {
   }
 }
 
+class _DelayedCreateTaskRepository extends TaskRepository {
+  final Completer<void> completer = Completer<void>();
+  int createCalls = 0;
+
+  _DelayedCreateTaskRepository(super.firestore);
+
+  @override
+  Future<Task> createTask({
+    required String uid,
+    required String listId,
+    required String title,
+    String notes = '',
+    String url = '',
+    DateTime? dueDate,
+    String? dueTime,
+  }) async {
+    createCalls++;
+    await completer.future;
+    return super.createTask(
+      uid: uid,
+      listId: listId,
+      title: title,
+      notes: notes,
+      url: url,
+      dueDate: dueDate,
+      dueTime: dueTime,
+    );
+  }
+}
+
 void main() {
   late MockFirebaseAuth mockAuth;
   late FakeFirebaseFirestore fakeFirestore;
@@ -1883,10 +1913,7 @@ void main() {
         await tester.pumpAndSettle();
 
         // Initially collapsed, subtask input hidden, toggle button hidden
-        expect(
-          find.byKey(const Key('addSubtaskInput_$taskId')),
-          findsNothing,
-        );
+        expect(find.byKey(const Key('addSubtaskInput_$taskId')), findsNothing);
         expect(
           find.byKey(const Key('toggleSubtasksButton_$taskId')),
           findsNothing,
@@ -2022,10 +2049,53 @@ void main() {
         final createdListId = listsSnapshot.docs.first.id;
 
         // Verify task was moved to the newly created list in Firestore
-        final taskDoc =
-            await fakeFirestore.collection('tasks').doc(taskId).get();
+        final taskDoc = await fakeFirestore
+            .collection('tasks')
+            .doc(taskId)
+            .get();
         expect(taskDoc.data()!['listId'], equals(createdListId));
       },
     );
+
+    testWidgets('Rapid double-tap on TaskDialog save creates only one task', (
+      tester,
+    ) async {
+      final delayedRepo = _DelayedCreateTaskRepository(fakeFirestore);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            firebaseAuthProvider.overrideWithValue(mockAuth),
+            firestoreProvider.overrideWithValue(fakeFirestore),
+            taskRepositoryProvider.overrideWithValue(delayedRepo),
+          ],
+          child: const MaterialApp(
+            home: Scaffold(
+              body: TaskDialog(uid: uid, listId: listId),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const Key('taskTitleInput')),
+        'Dialog rapid task',
+      );
+      await tester.pumpAndSettle();
+
+      final saveButton = find.byKey(const Key('saveTaskButton'));
+      await tester.tap(saveButton);
+      await tester.tap(saveButton);
+      delayedRepo.completer.complete();
+      await tester.pumpAndSettle();
+
+      expect(delayedRepo.createCalls, equals(1));
+      final snapshot = await fakeFirestore
+          .collection('tasks')
+          .where('uid', isEqualTo: uid)
+          .where('title', isEqualTo: 'Dialog rapid task')
+          .get();
+      expect(snapshot.docs.length, equals(1));
+    });
   });
 }

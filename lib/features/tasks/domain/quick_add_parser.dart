@@ -1,19 +1,21 @@
 class QuickAddParseResult {
   final String title;
+  final String strippedTitle;
   final DateTime? dueDate;
   final String? dueTime; // "HH:mm" 24-hour format
   final String? matchedPhrase; // raw substring that was recognized
 
   const QuickAddParseResult({
     required this.title,
+    String? strippedTitle,
     this.dueDate,
     this.dueTime,
     this.matchedPhrase,
-  });
+  }) : strippedTitle = strippedTitle ?? title;
 
   @override
   String toString() =>
-      'QuickAddParseResult(title: "$title", dueDate: $dueDate, dueTime: $dueTime, matched: "$matchedPhrase")';
+      'QuickAddParseResult(title: "$title", strippedTitle: "$strippedTitle", dueDate: $dueDate, dueTime: $dueTime, matched: "$matchedPhrase")';
 }
 
 class _SpanMatch {
@@ -40,7 +42,7 @@ QuickAddParseResult parseQuickAdd(String input, {DateTime? now}) {
   final today = DateTime(clock.year, clock.month, clock.day);
 
   if (input.trim().isEmpty) {
-    return const QuickAddParseResult(title: '');
+    return const QuickAddParseResult(title: '', strippedTitle: '');
   }
 
   DateTime? parsedDate;
@@ -235,6 +237,7 @@ QuickAddParseResult parseQuickAdd(String input, {DateTime? now}) {
   if (parsedDate == null && parsedTime == null) {
     return QuickAddParseResult(
       title: input.trim(),
+      strippedTitle: input.trim(),
       dueDate: null,
       dueTime: null,
       matchedPhrase: null,
@@ -272,12 +275,82 @@ QuickAddParseResult parseQuickAdd(String input, {DateTime? now}) {
     matchedPhrase = matchedTexts.join(' ').trim();
   }
 
+  final strippedTitle = _computeStrippedTitle(input, dateSpan, timeSpan);
+
   return QuickAddParseResult(
     title: input.trim(),
+    strippedTitle: strippedTitle,
     dueDate: parsedDate,
     dueTime: parsedTime,
     matchedPhrase: matchedPhrase,
   );
+}
+
+String _computeStrippedTitle(
+  String input,
+  _SpanMatch? dateSpan,
+  _SpanMatch? timeSpan,
+) {
+  if (dateSpan == null && timeSpan == null) {
+    return input.trim();
+  }
+
+  final prepRegex = RegExp(
+    r'\b(at|on|by|in|from|before|after|for)\s*$',
+    caseSensitive: false,
+  );
+
+  final rawSpans = <_SpanMatch>[];
+  if (dateSpan != null) rawSpans.add(dateSpan);
+  if (timeSpan != null) rawSpans.add(timeSpan);
+
+  rawSpans.sort((a, b) => a.start.compareTo(b.start));
+
+  final ranges = <_SpanMatch>[];
+  for (int i = 0; i < rawSpans.length; i++) {
+    final s = rawSpans[i];
+    final prevEnd = ranges.isNotEmpty ? ranges.last.end : 0;
+    final prefix = input.substring(0, s.start);
+    final prepMatch = prepRegex.firstMatch(prefix);
+
+    int adjustedStart = s.start;
+    if (prepMatch != null && prepMatch.start >= prevEnd) {
+      adjustedStart = prepMatch.start;
+    }
+    ranges.add(_SpanMatch(adjustedStart, s.end, ''));
+  }
+
+  final merged = <_SpanMatch>[];
+  for (final r in ranges) {
+    if (merged.isEmpty) {
+      merged.add(r);
+    } else {
+      final last = merged.last;
+      if (r.start <= last.end) {
+        merged[merged.length - 1] = _SpanMatch(
+          last.start,
+          r.end > last.end ? r.end : last.end,
+          '',
+        );
+      } else {
+        merged.add(r);
+      }
+    }
+  }
+
+  String working = input;
+  for (int i = merged.length - 1; i >= 0; i--) {
+    final r = merged[i];
+    working = working.substring(0, r.start) + working.substring(r.end);
+  }
+
+  working = working.replaceAll(RegExp(r'\s+'), ' ').trim();
+
+  if (working.isEmpty) {
+    return input.trim();
+  }
+
+  return working;
 }
 
 int? _weekdayToInt(String str) {

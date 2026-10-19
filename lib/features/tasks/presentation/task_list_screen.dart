@@ -1130,10 +1130,7 @@ class _AddSubtaskInputRow extends ConsumerStatefulWidget {
   final String taskId;
   final bool autofocus;
 
-  const _AddSubtaskInputRow({
-    required this.taskId,
-    this.autofocus = false,
-  });
+  const _AddSubtaskInputRow({required this.taskId, this.autofocus = false});
 
   @override
   ConsumerState<_AddSubtaskInputRow> createState() =>
@@ -1319,11 +1316,12 @@ class _TaskDialogState extends ConsumerState<TaskDialog> {
   }
 
   Future<void> _save() async {
+    if (_isSaving) return;
     if (!_formKey.currentState!.validate()) return;
+    setState(() => _isSaving = true);
     if (_dueDate != null) {
       requestWebPermissionOnSave(ref: ref, context: context, mounted: mounted);
     }
-    setState(() => _isSaving = true);
     try {
       if (isEditing) {
         await ref
@@ -1387,6 +1385,8 @@ class _TaskDialogState extends ConsumerState<TaskDialog> {
     } finally {
       if (mounted) {
         setState(() => _isSaving = false);
+      } else {
+        _isSaving = false;
       }
     }
   }

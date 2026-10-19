@@ -235,5 +235,80 @@ void main() {
         expect(res.dueTime, '17:00');
       });
     });
+
+    group('strippedTitle', () {
+      test('date only strips date phrase and preserves main title', () {
+        final res = parseQuickAdd('Buy milk tomorrow', now: fixedNow);
+        expect(res.title, 'Buy milk tomorrow');
+        expect(res.strippedTitle, 'Buy milk');
+        expect(res.dueDate, DateTime(2026, 10, 15));
+      });
+
+      test('time only strips time phrase and preserves main title', () {
+        final res = parseQuickAdd('Water plants 5pm', now: fixedNow);
+        expect(res.title, 'Water plants 5pm');
+        expect(res.strippedTitle, 'Water plants');
+        expect(res.dueTime, '17:00');
+      });
+
+      test('date + time strips both phrases', () {
+        final res = parseQuickAdd(
+          'Submit assignment tomorrow 5pm',
+          now: fixedNow,
+        );
+        expect(res.title, 'Submit assignment tomorrow 5pm');
+        expect(res.strippedTitle, 'Submit assignment');
+      });
+
+      test('preposition immediately before phrase is removed', () {
+        final resAt = parseQuickAdd('Run at 5am tomorrow', now: fixedNow);
+        expect(resAt.strippedTitle, 'Run');
+
+        final resOn = parseQuickAdd('Team sync on friday', now: fixedNow);
+        expect(resOn.strippedTitle, 'Team sync');
+
+        final resBy = parseQuickAdd('Finish slides by tomorrow', now: fixedNow);
+        expect(resBy.strippedTitle, 'Finish slides');
+
+        final resFor = parseQuickAdd('Workout for tomorrow', now: fixedNow);
+        expect(resFor.strippedTitle, 'Workout');
+      });
+
+      test('phrase in the middle of the title preserves surrounding words', () {
+        final res = parseQuickAdd('Run at 5am in the park', now: fixedNow);
+        expect(res.strippedTitle, 'Run in the park');
+
+        final resMid = parseQuickAdd(
+          'Meeting tomorrow with Bob',
+          now: fixedNow,
+        );
+        expect(resMid.strippedTitle, 'Meeting with Bob');
+      });
+
+      test(
+        'whole input is a date phrase falls back to original trimmed input',
+        () {
+          final resDateTime = parseQuickAdd('tomorrow 5pm', now: fixedNow);
+          expect(resDateTime.strippedTitle, 'tomorrow 5pm');
+
+          final resDate = parseQuickAdd('tomorrow', now: fixedNow);
+          expect(resDate.strippedTitle, 'tomorrow');
+
+          final resTime = parseQuickAdd('5pm', now: fixedNow);
+          expect(resTime.strippedTitle, '5pm');
+
+          final resPrep = parseQuickAdd('for tomorrow', now: fixedNow);
+          expect(resPrep.strippedTitle, 'for tomorrow');
+        },
+      );
+
+      test('no date found returns input unchanged for strippedTitle', () {
+        final res = parseQuickAdd('Buy groceries at the market', now: fixedNow);
+        expect(res.strippedTitle, 'Buy groceries at the market');
+
+        final resEmpty = parseQuickAdd('', now: fixedNow);
+        expect(resEmpty.strippedTitle, '');
+      });
+    });
   });
 }

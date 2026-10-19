@@ -578,6 +578,7 @@ void main() {
           .get();
 
       expect(snapshot.docs.length, equals(1));
+      expect(delayedRepo.createCalls, equals(1));
     });
 
     testWidgets(
@@ -701,6 +702,7 @@ void main() {
 class _DelayedTaskRepository extends TaskRepository {
   final TaskRepository _inner;
   final Completer<void> _gate;
+  int createCalls = 0;
 
   _DelayedTaskRepository(this._inner, this._gate)
     : super(FakeFirebaseFirestore());
@@ -715,6 +717,7 @@ class _DelayedTaskRepository extends TaskRepository {
     DateTime? dueDate,
     String? dueTime,
   }) async {
+    createCalls++;
     await _gate.future;
     return _inner.createTask(
       uid: uid,
