@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../features/tasks/data/task.dart';
 import '../../features/tasks/providers/task_providers.dart';
@@ -51,23 +52,40 @@ void requestWebPermissionOnSave({
 
   permFuture.then((result) async {
     if (result == WebPermissionResult.denied) {
-      const flagKey = 'web_notifications_denied_snack_shown';
-      final alreadyShown = prefs?.getBool(flagKey) ?? false;
-      if (!alreadyShown) {
-        await prefs?.setBool(flagKey, true);
-        const snackBar = SnackBar(
-          content: Text(
-            "Notifications are blocked in your browser. You won't get task reminders from this tab.",
-          ),
-        );
-        if (mounted && context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(snackBar);
-        } else {
-          rootScaffoldMessengerKey.currentState?.showSnackBar(snackBar);
-        }
+      if (!mounted) {
+        await showWebNotificationsDeniedSnackBar(prefs: prefs, context: null);
+        return;
       }
+      await showWebNotificationsDeniedSnackBar(
+        prefs: prefs,
+        context: context.mounted ? context : null,
+      );
     }
   });
+}
+
+/// The message displayed when web notifications are blocked/denied.
+const webNotificationsDeniedMessage =
+    "Notifications are blocked in your browser. You won't get task reminders from this tab.";
+
+/// SharedPreferences key tracking whether the denied permission SnackBar has been shown.
+const webNotificationsDeniedFlagKey = 'web_notifications_denied_snack_shown';
+
+/// Shows a SnackBar when web notifications are denied, respecting the one-time display flag.
+Future<void> showWebNotificationsDeniedSnackBar({
+  required SharedPreferences? prefs,
+  BuildContext? context,
+}) async {
+  final alreadyShown = prefs?.getBool(webNotificationsDeniedFlagKey) ?? false;
+  if (!alreadyShown) {
+    await prefs?.setBool(webNotificationsDeniedFlagKey, true);
+    const snackBar = SnackBar(content: Text(webNotificationsDeniedMessage));
+    if (context != null && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(snackBar);
+    } else {
+      rootScaffoldMessengerKey.currentState?.showSnackBar(snackBar);
+    }
+  }
 }
 
 /// Scheduler that periodically evaluates upcoming/due tasks on web.
