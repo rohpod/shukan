@@ -8,6 +8,7 @@ import 'package:shukan/core/firebase/firebase_providers.dart';
 import 'package:shukan/features/auth/presentation/home_screen.dart';
 import 'package:shukan/features/lists/presentation/list_detail_screen.dart';
 import 'package:shukan/features/lists/presentation/list_icon_picker_dialog.dart';
+import 'package:shukan/features/search/presentation/widgets/search_results_view.dart';
 import 'package:shukan/features/tags/presentation/widgets/tag_tasks_popup.dart';
 import 'package:shukan/features/tasks/presentation/recently_deleted_screen.dart';
 import 'package:timezone/data/latest_all.dart' as tz_data;
@@ -293,28 +294,61 @@ void main() {
       expect(find.byType(HomeScreen), findsOneWidget);
     });
 
-    testWidgets('tapping search button navigates to SearchScreen and back', (
-      tester,
-    ) async {
-      await tester.pumpWidget(createWidgetUnderTest());
-      await tester.pumpAndSettle();
+    testWidgets(
+      'tapping search button expands search inline and collapses back',
+      (tester) async {
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('searchButton')));
-      await tester.pumpAndSettle();
+        final initialRoute = ModalRoute.of(
+          tester.element(find.byType(HomeScreen)),
+        );
 
-      expect(find.byKey(const Key('searchQueryInput')), findsOneWidget);
+        // Normal home body is visible
+        expect(find.byKey(const Key('smartViewCard_today')), findsOneWidget);
+        expect(find.byKey(const Key('logoutButton')), findsOneWidget);
 
-      await tester.tap(find.byTooltip('Back'));
-      await tester.pumpAndSettle();
+        // Tap searchButton to expand search inline
+        await tester.tap(find.byKey(const Key('searchButton')));
+        await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('searchQueryInput')), findsNothing);
-      expect(find.byType(HomeScreen), findsOneWidget);
-    });
+        // Search input is visible
+        expect(find.byKey(const Key('searchQueryInput')), findsOneWidget);
+        // Normal home body is gone
+        expect(find.byKey(const Key('smartViewCard_today')), findsNothing);
+        expect(find.byKey(const Key('noListsText')), findsNothing);
+
+        // Assert NO new route was pushed (same route / ModalRoute before and after)
+        final currentRoute = ModalRoute.of(
+          tester.element(find.byType(HomeScreen)),
+        );
+        expect(currentRoute, equals(initialRoute));
+        expect(find.byType(Dialog), findsNothing);
+
+        // Tap searchButton again (now showing close icon)
+        final searchButton = tester.widget<IconButton>(
+          find.byKey(const Key('searchButton')),
+        );
+        expect((searchButton.icon as Icon).icon, Icons.close);
+        await tester.tap(find.byKey(const Key('searchButton')));
+        await tester.pumpAndSettle();
+
+        // Home body, logoutButton, and normal search icon are restored
+        expect(find.byKey(const Key('searchQueryInput')), findsNothing);
+        expect(find.byKey(const Key('smartViewCard_today')), findsOneWidget);
+        expect(find.byKey(const Key('logoutButton')), findsOneWidget);
+        final restoredButton = tester.widget<IconButton>(
+          find.byKey(const Key('searchButton')),
+        );
+        expect((restoredButton.icon as Icon).icon, Icons.search);
+        expect(find.byType(HomeScreen), findsOneWidget);
+      },
+    );
 
     testWidgets(
-      'search dialog is full-screen below 600 width and a constrained modal at or above 600 width',
+      'inline search expands to span available width with no Dialog on both narrow and wide screens',
       (tester) async {
-        // Below 600 width (e.g. mobile 450x800)
+        // Narrow width (e.g. mobile 450x800)
         tester.view.physicalSize = const Size(450, 800);
         tester.view.devicePixelRatio = 1.0;
         addTearDown(() {
@@ -328,60 +362,48 @@ void main() {
         await tester.tap(find.byKey(const Key('searchButton')));
         await tester.pumpAndSettle();
 
-        // Below 600: Dialog is fullscreen (zero inset padding, full screen dimensions, no ConstrainedBox wrapper)
-        final smallDialog = tester.widget<Dialog>(find.byType(Dialog));
-        expect(smallDialog.insetPadding, EdgeInsets.zero);
-        expect(tester.getSize(find.byType(Dialog)), const Size(450, 800));
+        expect(find.byType(Dialog), findsNothing);
         expect(
           find.byKey(const Key('searchDialogConstrainedBox')),
           findsNothing,
         );
+        expect(find.byKey(const Key('searchQueryInput')), findsOneWidget);
+        final narrowBodySize = tester.getSize(find.byType(SearchResultsView));
+        expect(narrowBodySize.width, 450);
 
-        // Dismiss search dialog
-        await tester.tap(find.byTooltip('Back'));
+        // Collapse search
+        await tester.tap(find.byKey(const Key('searchButton')));
         await tester.pumpAndSettle();
 
-        // At or above 600 width (e.g. desktop 800x800)
+        // Wide width (e.g. desktop 800x800)
         tester.view.physicalSize = const Size(800, 800);
         await tester.pumpAndSettle();
 
         await tester.tap(find.byKey(const Key('searchButton')));
         await tester.pumpAndSettle();
 
-        // At or above 600: Dialog is a constrained modal
-        final largeDialog = tester.widget<Dialog>(find.byType(Dialog));
+        expect(find.byType(Dialog), findsNothing);
         expect(
-          largeDialog.insetPadding,
-          const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          find.byKey(const Key('searchDialogConstrainedBox')),
+          findsNothing,
         );
+        expect(find.byKey(const Key('searchQueryInput')), findsOneWidget);
+        final wideBodySize = tester.getSize(find.byType(SearchResultsView));
+        expect(wideBodySize.width, 800);
 
-        final constrainedBoxFinder = find.byKey(
-          const Key('searchDialogConstrainedBox'),
-        );
-        expect(constrainedBoxFinder, findsOneWidget);
-        final constrainedBox = tester.widget<ConstrainedBox>(
-          constrainedBoxFinder,
-        );
-        expect(constrainedBox.constraints.maxWidth, 600);
-        expect(
-          constrainedBox.constraints.maxHeight,
-          closeTo(800 * 0.85, 0.001),
-        );
-        expect(tester.getSize(constrainedBoxFinder), Size(600, 800 * 0.85));
-
-        // Dismiss search dialog
-        await tester.tap(find.byTooltip('Back'));
+        // Collapse search
+        await tester.tap(find.byKey(const Key('searchButton')));
         await tester.pumpAndSettle();
       },
     );
 
     testWidgets(
-      'tapping View on add-task SnackBar closes search dialog and opens ListDetailScreen',
+      'tapping View on add-task SnackBar collapses inline search and opens ListDetailScreen',
       (tester) async {
         await tester.pumpWidget(createWidgetUnderTest());
         await tester.pumpAndSettle();
 
-        // Open search dialog
+        // Expand inline search
         await tester.tap(find.byKey(const Key('searchButton')));
         await tester.pumpAndSettle();
 
@@ -408,21 +430,68 @@ void main() {
         await tester.tap(find.text('View'));
         await tester.pumpAndSettle();
 
-        // ListDetailScreen is pushed
+        // ListDetailScreen is pushed as a new route on top of HomeScreen
         expect(find.byType(ListDetailScreen), findsOneWidget);
         expect(find.text('Inbox'), findsWidgets);
-        // The search dialog is closed/popped
+        // Search is collapsed
         expect(find.byKey(const Key('searchQueryInput')), findsNothing);
 
-        // Tapping Back from ListDetailScreen returns to HomeScreen, NOT search dialog
+        // Tapping Back from ListDetailScreen returns to HomeScreen with normal body restored
         await tester.tap(find.byTooltip('Back'));
         await tester.pumpAndSettle();
 
         expect(find.byType(ListDetailScreen), findsNothing);
         expect(find.byKey(const Key('searchQueryInput')), findsNothing);
         expect(find.byType(HomeScreen), findsOneWidget);
+        expect(find.byKey(const Key('smartViewCard_today')), findsOneWidget);
       },
     );
+
+    testWidgets(
+      'logoutButton is absent while search is active and present once collapsed',
+      (tester) async {
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('logoutButton')), findsOneWidget);
+
+        // Expand search
+        await tester.tap(find.byKey(const Key('searchButton')));
+        await tester.pumpAndSettle();
+
+        // logoutButton is absent from the widget tree
+        expect(find.byKey(const Key('logoutButton')), findsNothing);
+
+        // Collapse search
+        await tester.tap(find.byKey(const Key('searchButton')));
+        await tester.pumpAndSettle();
+
+        // logoutButton is present again
+        expect(find.byKey(const Key('logoutButton')), findsOneWidget);
+      },
+    );
+
+    testWidgets('system back action collapses inline search when active', (
+      tester,
+    ) async {
+      await tester.pumpWidget(createWidgetUnderTest());
+      await tester.pumpAndSettle();
+
+      // Expand search
+      await tester.tap(find.byKey(const Key('searchButton')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('searchQueryInput')), findsOneWidget);
+
+      // Simulate system back action
+      final dynamic widgetsAppState = tester.state(find.byType(WidgetsApp));
+      await widgetsAppState.didPopRoute();
+      await tester.pumpAndSettle();
+
+      // Search is collapsed, home body restored
+      expect(find.byKey(const Key('searchQueryInput')), findsNothing);
+      expect(find.byKey(const Key('smartViewCard_today')), findsOneWidget);
+      expect(find.byKey(const Key('logoutButton')), findsOneWidget);
+    });
 
     testWidgets('logout button signs user out', (tester) async {
       await tester.pumpWidget(createWidgetUnderTest());

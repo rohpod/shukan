@@ -1,548 +1,89 @@
-import 'dart:async';
-
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/notifications/web_reminder_scheduler.dart';
 import '../../auth/providers/auth_providers.dart';
-import '../../lists/data/list.dart';
-import '../../lists/presentation/list_detail_screen.dart';
 import '../../lists/providers/list_providers.dart';
-import '../../tags/providers/tag_providers.dart';
-import '../../tasks/data/task.dart';
-import '../../tasks/domain/quick_add_parser.dart';
-import '../../tasks/presentation/task_list_screen.dart';
-import '../../tasks/presentation/widgets/empty_state_view.dart';
-import '../../tasks/presentation/widgets/quick_add_preview_chip.dart';
-import '../../tasks/presentation/widgets/task_priority_marker.dart';
-import '../../tasks/providers/smart_view_providers.dart';
-import '../../tasks/providers/task_providers.dart';
-import '../providers/search_providers.dart';
+import 'search_logic_mixin.dart';
+import 'widgets/search_input_field.dart';
+import 'widgets/search_results_view.dart';
+
+export 'search_logic_mixin.dart';
+export 'widgets/search_input_field.dart';
+export 'widgets/search_results_view.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
-  const SearchScreen({super.key});
+  final VoidCallback? onCollapse;
+  const SearchScreen({super.key, this.onCollapse});
 
   @override
   ConsumerState<SearchScreen> createState() => _SearchScreenState();
 }
 
-class _SearchScreenState extends ConsumerState<SearchScreen> {
-  final _scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
-  late final TextEditingController _searchController;
-  Timer? _debounceTimer;
-  bool _isCreatingTask = false;
-
-  bool _hasParsedAdd = false;
-  String? _rawAddText;
-  String? _parsedTitle;
-  DateTime? _parsedAddDueDate;
-  String? _parsedAddDueTime;
-
+class _SearchScreenState extends ConsumerState<SearchScreen>
+    with SearchLogicMixin {
   @override
   void initState() {
     super.initState();
-    final initialQuery = ref.read(searchQueryProvider);
-    _searchController = TextEditingController(text: initialQuery);
+    initSearchLogic();
   }
 
   @override
   void dispose() {
-    _debounceTimer?.cancel();
-    _searchController.dispose();
+    disposeSearchLogic();
     super.dispose();
   }
 
-  void _resetParseAddState() {
-    _hasParsedAdd = false;
-    _rawAddText = null;
-    _parsedTitle = null;
-    _parsedAddDueDate = null;
-    _parsedAddDueTime = null;
-  }
-
-  void _dismissAddChip() {
-    setState(() {
-      _resetParseAddState();
-    });
-  }
-
-  void _onSearchChanged(String value) {
-    _debounceTimer?.cancel();
-    _debounceTimer = Timer(const Duration(milliseconds: 300), () {
-      if (mounted) {
-        ref.read(searchQueryProvider.notifier).setQuery(value.trim());
-      }
-    });
-  }
-
-  Future<void> _showEditDialog(
-    BuildContext context,
-    String uid,
-    Task task,
-  ) async {
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) =>
-          TaskDialog(uid: uid, listId: task.listId, task: task),
-    );
-  }
-
-  Future<void> _handleAddTaskAction(
-    String uid,
-    ListModel list,
-    String trimmedQuery,
-  ) async {
-    if (_isCreatingTask) return;
-
-    if (!_hasParsedAdd) {
-      final now = ref.read(currentDateProvider);
-      final parseResult = parseQuickAdd(trimmedQuery, now: now);
-
-      if (parseResult.dueDate != null || parseResult.dueTime != null) {
-        setState(() {
-          _hasParsedAdd = true;
-          _rawAddText = trimmedQuery;
-          _parsedTitle = parseResult.strippedTitle;
-          _parsedAddDueDate = parseResult.dueDate;
-          _parsedAddDueTime = parseResult.dueTime;
-        });
-        return;
-      } else {
-        // No date phrase recognized: create task immediately in single step
-        await _createTaskAndNotify(
-          uid: uid,
-          list: list,
-          title: trimmedQuery,
-          dueDate: null,
-          dueTime: null,
-        );
-        return;
+  void _handleCollapse() {
+    if (widget.onCollapse != null) {
+      widget.onCollapse!();
+    } else {
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
       }
     }
-
-    // Phase 2: Confirm and create task with parsed values
-    final titleToCreate = (_parsedTitle != null && _parsedTitle!.isNotEmpty)
-        ? _parsedTitle!
-        : (_rawAddText ?? trimmedQuery);
-
-    if (titleToCreate.isEmpty) return;
-
-    await _createTaskAndNotify(
-      uid: uid,
-      list: list,
-      title: titleToCreate,
-      dueDate: _parsedAddDueDate,
-      dueTime: _parsedAddDueTime,
-    );
-  }
-
-  Future<void> _createTaskAndNotify({
-    required String uid,
-    required ListModel list,
-    required String title,
-    DateTime? dueDate,
-    String? dueTime,
-  }) async {
-    if (_isCreatingTask) return;
-    setState(() {
-      _isCreatingTask = true;
-    });
-
-    _debounceTimer?.cancel();
-    ref.read(searchQueryProvider.notifier).setQuery(title);
-
-    if (dueDate != null) {
-      requestWebPermissionOnSave(ref: ref, context: context, mounted: mounted);
-    }
-
-    try {
-      await ref
-          .read(taskRepositoryProvider)
-          .createTask(
-            uid: uid,
-            listId: list.listId,
-            title: title,
-            dueDate: dueDate,
-            dueTime: dueTime,
-          );
-
-      if (mounted) {
-        setState(() {
-          _resetParseAddState();
-        });
-        final navigator = Navigator.of(context);
-        _scaffoldMessengerKey.currentState?.showSnackBar(
-          SnackBar(
-            content: Text('Added to ${list.name}'),
-            action: SnackBarAction(
-              label: 'View',
-              onPressed: () {
-                _scaffoldMessengerKey.currentState?.hideCurrentSnackBar();
-                if (navigator.canPop()) {
-                  navigator.pop();
-                }
-                navigator.push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => ListDetailScreen(list: list),
-                  ),
-                );
-              },
-            ),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        _scaffoldMessengerKey.currentState?.showSnackBar(
-          SnackBar(content: Text('Failed to add task: $e')),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isCreatingTask = false;
-        });
-      } else {
-        _isCreatingTask = false;
-      }
-    }
-  }
-
-  bool _isFailedPrecondition(Object error) {
-    if (error is FirebaseException && error.code == 'failed-precondition') {
-      return true;
-    }
-    final str = error.toString().toLowerCase();
-    return str.contains('failed-precondition') ||
-        str.contains('requires an index');
-  }
-
-  Widget _buildErrorView(
-    Object error,
-    StackTrace? stackTrace,
-    String contextMessage,
-  ) {
-    debugPrint('$contextMessage: $error');
-    if (stackTrace != null) {
-      debugPrint('$stackTrace');
-    }
-    final isFailedPrecondition = _isFailedPrecondition(error);
-    final message = isFailedPrecondition
-        ? 'Search is temporarily unavailable — please try again shortly'
-        : 'Something went wrong';
-
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              isFailedPrecondition ? Icons.schedule : Icons.error_outline,
-              size: 48,
-              color: isFailedPrecondition ? Colors.orange : Colors.redAccent,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              message,
-              key: const Key('searchErrorText'),
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 16),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
     final uid = ref.watch(currentUidProvider);
     final effectiveList = ref.watch(effectiveDefaultListProvider);
-    final allTasksAsync = ref.watch(allTasksForCurrentUserProvider);
-    final tagsAsync = ref.watch(tagsForCurrentUserProvider);
-    final query = ref.watch(searchQueryProvider).toLowerCase();
-    final trimmedQuery = _searchController.text.trim();
-    final isActionEnabled =
-        effectiveList != null && !_isCreatingTask && uid != null;
-    final displayTitle = (_hasParsedAdd && _parsedTitle != null)
-        ? _parsedTitle!
-        : trimmedQuery;
-    final hasDateOrTime =
-        _parsedAddDueDate != null || _parsedAddDueTime != null;
-    final scaffold = ScaffoldMessenger(
-      key: _scaffoldMessengerKey,
-      child: Scaffold(
-        appBar: AppBar(
-          automaticallyImplyLeading: false,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back),
-            tooltip: 'Back',
-            onPressed: () => Navigator.of(context).pop(),
-          ),
-          title: TextField(
-            key: const Key('searchQueryInput'),
-            controller: _searchController,
-            autofocus: true,
-            textInputAction: TextInputAction.done,
-            decoration: InputDecoration(
-              hintText: 'Search tasks, notes, tags...',
-              border: InputBorder.none,
-              suffixIcon: _searchController.text.isNotEmpty
-                  ? IconButton(
-                      key: const Key('clearSearchQueryButton'),
-                      icon: const Icon(Icons.clear, size: 20),
-                      onPressed: () {
-                        _searchController.clear();
-                        _resetParseAddState();
-                        _debounceTimer?.cancel();
-                        ref.read(searchQueryProvider.notifier).setQuery('');
-                        setState(() {});
-                      },
-                    )
-                  : null,
-            ),
-            onChanged: (val) {
-              if (_hasParsedAdd) {
-                _resetParseAddState();
-              }
-              setState(() {});
-              _onSearchChanged(val);
-            },
-            onSubmitted: (isActionEnabled && trimmedQuery.isNotEmpty)
-                ? (_) => _handleAddTaskAction(uid, effectiveList, trimmedQuery)
-                : null,
-          ),
-        ),
-        body: Column(
-          children: [
-            if (trimmedQuery.isNotEmpty) ...[
-              ListTile(
-                key: const Key('searchAddTaskAction'),
-                leading: const Icon(Icons.add_circle_outline),
-                title: Text(
-                  'Add "$displayTitle" as a task',
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                ),
-                trailing: (_hasParsedAdd && hasDateOrTime)
-                    ? QuickAddPreviewChip(
-                        dueDate: _parsedAddDueDate,
-                        dueTime: _parsedAddDueTime,
-                        onDismiss: _dismissAddChip,
-                      )
-                    : null,
-                enabled: isActionEnabled,
-                onTap: isActionEnabled
-                    ? () =>
-                          _handleAddTaskAction(uid, effectiveList, trimmedQuery)
-                    : null,
-              ),
-              const Divider(height: 1),
-            ],
-            Expanded(
-              child: tagsAsync.hasError
-                  ? _buildErrorView(
-                      tagsAsync.error!,
-                      tagsAsync.stackTrace,
-                      'Error in tagsForCurrentUserProvider',
-                    )
-                  : allTasksAsync.when(
-                      data: (allTasks) {
-                        final tagMap = tagsAsync.when(
-                          data: (tags) => {
-                            for (final tag in tags) tag.tagId: tag.name,
-                          },
-                          loading: () => <String, String>{},
-                          error: (e, st) {
-                            debugPrint(
-                              'Error in tagsForCurrentUserProvider: $e\n$st',
-                            );
-                            return <String, String>{};
-                          },
-                        );
 
-                        // Filter tasks by completion status and search query
-                        final matchingTasks = allTasks.where((task) {
-                          if (task.isCompleted) {
-                            return false;
-                          }
-
-                          if (query.isNotEmpty) {
-                            final titleMatches = task.title
-                                .toLowerCase()
-                                .contains(query);
-                            final notesMatches = task.notes
-                                .toLowerCase()
-                                .contains(query);
-                            final tagMatches = task.tagIds.any((tagId) {
-                              final tagName = tagMap[tagId];
-                              return tagName != null &&
-                                  tagName.toLowerCase().contains(query);
-                            });
-
-                            if (!titleMatches && !notesMatches && !tagMatches) {
-                              return false;
-                            }
-                          }
-
-                          return true;
-                        }).toList();
-
-                        if (matchingTasks.isEmpty) {
-                          if (allTasks.isEmpty) {
-                            return const EmptyStateView(
-                              icon: Icons.search_off_outlined,
-                              message: 'No tasks found',
-                              messageKey: Key('noSearchResultsText'),
-                            );
-                          }
-
-                          return EmptyStateView(
-                            icon: Icons.filter_alt_off_outlined,
-                            message: 'No matching tasks found',
-                            messageKey: const Key('noSearchResultsText'),
-                            actionLabel: 'Clear search',
-                            actionIcon: Icons.clear,
-                            actionKey: const Key('clearSearchFiltersButton'),
-                            onAction: () {
-                              _searchController.clear();
-                              _resetParseAddState();
-                              _debounceTimer?.cancel();
-                              ref
-                                  .read(searchQueryProvider.notifier)
-                                  .setQuery('');
-                              setState(() {});
-                            },
-                          );
-                        }
-
-                        return ListView.separated(
-                          key: const Key('searchResultsListView'),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                          itemCount: matchingTasks.length,
-                          separatorBuilder: (context, index) =>
-                              const Divider(height: 1),
-                          itemBuilder: (context, index) {
-                            final task = matchingTasks[index];
-                            return ListTile(
-                              key: Key('taskItem_${task.taskId}'),
-                              onTap: uid != null
-                                  ? () => _showEditDialog(context, uid, task)
-                                  : null,
-                              leading: Checkbox(
-                                key: Key('taskCompleteCheckbox_${task.taskId}'),
-                                value: task.isCompleted,
-                                onChanged: (val) async {
-                                  await ref
-                                      .read(taskRepositoryProvider)
-                                      .toggleTaskCompleted(
-                                        task.taskId,
-                                        isCompleted: val ?? false,
-                                      );
-                                },
-                              ),
-                              title: Row(
-                                children: [
-                                  if (task.priority != 'none') ...[
-                                    TaskPriorityMarker(
-                                      priority: task.priority,
-                                      taskId: task.taskId,
-                                    ),
-                                    const SizedBox(width: 6),
-                                  ],
-                                  Expanded(
-                                    child: Text(
-                                      task.title,
-                                      key: Key('taskTitle_${task.taskId}'),
-                                      style: TextStyle(
-                                        decoration: task.isCompleted
-                                            ? TextDecoration.lineThrough
-                                            : null,
-                                        color: task.isCompleted
-                                            ? Colors.grey
-                                            : null,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              subtitle:
-                                  (task.notes.isNotEmpty || task.url.isNotEmpty)
-                                  ? Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        if (task.notes.isNotEmpty)
-                                          Text(
-                                            task.notes,
-                                            key: Key(
-                                              'taskNotes_${task.taskId}',
-                                            ),
-                                            style: TextStyle(
-                                              color: task.isCompleted
-                                                  ? Colors.grey
-                                                  : Colors.grey[700],
-                                            ),
-                                          ),
-                                        if (task.url.isNotEmpty)
-                                          Text(
-                                            task.url,
-                                            key: Key('taskUrl_${task.taskId}'),
-                                            style: const TextStyle(
-                                              color: Colors.blue,
-                                              decoration:
-                                                  TextDecoration.underline,
-                                            ),
-                                          ),
-                                      ],
-                                    )
-                                  : null,
-                            );
-                          },
-                        );
-                      },
-                      loading: () => const Center(
-                        key: Key('searchTasksLoadingIndicator'),
-                        child: CircularProgressIndicator(),
-                      ),
-                      error: (e, st) => _buildErrorView(
-                        e,
-                        st,
-                        'Error in allTasksForCurrentUserProvider',
-                      ),
-                    ),
-            ),
-          ],
+    return Scaffold(
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        title: SearchInputField(
+          controller: searchController,
+          onChanged: onSearchQueryChanged,
+          onClear: clearSearchQuery,
+          onSubmitted: (trimmed) {
+            if (uid != null && effectiveList != null && trimmed.isNotEmpty) {
+              handleAddTaskAction(
+                uid: uid,
+                list: effectiveList,
+                trimmedQuery: trimmed,
+                onCollapse: _handleCollapse,
+              );
+            }
+          },
         ),
       ),
-    );
-
-    final size = MediaQuery.sizeOf(context);
-    final isSmallScreen = size.width < 600;
-
-    if (isSmallScreen) {
-      return Dialog.fullscreen(child: scaffold);
-    }
-
-    return Dialog(
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-      child: ConstrainedBox(
-        key: const Key('searchDialogConstrainedBox'),
-        constraints: BoxConstraints(
-          maxWidth: 600,
-          maxHeight: size.height * 0.85,
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: scaffold,
-        ),
+      body: SearchResultsView(
+        searchController: searchController,
+        hasParsedAdd: hasParsedAdd,
+        parsedTitle: parsedTitle,
+        parsedAddDueDate: parsedAddDueDate,
+        parsedAddDueTime: parsedAddDueTime,
+        isCreatingTask: isCreatingTask,
+        onDismissAddChip: dismissAddChip,
+        onAddTaskAction: (ctx, actionUid, actionList, query) =>
+            handleAddTaskAction(
+              uid: actionUid,
+              list: actionList,
+              trimmedQuery: query,
+              onCollapse: _handleCollapse,
+            ),
+        onClearSearch: clearSearchQuery,
+        onCollapse: _handleCollapse,
       ),
     );
   }
