@@ -4,15 +4,19 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/notifications/web_reminder_scheduler.dart';
 import '../../auth/providers/auth_providers.dart';
 import '../../lists/data/list.dart';
 import '../../lists/presentation/list_detail_screen.dart';
 import '../../lists/providers/list_providers.dart';
 import '../../tags/providers/tag_providers.dart';
 import '../../tasks/data/task.dart';
+import '../../tasks/domain/quick_add_parser.dart';
 import '../../tasks/presentation/task_list_screen.dart';
 import '../../tasks/presentation/widgets/empty_state_view.dart';
+import '../../tasks/presentation/widgets/quick_add_preview_chip.dart';
 import '../../tasks/presentation/widgets/task_priority_marker.dart';
+import '../../tasks/providers/smart_view_providers.dart';
 import '../../tasks/providers/task_providers.dart';
 import '../providers/search_providers.dart';
 
@@ -29,6 +33,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Timer? _debounceTimer;
   bool _isCreatingTask = false;
 
+  bool _hasParsedAdd = false;
+  String? _rawAddText;
+  String? _parsedTitle;
+  DateTime? _parsedAddDueDate;
+  String? _parsedAddDueTime;
+
   @override
   void initState() {
     super.initState();
@@ -41,6 +51,20 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     _debounceTimer?.cancel();
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _resetParseAddState() {
+    _hasParsedAdd = false;
+    _rawAddText = null;
+    _parsedTitle = null;
+    _parsedAddDueDate = null;
+    _parsedAddDueTime = null;
+  }
+
+  void _dismissAddChip() {
+    setState(() {
+      _resetParseAddState();
+    });
   }
 
   void _onSearchChanged(String value) {
@@ -64,7 +88,62 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     );
   }
 
-  Future<void> _handleAddTask(String uid, ListModel list, String title) async {
+  Future<void> _handleAddTaskAction(
+    String uid,
+    ListModel list,
+    String trimmedQuery,
+  ) async {
+    if (_isCreatingTask) return;
+
+    if (!_hasParsedAdd) {
+      final now = ref.read(currentDateProvider);
+      final parseResult = parseQuickAdd(trimmedQuery, now: now);
+
+      if (parseResult.dueDate != null || parseResult.dueTime != null) {
+        setState(() {
+          _hasParsedAdd = true;
+          _rawAddText = trimmedQuery;
+          _parsedTitle = parseResult.strippedTitle;
+          _parsedAddDueDate = parseResult.dueDate;
+          _parsedAddDueTime = parseResult.dueTime;
+        });
+        return;
+      } else {
+        // No date phrase recognized: create task immediately in single step
+        await _createTaskAndNotify(
+          uid: uid,
+          list: list,
+          title: trimmedQuery,
+          dueDate: null,
+          dueTime: null,
+        );
+        return;
+      }
+    }
+
+    // Phase 2: Confirm and create task with parsed values
+    final titleToCreate = (_parsedTitle != null && _parsedTitle!.isNotEmpty)
+        ? _parsedTitle!
+        : (_rawAddText ?? trimmedQuery);
+
+    if (titleToCreate.isEmpty) return;
+
+    await _createTaskAndNotify(
+      uid: uid,
+      list: list,
+      title: titleToCreate,
+      dueDate: _parsedAddDueDate,
+      dueTime: _parsedAddDueTime,
+    );
+  }
+
+  Future<void> _createTaskAndNotify({
+    required String uid,
+    required ListModel list,
+    required String title,
+    DateTime? dueDate,
+    String? dueTime,
+  }) async {
     if (_isCreatingTask) return;
     setState(() {
       _isCreatingTask = true;
@@ -73,12 +152,25 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     _debounceTimer?.cancel();
     ref.read(searchQueryProvider.notifier).setQuery(title);
 
+    if (dueDate != null) {
+      requestWebPermissionOnSave(ref: ref, context: context, mounted: mounted);
+    }
+
     try {
       await ref
           .read(taskRepositoryProvider)
-          .createTask(uid: uid, listId: list.listId, title: title);
+          .createTask(
+            uid: uid,
+            listId: list.listId,
+            title: title,
+            dueDate: dueDate,
+            dueTime: dueTime,
+          );
 
       if (mounted) {
+        setState(() {
+          _resetParseAddState();
+        });
         final navigator = Navigator.of(context);
         _scaffoldMessengerKey.currentState?.showSnackBar(
           SnackBar(
@@ -174,6 +266,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final trimmedQuery = _searchController.text.trim();
     final isActionEnabled =
         effectiveList != null && !_isCreatingTask && uid != null;
+    final displayTitle = (_hasParsedAdd && _parsedTitle != null)
+        ? _parsedTitle!
+        : trimmedQuery;
+    final hasDateOrTime =
+        _parsedAddDueDate != null || _parsedAddDueTime != null;
     final scaffold = ScaffoldMessenger(
       key: _scaffoldMessengerKey,
       child: Scaffold(
@@ -188,6 +285,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             key: const Key('searchQueryInput'),
             controller: _searchController,
             autofocus: true,
+            textInputAction: TextInputAction.done,
             decoration: InputDecoration(
               hintText: 'Search tasks, notes, tags...',
               border: InputBorder.none,
@@ -197,6 +295,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                       icon: const Icon(Icons.clear, size: 20),
                       onPressed: () {
                         _searchController.clear();
+                        _resetParseAddState();
                         _debounceTimer?.cancel();
                         ref.read(searchQueryProvider.notifier).setQuery('');
                         setState(() {});
@@ -205,9 +304,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   : null,
             ),
             onChanged: (val) {
+              if (_hasParsedAdd) {
+                _resetParseAddState();
+              }
               setState(() {});
               _onSearchChanged(val);
             },
+            onSubmitted: (isActionEnabled && trimmedQuery.isNotEmpty)
+                ? (_) => _handleAddTaskAction(uid, effectiveList, trimmedQuery)
+                : null,
           ),
         ),
         body: Column(
@@ -217,13 +322,21 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 key: const Key('searchAddTaskAction'),
                 leading: const Icon(Icons.add_circle_outline),
                 title: Text(
-                  'Add "$trimmedQuery" as a task',
+                  'Add "$displayTitle" as a task',
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
                 ),
+                trailing: (_hasParsedAdd && hasDateOrTime)
+                    ? QuickAddPreviewChip(
+                        dueDate: _parsedAddDueDate,
+                        dueTime: _parsedAddDueTime,
+                        onDismiss: _dismissAddChip,
+                      )
+                    : null,
                 enabled: isActionEnabled,
                 onTap: isActionEnabled
-                    ? () => _handleAddTask(uid, effectiveList, trimmedQuery)
+                    ? () =>
+                          _handleAddTaskAction(uid, effectiveList, trimmedQuery)
                     : null,
               ),
               const Divider(height: 1),
@@ -291,6 +404,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                             actionKey: const Key('clearSearchFiltersButton'),
                             onAction: () {
                               _searchController.clear();
+                              _resetParseAddState();
                               _debounceTimer?.cancel();
                               ref
                                   .read(searchQueryProvider.notifier)

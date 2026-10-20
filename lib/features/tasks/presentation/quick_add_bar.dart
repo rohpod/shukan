@@ -6,6 +6,7 @@ import '../data/task.dart';
 import '../domain/quick_add_parser.dart';
 import '../providers/smart_view_providers.dart';
 import '../providers/task_providers.dart';
+import 'widgets/quick_add_preview_chip.dart';
 
 class QuickAddBar extends ConsumerStatefulWidget {
   final String uid;
@@ -166,39 +167,6 @@ class _QuickAddBarState extends ConsumerState<QuickAddBar> {
     }
   }
 
-  String _formatDueTime12Hour(String dueTime24) {
-    final parts = dueTime24.split(':');
-    if (parts.length != 2) return dueTime24;
-    final h = int.tryParse(parts[0]) ?? 0;
-    final m = int.tryParse(parts[1]) ?? 0;
-    final ampm = h >= 12 ? 'PM' : 'AM';
-    final h12 = h == 0 ? 12 : (h > 12 ? h - 12 : h);
-    final mStr = m.toString().padLeft(2, '0');
-    return '$h12:$mStr $ampm';
-  }
-
-  String _formatPreviewDate(DateTime date, DateTime now) {
-    final today = DateTime(now.year, now.month, now.day);
-    final target = DateTime(date.year, date.month, date.day);
-    final diff = target.difference(today).inDays;
-    if (diff == 0) return 'Today';
-    if (diff == 1) return 'Tomorrow';
-    if (diff == -1) return 'Yesterday';
-    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-  }
-
-  String _buildChipLabel() {
-    final now = ref.read(currentDateProvider);
-    final parts = <String>[];
-    if (_parsedDueDate != null) {
-      parts.add(_formatPreviewDate(_parsedDueDate!, now));
-    }
-    if (_parsedDueTime != null) {
-      parts.add(_formatDueTime12Hour(_parsedDueTime!));
-    }
-    return parts.join(' ');
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -236,27 +204,10 @@ class _QuickAddBarState extends ConsumerState<QuickAddBar> {
           if (hasDateOrTime)
             Padding(
               padding: const EdgeInsets.only(bottom: 6, left: 4),
-              child: Chip(
-                key: const Key('quickAddDateChip'),
-                avatar: Icon(
-                  Icons.event_outlined,
-                  size: 16,
-                  color: theme.colorScheme.primary,
-                ),
-                label: Text(
-                  _buildChipLabel(),
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                deleteIcon: const Icon(Icons.close, size: 14),
-                deleteButtonTooltipMessage: 'Remove date/time',
-                onDeleted: _onDismissChip,
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: QuickAddPreviewChip(
+                dueDate: _parsedDueDate,
+                dueTime: _parsedDueTime,
+                onDismiss: _onDismissChip,
               ),
             ),
           Row(

@@ -12,12 +12,14 @@ import 'package:shukan/features/search/presentation/search_screen.dart';
 import 'package:shukan/features/tags/providers/tag_providers.dart';
 import 'package:shukan/features/tasks/data/task.dart';
 import 'package:shukan/features/tasks/data/task_repository.dart';
+import 'package:shukan/features/tasks/providers/smart_view_providers.dart';
 import 'package:shukan/features/tasks/providers/task_providers.dart';
 
 void main() {
   late MockFirebaseAuth mockAuth;
   late FakeFirebaseFirestore fakeFirestore;
   const uid = 'test-search-user';
+  final fixedClock = DateTime(2026, 10, 14, 10, 0); // Wednesday
 
   setUp(() async {
     mockAuth = MockFirebaseAuth(
@@ -133,6 +135,7 @@ void main() {
       overrides: [
         firebaseAuthProvider.overrideWithValue(mockAuth),
         firestoreProvider.overrideWithValue(fakeFirestore),
+        currentDateProvider.overrideWithValue(fixedClock),
         ...additionalOverrides,
       ],
       child: const MaterialApp(home: SearchScreen()),
@@ -470,7 +473,7 @@ void main() {
     });
 
     testWidgets(
-      'Tapping creates exactly one task in the default list whose title equals the trimmed query, with dueDate and dueTime null, even for a query like "meeting friday"',
+      'Tapping with a date query like "meeting friday" parses in phase 1, and second tap confirms and creates task',
       (tester) async {
         await seedDefaultLists();
         await tester.pumpWidget(createWidgetUnderTest());
@@ -485,24 +488,286 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(find.text('Add "meeting friday" as a task'), findsOneWidget);
+        expect(find.byKey(const Key('quickAddDateChip')), findsNothing);
 
-        // Tap the action row
+        // First tap: runs parser, shows preview chip, updates row label, does NOT create task yet
+        await tester.tap(find.byKey(const Key('searchAddTaskAction')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Add "meeting" as a task'), findsOneWidget);
+        expect(find.byKey(const Key('quickAddDateChip')), findsOneWidget);
+
+        // Verify NO task created in Firestore yet
+        final snapshotBefore = await fakeFirestore
+            .collection('tasks')
+            .where('uid', isEqualTo: uid)
+            .where('title', isEqualTo: 'meeting')
+            .get();
+        expect(snapshotBefore.docs, isEmpty);
+
+        // Second tap: confirms and creates task
         await tester.tap(find.byKey(const Key('searchAddTaskAction')));
         await tester.pumpAndSettle();
 
         // Verify task in fakeFirestore
+        final snapshotAfter = await fakeFirestore
+            .collection('tasks')
+            .where('uid', isEqualTo: uid)
+            .where('title', isEqualTo: 'meeting')
+            .get();
+
+        expect(snapshotAfter.docs.length, equals(1));
+        final data = snapshotAfter.docs.first.data();
+        expect(data['title'], equals('meeting'));
+        expect(data['listId'], equals(defaultListId));
+        expect(data['dueDate'], isNotNull);
+        expect(
+          (data['dueDate'] as Timestamp).toDate(),
+          equals(DateTime(2026, 10, 16)),
+        );
+        expect(data['dueTime'], isNull);
+      },
+    );
+
+    testWidgets(
+      'query with only a date phrase falls back to original text as title with parsed date/time',
+      (tester) async {
+        await seedDefaultLists();
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('searchQueryInput')),
+          'tomorrow 5pm',
+        );
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Add "tomorrow 5pm" as a task'), findsOneWidget);
+
+        // First tap parses
+        await tester.tap(find.byKey(const Key('searchAddTaskAction')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('quickAddDateChip')), findsOneWidget);
+        expect(find.text('Tomorrow 5:00 PM'), findsOneWidget);
+        // Stripped title falls back to original input
+        expect(find.text('Add "tomorrow 5pm" as a task'), findsOneWidget);
+
+        final beforeDocs = await fakeFirestore
+            .collection('tasks')
+            .where('uid', isEqualTo: uid)
+            .where('title', isEqualTo: 'tomorrow 5pm')
+            .get();
+        expect(beforeDocs.docs, isEmpty);
+
+        // Second tap confirms
+        await tester.tap(find.byKey(const Key('searchAddTaskAction')));
+        await tester.pumpAndSettle();
+
+        final afterDocs = await fakeFirestore
+            .collection('tasks')
+            .where('uid', isEqualTo: uid)
+            .where('title', isEqualTo: 'tomorrow 5pm')
+            .get();
+        expect(afterDocs.docs.length, equals(1));
+        final data = afterDocs.docs.first.data();
+        expect(data['title'], equals('tomorrow 5pm'));
+        expect(data['dueTime'], equals('17:00'));
+        expect(data['dueDate'], isNotNull);
+        expect(
+          (data['dueDate'] as Timestamp).toDate(),
+          equals(DateTime(2026, 10, 15)),
+        );
+      },
+    );
+
+    testWidgets(
+      'dismissing the chip resets the row label and a following tap re-parses fresh',
+      (tester) async {
+        await seedDefaultLists();
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('searchQueryInput')),
+          'call mom tomorrow 6pm',
+        );
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pumpAndSettle();
+
+        // First tap -> chip appears, label stripped
+        await tester.tap(find.byKey(const Key('searchAddTaskAction')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('quickAddDateChip')), findsOneWidget);
+        expect(find.text('Add "call mom" as a task'), findsOneWidget);
+
+        // Dismiss chip via close icon
+        await tester.tap(find.byIcon(Icons.close));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('quickAddDateChip')), findsNothing);
+        expect(
+          find.text('Add "call mom tomorrow 6pm" as a task'),
+          findsOneWidget,
+        );
+
+        // Tap again -> re-parses fresh
+        await tester.tap(find.byKey(const Key('searchAddTaskAction')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('quickAddDateChip')), findsOneWidget);
+        expect(find.text('Add "call mom" as a task'), findsOneWidget);
+
+        // Confirm creation
+        await tester.tap(find.byKey(const Key('searchAddTaskAction')));
+        await tester.pumpAndSettle();
+
         final snapshot = await fakeFirestore
             .collection('tasks')
             .where('uid', isEqualTo: uid)
-            .where('title', isEqualTo: 'meeting friday')
+            .where('title', isEqualTo: 'call mom')
             .get();
-
         expect(snapshot.docs.length, equals(1));
         final data = snapshot.docs.first.data();
-        expect(data['title'], equals('meeting friday'));
-        expect(data['listId'], equals(defaultListId));
+        expect(data['title'], equals('call mom'));
+        expect(data['dueTime'], equals('18:00'));
+        expect(data['dueDate'], isNotNull);
+      },
+    );
+
+    testWidgets(
+      'editing the query after the chip appears resets parsed state so next tap re-parses new text',
+      (tester) async {
+        await seedDefaultLists();
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('searchQueryInput')),
+          'call mom tomorrow',
+        );
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pumpAndSettle();
+
+        // Tap to parse
+        await tester.tap(find.byKey(const Key('searchAddTaskAction')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('quickAddDateChip')), findsOneWidget);
+        expect(find.text('Add "call mom" as a task'), findsOneWidget);
+
+        // Edit text to a different query
+        await tester.enterText(
+          find.byKey(const Key('searchQueryInput')),
+          'call dad today',
+        );
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pumpAndSettle();
+
+        // Chip is dismissed automatically and label resets to current query
+        expect(find.byKey(const Key('quickAddDateChip')), findsNothing);
+        expect(find.text('Add "call dad today" as a task'), findsOneWidget);
+
+        // Tap now re-parses the new query
+        await tester.tap(find.byKey(const Key('searchAddTaskAction')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('quickAddDateChip')), findsOneWidget);
+        expect(find.text('Today'), findsOneWidget);
+        expect(find.text('Add "call dad" as a task'), findsOneWidget);
+
+        // Confirm creation
+        await tester.tap(find.byKey(const Key('searchAddTaskAction')));
+        await tester.pumpAndSettle();
+
+        final snapshot = await fakeFirestore
+            .collection('tasks')
+            .where('uid', isEqualTo: uid)
+            .where('title', isEqualTo: 'call dad')
+            .get();
+        expect(snapshot.docs.length, equals(1));
+        final data = snapshot.docs.first.data();
+        expect(data['title'], equals('call dad'));
+        expect(
+          (data['dueDate'] as Timestamp).toDate(),
+          equals(DateTime(2026, 10, 14)),
+        );
+        expect(data['dueTime'], isNull);
+      },
+    );
+
+    testWidgets(
+      'query with no date/time still creates the task in one tap without chip',
+      (tester) async {
+        await seedDefaultLists();
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('searchQueryInput')),
+          'read novel',
+        );
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Add "read novel" as a task'), findsOneWidget);
+        expect(find.byKey(const Key('quickAddDateChip')), findsNothing);
+
+        // Single tap creates task immediately
+        await tester.tap(find.byKey(const Key('searchAddTaskAction')));
+        await tester.pumpAndSettle();
+
+        final snapshot = await fakeFirestore
+            .collection('tasks')
+            .where('uid', isEqualTo: uid)
+            .where('title', isEqualTo: 'read novel')
+            .get();
+        expect(snapshot.docs.length, equals(1));
+        final data = snapshot.docs.first.data();
+        expect(data['title'], equals('read novel'));
         expect(data['dueDate'], isNull);
         expect(data['dueTime'], isNull);
+      },
+    );
+
+    testWidgets(
+      'submitting via keyboard Enter action follows two-phase parse and confirm',
+      (tester) async {
+        await seedDefaultLists();
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('searchQueryInput')),
+          'call mom tomorrow 5pm',
+        );
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pumpAndSettle();
+
+        // First Enter -> parses
+        await tester.testTextInput.receiveAction(TextInputAction.done);
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('quickAddDateChip')), findsOneWidget);
+        expect(find.text('Add "call mom" as a task'), findsOneWidget);
+
+        // Second Enter -> creates task
+        await tester.showKeyboard(find.byKey(const Key('searchQueryInput')));
+        await tester.testTextInput.receiveAction(TextInputAction.done);
+        await tester.pumpAndSettle();
+
+        final snapshot = await fakeFirestore
+            .collection('tasks')
+            .where('uid', isEqualTo: uid)
+            .where('title', isEqualTo: 'call mom')
+            .get();
+        expect(snapshot.docs.length, equals(1));
+        final data = snapshot.docs.first.data();
+        expect(data['title'], equals('call mom'));
+        expect(data['dueTime'], equals('17:00'));
+        expect(data['dueDate'], isNotNull);
       },
     );
 
