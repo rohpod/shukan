@@ -143,7 +143,7 @@ void main() {
   }
 
   group('SearchScreen Widget & Filter Tests', () {
-    testWidgets('empty query shows all tasks regardless of completion status', (
+    testWidgets('empty query excludes completed and deleted tasks', (
       tester,
     ) async {
       await tester.pumpWidget(createWidgetUnderTest());
@@ -152,8 +152,8 @@ void main() {
       // Active tasks show up
       expect(find.text('Buy groceries'), findsOneWidget);
       expect(find.text('Prepare presentation'), findsOneWidget);
-      // Completed task also shows up
-      expect(find.text('Submit report'), findsOneWidget);
+      // Completed task is hidden
+      expect(find.text('Submit report'), findsNothing);
       // Deleted task is hidden
       expect(find.text('Deleted task with groceries'), findsNothing);
     });
@@ -239,13 +239,8 @@ void main() {
         await tester.tap(checkboxFinder);
         await tester.pumpAndSettle();
 
-        // Task remains visible with completed styling (strikethrough, grey)
-        expect(find.text('Buy groceries'), findsOneWidget);
-        final titleText = tester.widget<Text>(
-          find.byKey(const Key('taskTitle_t-active-1')),
-        );
-        expect(titleText.style?.decoration, TextDecoration.lineThrough);
-        expect(titleText.style?.color, Colors.grey);
+        // Completed task disappears from search results
+        expect(find.text('Buy groceries'), findsNothing);
 
         // In Firestore, completedAt should now be populated
         final doc = await fakeFirestore
@@ -276,10 +271,10 @@ void main() {
       await tester.tap(find.byKey(const Key('clearSearchQueryButton')));
       await tester.pumpAndSettle();
 
-      // All tasks reappear
+      // All active tasks reappear; completed tasks remain excluded
       expect(find.text('Buy groceries'), findsOneWidget);
       expect(find.text('Prepare presentation'), findsOneWidget);
-      expect(find.text('Submit report'), findsOneWidget);
+      expect(find.text('Submit report'), findsNothing);
     });
 
     testWidgets(
@@ -891,6 +886,28 @@ void main() {
     testWidgets(
       'renders priority markers for none, low, medium, and high on search results',
       (tester) async {
+        // Seed an extra active medium-priority task
+        await fakeFirestore.collection('tasks').doc('t-search-med').set({
+          'taskId': 't-search-med',
+          'uid': uid,
+          'listId': 'list-1',
+          'title': 'Medium priority review',
+          'notes': 'test note',
+          'url': '',
+          'priority': 'medium',
+          'tagIds': <String>[],
+          'dueDate': null,
+          'dueTime': null,
+          'earlyReminderMinutes': 0,
+          'repeatRule': 'none',
+          'repeatCustomConfig': null,
+          'order': 4,
+          'subtasks': <Map<String, dynamic>>[],
+          'createdAt': DateTime(2026, 1, 1, 13, 0),
+          'completedAt': null,
+          'deletedAt': null,
+        });
+
         // Seed an extra low-priority task
         await fakeFirestore.collection('tasks').doc('t-search-low').set({
           'taskId': 't-search-low',
@@ -927,16 +944,22 @@ void main() {
         );
         expect(highTitle.data, equals('Prepare presentation'));
 
-        // Medium priority: t-completed-1 ('Submit report')
+        // Medium priority: t-search-med ('Medium priority review')
         expect(
-          find.byKey(const Key('taskPriorityMarker_t-completed-1')),
+          find.byKey(const Key('taskPriorityMarker_t-search-med')),
           findsOneWidget,
         );
         expect(find.text('❕❕'), findsOneWidget);
         final medTitle = tester.widget<Text>(
-          find.byKey(const Key('taskTitle_t-completed-1')),
+          find.byKey(const Key('taskTitle_t-search-med')),
         );
-        expect(medTitle.data, equals('Submit report'));
+        expect(medTitle.data, equals('Medium priority review'));
+
+        // Completed medium-priority task (t-completed-1) is excluded from search results
+        expect(
+          find.byKey(const Key('taskPriorityMarker_t-completed-1')),
+          findsNothing,
+        );
 
         // Low priority: t-search-low ('Low priority call')
         expect(
