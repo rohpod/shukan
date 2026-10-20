@@ -18,8 +18,40 @@ import '../../tasks/providers/task_providers.dart';
 import '../../tasks/providers/task_tag_filter_providers.dart';
 import '../providers/auth_providers.dart';
 
-class HomeScreen extends ConsumerWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> with SearchLogicMixin {
+  bool _isSearchActive = false;
+
+  @override
+  void initState() {
+    super.initState();
+    initSearchLogic();
+  }
+
+  @override
+  void dispose() {
+    disposeSearchLogic();
+    super.dispose();
+  }
+
+  void _expandSearch() {
+    setState(() {
+      _isSearchActive = true;
+    });
+  }
+
+  void _collapseSearch() {
+    clearSearchQuery();
+    setState(() {
+      _isSearchActive = false;
+    });
+  }
 
   Future<void> _showCreateDialog(
     BuildContext context,
@@ -187,98 +219,158 @@ class HomeScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final uid = ref.watch(currentUidProvider);
     final listsAsync = ref.watch(listsForUserProvider);
     final recentlyDeletedCount = ref.watch(recentlyDeletedCountProvider);
     final tagEntries =
         ref.watch(tagBrowserEntriesProvider).value ?? const <TagBrowserEntry>[];
+    final effectiveList = ref.watch(effectiveDefaultListProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('shukan'),
-        actions: [
-          IconButton(
-            key: const Key('searchButton'),
-            icon: const Icon(Icons.search),
-            tooltip: 'Search',
-            onPressed: () {
-              showDialog<void>(
-                context: context,
-                builder: (_) => const SearchScreen(),
-                barrierDismissible: true,
-              );
-            },
-          ),
-          IconButton(
-            key: const Key('logoutButton'),
-            icon: const Icon(Icons.logout),
-            tooltip: 'Log Out',
-            onPressed: () async {
-              await ref.read(authRepositoryProvider).signOut();
-            },
-          ),
-        ],
-      ),
-      floatingActionButton: uid != null
-          ? FloatingActionButton(
-              key: const Key('addListButton'),
-              tooltip: 'New List',
-              onPressed: () => _showCreateDialog(context, ref, uid),
-              child: const Icon(Icons.add),
-            )
-          : null,
-      body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const MissedTasksBanner(),
-            _buildSmartViews(context, ref),
-            Expanded(
-              child: listsAsync.when(
-                data: (lists) {
-                  final showRecentlyDeleted = recentlyDeletedCount > 0;
-                  if (lists.isEmpty && !showRecentlyDeleted) {
-                    return const Center(
-                      child: Text('No lists found', key: Key('noListsText')),
-                    );
-                  }
-
-                  final totalItemCount =
-                      lists.length + (showRecentlyDeleted ? 1 : 0);
-
-                  return GridView.builder(
-                    padding: const EdgeInsets.all(16),
-                    gridDelegate:
-                        const SliverGridDelegateWithMaxCrossAxisExtent(
-                          maxCrossAxisExtent: 280,
-                          childAspectRatio: 1.0,
-                          crossAxisSpacing: 12,
-                          mainAxisSpacing: 12,
-                        ),
-                    itemCount: totalItemCount,
-                    itemBuilder: (context, index) {
-                      if (index < lists.length) {
-                        final list = lists[index];
-                        return _buildUserListCard(context, ref, list, uid);
-                      }
-                      return _buildRecentlyDeletedCard(
-                        context,
-                        recentlyDeletedCount,
+    return PopScope(
+      canPop: !_isSearchActive,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && _isSearchActive) {
+          _collapseSearch();
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: _isSearchActive
+              ? SearchInputField(
+                  controller: searchController,
+                  onChanged: onSearchQueryChanged,
+                  onClear: clearSearchQuery,
+                  onSubmitted: (trimmed) {
+                    if (uid != null &&
+                        effectiveList != null &&
+                        trimmed.isNotEmpty) {
+                      handleAddTaskAction(
+                        uid: uid,
+                        list: effectiveList,
+                        trimmedQuery: trimmed,
+                        onCollapse: _collapseSearch,
                       );
-                    },
-                  );
-                },
-                loading: () => const Center(
-                  key: Key('listsLoadingIndicator'),
-                  child: CircularProgressIndicator(),
-                ),
-                error: (e, _) => Center(child: Text('Error loading lists: $e')),
-              ),
+                    }
+                  },
+                )
+              : const Text('shukan'),
+          actions: [
+            IconButton(
+              key: const Key('searchButton'),
+              icon: Icon(_isSearchActive ? Icons.close : Icons.search),
+              tooltip: _isSearchActive ? 'Close search' : 'Search',
+              onPressed: () {
+                if (_isSearchActive) {
+                  _collapseSearch();
+                } else {
+                  _expandSearch();
+                }
+              },
             ),
-            TagChipsSection(contextKey: 'home', uid: uid, entries: tagEntries),
+            if (!_isSearchActive)
+              IconButton(
+                key: const Key('logoutButton'),
+                icon: const Icon(Icons.logout),
+                tooltip: 'Log Out',
+                onPressed: () async {
+                  await ref.read(authRepositoryProvider).signOut();
+                },
+              ),
           ],
         ),
+        floatingActionButton: (!_isSearchActive && uid != null)
+            ? FloatingActionButton(
+                key: const Key('addListButton'),
+                tooltip: 'New List',
+                onPressed: () => _showCreateDialog(context, ref, uid),
+                child: const Icon(Icons.add),
+              )
+            : null,
+        body: _isSearchActive
+            ? SearchResultsView(
+                searchController: searchController,
+                hasParsedAdd: hasParsedAdd,
+                parsedTitle: parsedTitle,
+                parsedAddDueDate: parsedAddDueDate,
+                parsedAddDueTime: parsedAddDueTime,
+                isCreatingTask: isCreatingTask,
+                onDismissAddChip: dismissAddChip,
+                onAddTaskAction: (ctx, actionUid, actionList, query) =>
+                    handleAddTaskAction(
+                      uid: actionUid,
+                      list: actionList,
+                      trimmedQuery: query,
+                      onCollapse: _collapseSearch,
+                    ),
+                onClearSearch: clearSearchQuery,
+                onCollapse: _collapseSearch,
+              )
+            : SafeArea(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const MissedTasksBanner(),
+                    _buildSmartViews(context, ref),
+                    Expanded(
+                      child: listsAsync.when(
+                        data: (lists) {
+                          final showRecentlyDeleted = recentlyDeletedCount > 0;
+                          if (lists.isEmpty && !showRecentlyDeleted) {
+                            return const Center(
+                              child: Text(
+                                'No lists found',
+                                key: Key('noListsText'),
+                              ),
+                            );
+                          }
+
+                          final totalItemCount =
+                              lists.length + (showRecentlyDeleted ? 1 : 0);
+
+                          return GridView.builder(
+                            padding: const EdgeInsets.all(16),
+                            gridDelegate:
+                                const SliverGridDelegateWithMaxCrossAxisExtent(
+                                  maxCrossAxisExtent: 280,
+                                  childAspectRatio: 1.0,
+                                  crossAxisSpacing: 12,
+                                  mainAxisSpacing: 12,
+                                ),
+                            itemCount: totalItemCount,
+                            itemBuilder: (context, index) {
+                              if (index < lists.length) {
+                                final list = lists[index];
+                                return _buildUserListCard(
+                                  context,
+                                  ref,
+                                  list,
+                                  uid,
+                                );
+                              }
+                              return _buildRecentlyDeletedCard(
+                                context,
+                                recentlyDeletedCount,
+                              );
+                            },
+                          );
+                        },
+                        loading: () => const Center(
+                          key: Key('listsLoadingIndicator'),
+                          child: CircularProgressIndicator(),
+                        ),
+                        error: (e, _) =>
+                            Center(child: Text('Error loading lists: $e')),
+                      ),
+                    ),
+                    TagChipsSection(
+                      contextKey: 'home',
+                      uid: uid,
+                      entries: tagEntries,
+                    ),
+                  ],
+                ),
+              ),
       ),
     );
   }
