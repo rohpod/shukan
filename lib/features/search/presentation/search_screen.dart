@@ -363,8 +363,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                           },
                         );
 
-                        // Filter tasks by search query
+                        // Filter tasks by completion status and search query
                         final matchingTasks = allTasks.where((task) {
+                          if (task.isCompleted) {
+                            return false;
+                          }
+
                           if (query.isNotEmpty) {
                             final titleMatches = task.title
                                 .toLowerCase()
@@ -498,25 +502,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                                       ],
                                     )
                                   : null,
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(
-                                    key: Key('deleteTaskButton_${task.taskId}'),
-                                    icon: const Icon(
-                                      Icons.delete_outline,
-                                      size: 20,
-                                      color: Colors.redAccent,
-                                    ),
-                                    tooltip: 'Delete',
-                                    onPressed: () async {
-                                      await ref
-                                          .read(taskRepositoryProvider)
-                                          .softDeleteTask(task.taskId);
-                                    },
-                                  ),
-                                ],
-                              ),
                             );
                           },
                         );
