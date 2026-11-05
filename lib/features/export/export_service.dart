@@ -78,8 +78,8 @@ class ExportService {
   /// and generates the markdown string.
   Future<String> exportListToMarkdown({
     required String listId,
+    required String uid,
     String? listName,
-    String? uid,
     DateTime? exportDate,
   }) async {
     final firestore = _firestore ?? FirebaseFirestore.instance;
@@ -90,16 +90,12 @@ class ExportService {
       resolvedName = listDoc.data()?['name'] as String? ?? 'Untitled List';
     }
 
-    Query<Map<String, dynamic>> query = firestore
+    final snapshot = await firestore
         .collection('tasks')
+        .where('uid', isEqualTo: uid)
         .where('listId', isEqualTo: listId)
-        .where('deletedAt', isNull: true);
-
-    if (uid != null) {
-      query = query.where('uid', isEqualTo: uid);
-    }
-
-    final snapshot = await query.get();
+        .where('deletedAt', isNull: true)
+        .get();
     final tasks = snapshot.docs.map(Task.fromFirestore).toList();
 
     return generateMarkdown(

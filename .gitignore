@@ -72,3 +72,8 @@ coverage/
 # Env
 .env
 .env.*
+
+# Rules tests
+node_modules/
+firestore-debug.log
+ui-debug.log

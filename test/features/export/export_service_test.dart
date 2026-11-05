@@ -232,6 +232,7 @@ void main() {
 
       final markdown = await service.exportListToMarkdown(
         listId: listId,
+        uid: 'user-1',
         exportDate: DateTime(2026, 9, 13),
       );
 

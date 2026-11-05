@@ -495,6 +495,18 @@ class TaskRepository {
     );
   }
 
+  /// Returns the IDs of the lists owned by [uid].
+  ///
+  /// Restore uses this query instead of reading the task's list directly,
+  /// because a direct read of a deleted list can fail with permission-denied.
+  Future<Set<String>> _ownedListIds(String uid) async {
+    final snapshot = await _firestore
+        .collection('lists')
+        .where('uid', isEqualTo: uid)
+        .get();
+    return snapshot.docs.map((doc) => doc.id).toSet();
+  }
+
   /// Restores a soft-deleted task by clearing its [deletedAt] timestamp.
   ///
   /// Defense-in-depth:
@@ -526,16 +538,8 @@ class TaskRepository {
     final currentListId = taskData['listId'] as String?;
     String? targetListId = currentListId;
 
-    bool listExists = false;
-    if (currentListId != null && currentListId.isNotEmpty) {
-      final listDoc = await _firestore
-          .collection('lists')
-          .doc(currentListId)
-          .get();
-      listExists = listDoc.exists && listDoc.data()?['uid'] == uid;
-    }
-
-    if (!listExists) {
+    final ownedListIds = await _ownedListIds(uid);
+    if (!ownedListIds.contains(currentListId)) {
       if (defaultListId != null && defaultListId.isNotEmpty) {
         targetListId = defaultListId;
       } else {
@@ -598,30 +602,13 @@ class TaskRepository {
     }
     if (tasksToRestore.isEmpty) return;
 
-    final distinctListIds = <String>{};
-    for (final doc in tasksToRestore) {
-      final listId = doc.data()?['listId'] as String?;
-      if (listId != null && listId.isNotEmpty) {
-        distinctListIds.add(listId);
-      }
-    }
-
-    final listValidity = <String, bool>{};
-    for (final listId in distinctListIds) {
-      final listDoc = await _firestore.collection('lists').doc(listId).get();
-      listValidity[listId] = listDoc.exists && listDoc.data()?['uid'] == uid;
-    }
+    final ownedListIds = await _ownedListIds(uid);
 
     String? userDefaultListId;
     bool hasFetchedUserDefaultList = false;
 
     Future<String?> resolveTargetListId(String? currentListId) async {
-      final listExists =
-          currentListId != null &&
-          currentListId.isNotEmpty &&
-          (listValidity[currentListId] ?? false);
-
-      if (listExists) {
+      if (ownedListIds.contains(currentListId)) {
         return currentListId;
       }
 
