@@ -42,18 +42,6 @@ void main() {
       expect(sundayEnd.weekday, equals(DateTime.sunday));
     });
 
-    test('isOverdue returns true when dueDate is strictly before start of current day', () {
-      final today = DateTime(2026, 10, 15, 14, 30);
-      final yesterday = DateTime(2026, 10, 14, 23, 59);
-      final earlierToday = DateTime(2026, 10, 15, 8, 0);
-      final tomorrow = DateTime(2026, 10, 16, 9, 0);
-
-      expect(SmartViewDateUtils.isOverdue(yesterday, today), isTrue);
-      expect(SmartViewDateUtils.isOverdue(earlierToday, today), isFalse);
-      expect(SmartViewDateUtils.isOverdue(tomorrow, today), isFalse);
-      expect(SmartViewDateUtils.isOverdue(null, today), isFalse);
-    });
-
     test('isSameCalendarDay compares year, month, and day correctly', () {
       final d1 = DateTime(2026, 10, 15, 8, 0);
       final d2 = DateTime(2026, 10, 15, 23, 30);

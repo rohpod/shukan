@@ -44,11 +44,4 @@ class SmartViewDateUtils {
   static bool isSameCalendarDay(DateTime a, DateTime b) {
     return a.year == b.year && a.month == b.month && a.day == b.day;
   }
-
-  /// Returns true if [dueDate] falls strictly before the start of the calendar day of [currentDate] in local time.
-  static bool isOverdue(DateTime? dueDate, DateTime currentDate) {
-    if (dueDate == null) return false;
-    final startOfCurrentDay = startOfDay(currentDate);
-    return dueDate.isBefore(startOfCurrentDay);
-  }
 }

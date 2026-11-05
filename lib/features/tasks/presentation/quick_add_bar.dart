@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/ui/friendly_error.dart';
 import '../../../core/notifications/web_reminder_scheduler.dart';
 import '../data/task.dart';
 import '../domain/quick_add_parser.dart';
@@ -146,8 +148,9 @@ class _QuickAddBarState extends ConsumerState<QuickAddBar> {
     } catch (e) {
       if (mounted) {
         setState(() => _isSaving = false);
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Failed to add task: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to add task: ${friendlyError(e)}')),
+        );
       }
     }
   }
@@ -216,6 +219,7 @@ class _QuickAddBarState extends ConsumerState<QuickAddBar> {
                   key: const Key('quickAddTextInput'),
                   controller: _controller,
                   focusNode: _focusNode,
+                  inputFormatters: [LengthLimitingTextInputFormatter(500)],
                   enabled: isEnabled && !_isSaving,
                   textInputAction: TextInputAction.done,
                   decoration: InputDecoration(

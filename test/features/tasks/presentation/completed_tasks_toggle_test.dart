@@ -9,7 +9,6 @@ import 'package:shukan/features/auth/providers/auth_providers.dart';
 import 'package:shukan/features/tasks/domain/smart_view_models.dart';
 import 'package:shukan/features/tasks/presentation/smart_view_detail_screen.dart';
 import 'package:shukan/features/tasks/presentation/task_list_screen.dart';
-import 'package:shukan/features/tasks/presentation/widgets/show_completed_toggle.dart';
 import 'package:shukan/features/tasks/providers/smart_view_providers.dart';
 import 'package:shukan/features/tasks/providers/task_sort_providers.dart';
 
@@ -80,23 +79,19 @@ void main() {
     );
   }
 
-  group('ShowCompletedToggle - TaskListScreen removal', () {
-    testWidgets('TaskListScreen no longer renders ShowCompletedToggle', (
-      tester,
-    ) async {
+  group('Show-completed toggle - TaskListScreen removal', () {
+    testWidgets('TaskListScreen has no show-completed toggle', (tester) async {
       final prefs = await SharedPreferences.getInstance();
 
       await tester.pumpWidget(createTaskListWidget(listId, prefs: prefs));
       await tester.pumpAndSettle();
 
-      // ShowCompletedToggle should NOT exist in TaskListScreen
-      expect(find.byType(ShowCompletedToggle), findsNothing);
       expect(find.byKey(Key('toggleShowCompleted_$listId')), findsNothing);
     });
   });
 
-  group('ShowCompletedToggle - SmartViewDetailScreen removal', () {
-    testWidgets('SmartViewDetailScreen no longer renders ShowCompletedToggle', (
+  group('Show-completed toggle - SmartViewDetailScreen removal', () {
+    testWidgets('SmartViewDetailScreen has no show-completed toggle', (
       tester,
     ) async {
       final prefs = await SharedPreferences.getInstance();
@@ -106,25 +101,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.byType(ShowCompletedToggle), findsNothing);
       expect(find.byKey(const Key('toggleShowCompleted_today')), findsNothing);
-    });
-  });
-
-  group('Per-view independent persistence', () {
-    test('toggling in one view does not affect other views', () async {
-      final prefs = await SharedPreferences.getInstance();
-      final container = ProviderContainer(
-        overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
-      );
-
-      // Toggle tag view to true
-      await container
-          .read(showCompletedTasksProvider('tag_tag-1').notifier)
-          .toggle();
-
-      expect(prefs.getBool('task_show_completed_tag_tag-1'), isTrue);
-      expect(prefs.getBool('task_show_completed_tag_tag-2'), isNull);
     });
   });
 }

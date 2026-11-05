@@ -12,6 +12,7 @@ import '../../../tasks/presentation/task_list_screen.dart';
 import '../../../tasks/presentation/widgets/empty_state_view.dart';
 import '../../../tasks/presentation/widgets/quick_add_preview_chip.dart';
 import '../../../tasks/presentation/widgets/task_priority_marker.dart';
+import '../../../tasks/presentation/widgets/task_url_link.dart';
 import '../../../tasks/providers/task_providers.dart';
 import '../../providers/search_providers.dart';
 
@@ -287,14 +288,7 @@ class SearchResultsView extends ConsumerWidget {
                                         ),
                                       ),
                                     if (task.url.isNotEmpty)
-                                      Text(
-                                        task.url,
-                                        key: Key('taskUrl_${task.taskId}'),
-                                        style: const TextStyle(
-                                          color: Colors.blue,
-                                          decoration: TextDecoration.underline,
-                                        ),
-                                      ),
+                                      TaskUrlLink(task: task),
                                   ],
                                 )
                               : null,

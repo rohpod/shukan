@@ -51,13 +51,16 @@ void main() {
         const notes = 'Check deductions and receipts';
         const url = 'https://irs.gov';
 
-        final task = await repository.createTask(
-          uid: uid,
-          listId: listId,
-          title: title,
-          notes: notes,
-          url: url,
-        );
+        final clock = DateTime(2026, 6, 1, 12);
+        final task = await TaskRepository(fakeFirestore, null, () => clock)
+            .createTask(
+              uid: uid,
+              listId: listId,
+              title: title,
+              notes: notes,
+              url: url,
+            );
+        final expectedOrder = clock.millisecondsSinceEpoch.toDouble();
 
         // Verify in-memory task entity
         expect(task.taskId, isNotEmpty);
@@ -73,7 +76,7 @@ void main() {
         expect(task.earlyReminderMinutes, equals(0));
         expect(task.repeatRule, equals('none'));
         expect(task.repeatCustomConfig, isNull);
-        expect(task.order, equals(0));
+        expect(task.order, equals(expectedOrder));
         expect(task.subtasks, isEmpty);
         expect(task.createdAt, isNotNull);
         expect(task.completedAt, isNull);
@@ -102,7 +105,7 @@ void main() {
         expect(data['earlyReminderMinutes'], equals(0));
         expect(data['repeatRule'], equals('none'));
         expect(data['repeatCustomConfig'], isNull);
-        expect(data['order'], equals(0));
+        expect(data['order'], equals(expectedOrder));
         expect(data['subtasks'], equals(<Map<String, dynamic>>[]));
         expect(data['createdAt'], isNotNull);
         expect(data['completedAt'], isNull);
@@ -386,7 +389,7 @@ void main() {
       expect(data['dueDate'], isNull);
       expect(data['earlyReminderMinutes'], equals(0));
       expect(data['repeatRule'], equals('none'));
-      expect(data['order'], equals(0));
+      expect(data['order'], equals(initialTask.order));
     });
 
     test('updateTask persists each new field individually', () async {
@@ -1365,44 +1368,6 @@ void main() {
           repository.reorderSubtasks(task.taskId, [cId, aId, 'ghost-id']),
           throwsA(isA<ArgumentError>()),
         );
-      });
-    });
-
-    group('streamTask', () {
-      test('emits Task entity and updates when doc changes', () async {
-        final task = await repository.createTask(
-          uid: 'user-123',
-          listId: 'inbox-456',
-          title: 'Streamed Task',
-        );
-
-        final emissions = <Task?>[];
-        final subscription = repository
-            .streamTask(task.taskId)
-            .listen(emissions.add);
-
-        await pumpEventQueue();
-        expect(emissions.last?.title, equals('Streamed Task'));
-
-        await repository.addSubtask(task.taskId, 'New Subtask');
-        await pumpEventQueue();
-
-        expect(emissions.last?.subtasks.length, equals(1));
-        expect(emissions.last?.subtasks[0]['title'], equals('New Subtask'));
-
-        await subscription.cancel();
-      });
-
-      test('emits null when task document does not exist', () async {
-        final emissions = <Task?>[];
-        final subscription = repository
-            .streamTask('non-existent-task')
-            .listen(emissions.add);
-
-        await pumpEventQueue();
-        expect(emissions.last, isNull);
-
-        await subscription.cancel();
       });
     });
 

@@ -6,6 +6,7 @@ import '../../lists/data/list.dart';
 import '../../lists/domain/list_icons.dart';
 import '../../lists/presentation/list_detail_screen.dart';
 import '../../lists/presentation/list_icon_picker_dialog.dart';
+import '../../lists/presentation/widgets/list_name_dialog.dart';
 import '../../lists/providers/list_providers.dart';
 import '../../search/presentation/search_screen.dart';
 import '../../settings/presentation/settings_screen.dart';
@@ -16,6 +17,7 @@ import '../../tasks/presentation/recently_deleted_screen.dart';
 import '../../tasks/presentation/smart_view_detail_screen.dart';
 import '../../tasks/providers/smart_view_providers.dart';
 import '../../tasks/providers/task_providers.dart';
+import '../../tasks/providers/task_purge_providers.dart';
 import '../../tasks/providers/task_tag_filter_providers.dart';
 import '../providers/auth_providers.dart';
 
@@ -60,58 +62,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SearchLogicMixin {
     String uid,
   ) async {
     final messenger = ScaffoldMessenger.of(context);
-    final controller = TextEditingController();
-    final formKey = GlobalKey<FormState>();
 
     await showDialog<void>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Create New List'),
-        content: Form(
-          key: formKey,
-          child: TextFormField(
-            key: const Key('createListNameInput'),
-            controller: controller,
-            autofocus: true,
-            decoration: const InputDecoration(
-              labelText: 'List Name',
-              hintText: 'e.g. Work, Groceries',
-            ),
-            validator: (val) {
-              if (val == null || val.trim().isEmpty) {
-                return 'Please enter a list name.';
+      builder: (dialogContext) => ListNameDialog(
+        title: 'Create New List',
+        confirmLabel: 'Create',
+        inputKey: const Key('createListNameInput'),
+        confirmKey: const Key('confirmCreateListButton'),
+        hintText: 'e.g. Work, Groceries',
+        emptyMessage: 'Please enter a list name.',
+        onConfirm: (dialogContext, name) =>
+            runWithFeedback(messenger, "Couldn't create the list.", () async {
+              await ref
+                  .read(listRepositoryProvider)
+                  .createList(uid: uid, name: name);
+              if (dialogContext.mounted) {
+                Navigator.of(dialogContext).pop();
               }
-              return null;
-            },
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            key: const Key('confirmCreateListButton'),
-            onPressed: () async {
-              if (!formKey.currentState!.validate()) return;
-              final name = controller.text.trim();
-              await runWithFeedback(
-                messenger,
-                "Couldn't create the list.",
-                () async {
-                  await ref
-                      .read(listRepositoryProvider)
-                      .createList(uid: uid, name: name);
-                  if (dialogContext.mounted) {
-                    Navigator.of(dialogContext).pop();
-                  }
-                  showFeedbackSnackBar(messenger, 'Created list "$name"');
-                },
-              );
-            },
-            child: const Text('Create'),
-          ),
-        ],
+              showFeedbackSnackBar(messenger, 'Created list "$name"');
+            }),
       ),
     );
   }
@@ -122,61 +92,38 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SearchLogicMixin {
     ListModel list,
   ) async {
     final messenger = ScaffoldMessenger.of(context);
-    final controller = TextEditingController(text: list.name);
-    final formKey = GlobalKey<FormState>();
 
     await showDialog<void>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Rename List'),
-        content: Form(
-          key: formKey,
-          child: TextFormField(
-            key: const Key('renameListInput'),
-            controller: controller,
-            autofocus: true,
-            decoration: const InputDecoration(labelText: 'New Name'),
-            validator: (val) {
-              if (val == null || val.trim().isEmpty) {
-                return 'List name cannot be empty.';
+      builder: (dialogContext) => ListNameDialog(
+        title: 'Rename List',
+        confirmLabel: 'Save',
+        inputKey: const Key('renameListInput'),
+        confirmKey: const Key('confirmRenameListButton'),
+        labelText: 'New Name',
+        initialName: list.name,
+        emptyMessage: 'List name cannot be empty.',
+        onConfirm: (dialogContext, newName) async {
+          if (newName == list.name) {
+            if (dialogContext.mounted) {
+              Navigator.of(dialogContext).pop();
+            }
+            return;
+          }
+          await runWithFeedback(
+            messenger,
+            "Couldn't rename the list.",
+            () async {
+              await ref
+                  .read(listRepositoryProvider)
+                  .renameList(list.listId, newName);
+              if (dialogContext.mounted) {
+                Navigator.of(dialogContext).pop();
               }
-              return null;
+              showFeedbackSnackBar(messenger, 'Renamed list to "$newName"');
             },
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            key: const Key('confirmRenameListButton'),
-            onPressed: () async {
-              if (!formKey.currentState!.validate()) return;
-              final newName = controller.text.trim();
-              if (newName == list.name) {
-                if (dialogContext.mounted) {
-                  Navigator.of(dialogContext).pop();
-                }
-                return;
-              }
-              await runWithFeedback(
-                messenger,
-                "Couldn't rename the list.",
-                () async {
-                  await ref
-                      .read(listRepositoryProvider)
-                      .renameList(list.listId, newName);
-                  if (dialogContext.mounted) {
-                    Navigator.of(dialogContext).pop();
-                  }
-                  showFeedbackSnackBar(messenger, 'Renamed list to "$newName"');
-                },
-              );
-            },
-            child: const Text('Save'),
-          ),
-        ],
+          );
+        },
       ),
     );
   }
@@ -237,6 +184,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SearchLogicMixin {
   @override
   Widget build(BuildContext context) {
     final uid = ref.watch(currentUidProvider);
+    ref.watch(dailyPurgeProvider);
     final listsAsync = ref.watch(listsForUserProvider);
     final recentlyDeletedCount = ref.watch(recentlyDeletedCountProvider);
     final tagEntries =

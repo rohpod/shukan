@@ -172,7 +172,7 @@ void main() {
     // Verify error snackbar is displayed
     expect(
       find.textContaining(
-        'Failed to export list: Exception: Disk full or download blocked',
+        'Failed to export list: Something went wrong. Please try again.',
       ),
       findsOneWidget,
     );
@@ -1083,9 +1083,7 @@ void main() {
 
       // Verify failure snackbar appears
       expect(
-        find.textContaining(
-          'Failed to undo move: Invalid argument(s): List not found: $listId',
-        ),
+        find.textContaining('Failed to undo move: List not found: $listId'),
         findsOneWidget,
       );
     });

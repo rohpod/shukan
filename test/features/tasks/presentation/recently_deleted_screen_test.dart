@@ -352,7 +352,12 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('Network timeout'), findsOneWidget);
+      expect(
+        find.text(
+          'Error loading recently deleted tasks: Something went wrong. Please try again.',
+        ),
+        findsOneWidget,
+      );
       final retryButton = find.byKey(const Key('retryRecentlyDeletedButton'));
       expect(retryButton, findsOneWidget);
 

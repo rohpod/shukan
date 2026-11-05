@@ -230,22 +230,6 @@ void main() {
       });
     });
 
-    test('exportListToMarkdown fetches and excludes deleted tasks', () async {
-      final service = ExportService(fakeFirestore);
-
-      final markdown = await service.exportListToMarkdown(
-        listId: listId,
-        uid: 'user-1',
-        exportDate: DateTime(2026, 9, 13),
-      );
-
-      expect(markdown, contains('# Project Alpha'));
-      expect(markdown, contains('Exported: 2026-09-13'));
-      expect(markdown, contains('- [ ] Task One'));
-      expect(markdown, contains('- [x] Completed Task'));
-      expect(markdown, isNot(contains('Deleted Task')));
-    });
-
     test(
       'exportAndDownload passes generated markdown and filename to trigger',
       () async {

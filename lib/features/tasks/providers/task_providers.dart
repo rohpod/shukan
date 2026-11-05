@@ -46,12 +46,6 @@ final tasksForListProvider = StreamProvider.family<List<Task>, String>((
   return repository.streamTasksForList(uid, listId);
 });
 
-/// Family stream provider returning a single task by [taskId].
-final taskStreamProvider = StreamProvider.family<Task?, String>((ref, taskId) {
-  final repository = ref.watch(taskRepositoryProvider);
-  return repository.streamTask(taskId);
-});
-
 /// Streams all soft-deleted tasks belonging to the current user, ordered descending by deletedAt.
 final recentlyDeletedTasksProvider = StreamProvider.autoDispose<List<Task>>((
   ref,

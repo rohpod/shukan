@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 class SearchInputField extends StatelessWidget {
   final TextEditingController controller;
@@ -25,6 +26,7 @@ class SearchInputField extends StatelessWidget {
           key: const Key('searchQueryInput'),
           controller: controller,
           autofocus: autofocus,
+          inputFormatters: [LengthLimitingTextInputFormatter(500)],
           textInputAction: TextInputAction.done,
           decoration: InputDecoration(
             hintText: 'Search tasks, notes, tags...',
