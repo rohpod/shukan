@@ -1,15 +1,16 @@
-// ignore_for_file: avoid_web_libraries_in_flutter, deprecated_member_use
-
 import 'dart:convert';
-import 'dart:html' as html;
+import 'dart:js_interop';
 
-/// Web implementation of text file download using Blob and AnchorElement.
+import 'package:web/web.dart' as web;
+
+/// Web implementation of text file download using a Blob and an anchor element.
 void downloadTextFile(String content, String filename, String mimeType) {
   final bytes = utf8.encode(content);
-  final blob = html.Blob([bytes], mimeType);
-  final url = html.Url.createObjectUrlFromBlob(blob);
-  html.AnchorElement(href: url)
-    ..setAttribute('download', filename)
+  final blob = web.Blob([bytes.toJS].toJS, web.BlobPropertyBag(type: mimeType));
+  final url = web.URL.createObjectURL(blob);
+  (web.document.createElement('a') as web.HTMLAnchorElement)
+    ..href = url
+    ..download = filename
     ..click();
-  html.Url.revokeObjectUrl(url);
+  web.URL.revokeObjectURL(url);
 }

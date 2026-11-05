@@ -56,8 +56,6 @@ tags/{tagId}
 }
 ```
 
-Not yet implemented — schema is defined here so #3/#11 can build against it directly.
-
 ---
 
 ## `tasks/{taskId}`
@@ -140,16 +138,9 @@ service cloud.firestore {
 
 ## Indexes
 
-Composite indexes required by current queries are tracked in
-`firestore.indexes.json` at the repo root (also the source of truth — deploy via
-`firebase deploy --only firestore:indexes`). Currently:
-
-- `tasks`: `uid` + `listId` + `deletedAt` + `createdAt` (ascending) — supports
-  streaming a list's active tasks ordered by creation time.
-- `tasks`: `uid` (ascending) + `deletedAt` (descending) — supports streaming a
-  user's recently deleted tasks ordered by deletion time.
-- `lists`: `uid` + `createdAt` (ascending) — supports streaming a user's lists
-  ordered by creation time.
+Composite indexes required by current queries are defined in
+`firestore.indexes.json` at the repo root, which is the source of truth. Deploy them
+with `firebase deploy --only firestore:indexes`.
 
 > **Note on Index Build Lag**: In production Firebase, newly deployed composite indexes
 > take several minutes to build before queries using them will succeed.

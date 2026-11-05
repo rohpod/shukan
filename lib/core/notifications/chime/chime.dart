@@ -1,1 +1,1 @@
-export 'chime_stub.dart' if (dart.library.html) 'chime_web.dart';
+export 'chime_stub.dart' if (dart.library.js_interop) 'chime_web.dart';

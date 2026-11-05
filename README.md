@@ -8,8 +8,15 @@ layering habit-tracking and anime-philosophy theming on top.
 
 ## Status
 
-🚧 Early development. Authentication, Task CRUD, and List CRUD are implemented. 
-Not yet feature-complete — see [Roadmap](#roadmap).
+🚧 Phase 1 (reminders) is code-complete and being prepared for release. Implemented:
+authentication and password reset, tasks and lists (CRUD, soft delete with a 30-day
+Recently Deleted), tags, search, smart views, subtasks, repeating tasks (daily, weekly,
+monthly and custom schedules), due-date reminders, offline-safe saves, account settings,
+and JSON/Markdown export. Habit tracking (Phase 2) comes next — see [Roadmap](#roadmap).
+
+**Reminders are tab-only.** They fire through the browser while a shukan tab is open,
+including catching up on ones missed while it was closed. Nothing is delivered when every
+tab is closed; that needs push notifications (see Backlog).
 
 ## Tech stack
 
@@ -50,6 +57,52 @@ and isn't included in the repo.
 ```bash
 flutter run -d chrome
 ```
+
+## Tests
+
+```bash
+flutter analyze
+flutter test
+TZ=America/New_York flutter test test/features/tasks/domain   # date logic under DST
+```
+
+`fake_cloud_firestore` doesn't enforce `firestore.rules`, so rules have their own
+emulator tests:
+
+```bash
+npm --prefix test_rules ci
+firebase emulators:exec --only firestore --project demo-shukan "npm --prefix test_rules test"
+```
+
+## Deploying
+
+Nothing deploys automatically. With Editor access to `shukan-loop`:
+
+```bash
+firebase deploy --only firestore:rules,firestore:indexes --project shukan-loop
+flutter build web
+firebase deploy --only hosting --project shukan-loop
+```
+
+Hosting sends the Content Security Policy as `Content-Security-Policy-Report-Only`.
+Review the browser console for violations on a live run before switching it to an
+enforced `Content-Security-Policy` in `firebase.json`. See
+[docs/firebase-setup.md](docs/firebase-setup.md) for details.
+
+## Backlog (not in Phase 1)
+
+- Closed-tab reminders (FCM web push)
+- Snooze, and email verification
+- Native notifications: `requestPermissions()` is never called, there's no rescheduling
+  at startup, and deleting a list or signing out doesn't cancel notifications. Fix when
+  `android/` and `ios/` are added.
+- Timezone travel: `dueDate` is stored as local midnight, so changing timezone can
+  shift the date
+- Firestore read cost: about five overlapping task listeners on home, and
+  `streamRecentlyDeletedTasks` reads every task. Move to one shared listener before growth.
+- Clearing the local cache on sign-out (shared computers), App Check, a crash reporting
+  service, reminders for recurring tasks left uncompleted
+- Splitting `task_list_screen.dart`, which is over 1,600 lines
 
 ## Contributing
 

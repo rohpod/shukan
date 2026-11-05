@@ -78,3 +78,42 @@ firebase deploy --only firestore:rules,firestore:indexes --project shukan-loop
 ```
 
 Anyone with Editor access can do this — no special setup beyond what's above.
+
+## Testing rules locally
+
+`fake_cloud_firestore` doesn't enforce `firestore.rules`, so every rules change
+needs an emulator test in `test_rules/rules.test.mjs`. From the repo root:
+
+```bash
+npm --prefix test_rules ci
+firebase emulators:exec --only firestore --project demo-shukan "npm --prefix test_rules test"
+```
+
+The emulator needs Java. `demo-shukan` is a demo project, so nothing touches the real
+backend.
+
+## Hosting
+
+`firebase.json` has a `hosting` block that serves `build/web` with a single-page rewrite,
+`no-cache` on `js`/`json`/`html` (Flutter's `main.dart.js` isn't content-hashed), a week of
+caching for `canvaskit/**`, and security headers.
+
+Check the headers locally before deploying:
+
+```bash
+flutter build web
+firebase emulators:exec --only hosting --project demo-shukan "curl -sI http://127.0.0.1:5010/"
+```
+
+Deploy with:
+
+```bash
+flutter build web
+firebase deploy --only hosting --project shukan-loop
+```
+
+The Content Security Policy ships as `Content-Security-Policy-Report-Only` because an
+enforced policy can break CanvasKit or Firebase and can't be proven safe without a live
+run. After deploying, load the app, sign in, and use it with the browser console open.
+Violations are logged there. Once there are none, rename the header to
+`Content-Security-Policy` in `firebase.json` and redeploy.

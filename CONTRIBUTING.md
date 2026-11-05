@@ -51,6 +51,13 @@ regress the fix on its next merge into `main`.
 5. Once `dev` is stable and a meaningful chunk of work is done (weekly, or at a milestone),
    open a PR from `dev` into `main`.
 
+### Stacked PRs
+
+Don't stack PRs on each other. If you must, retarget each one to `dev` before merging it:
+a PR merged while it still targets another feature branch lands there, not on `dev`.
+CI (`ci.yml`) only runs on PRs into `dev` and `main`, so work merged into a stacked
+base branch is never tested.
+
 ### Merge strategy
 
 - Use **squash merge** for feature branches into `dev` — keeps `dev` history readable as
