@@ -97,6 +97,8 @@ class TaskRepository {
     }
 
     final docRef = _tasksCollection.doc();
+    // Epoch millis keep new tasks after every existing manual order.
+    final order = _clock().millisecondsSinceEpoch.toDouble();
     final data = <String, dynamic>{
       'taskId': docRef.id,
       'uid': uid,
@@ -111,7 +113,7 @@ class TaskRepository {
       'earlyReminderMinutes': earlyReminderMinutes,
       'repeatRule': repeatRule,
       'repeatCustomConfig': customConfig,
-      'order': 0,
+      'order': order,
       'subtasks': <Map<String, dynamic>>[],
       'createdAt': FieldValue.serverTimestamp(),
       'completedAt': null,
@@ -134,7 +136,7 @@ class TaskRepository {
       earlyReminderMinutes: earlyReminderMinutes,
       repeatRule: repeatRule,
       repeatCustomConfig: customConfig,
-      order: 0.0,
+      order: order,
       subtasks: const [],
       createdAt: DateTime.now(),
       completedAt: null,
@@ -271,34 +273,6 @@ class TaskRepository {
     final batch = _firestore.batch();
     for (final entry in taskIdToOrder.entries) {
       batch.update(_tasksCollection.doc(entry.key), {'order': entry.value});
-    }
-    await _write(batch.commit());
-  }
-
-  /// Backfills `order` for tasks owned by [uid] where order is 0.0 or unassigned.
-  /// Orders tasks chronologically by [createdAt] (oldest = lowest).
-  Future<void> backfillTaskOrders(String uid) async {
-    final snapshot = await _tasksCollection
-        .where('uid', isEqualTo: uid)
-        .where('deletedAt', isNull: true)
-        .get();
-
-    final tasks = snapshot.docs.map(Task.fromFirestore).toList();
-    final unbackfilled = tasks.where((t) => t.order == 0.0).toList();
-    if (unbackfilled.isEmpty) return;
-
-    tasks.sort((a, b) {
-      if (a.createdAt != null && b.createdAt != null) {
-        return a.createdAt!.compareTo(b.createdAt!);
-      }
-      return 0;
-    });
-
-    final batch = _firestore.batch();
-    for (int i = 0; i < tasks.length; i++) {
-      final task = tasks[i];
-      final newOrder = (i + 1) * 1000.0;
-      batch.update(_tasksCollection.doc(task.taskId), {'order': newOrder});
     }
     await _write(batch.commit());
   }
@@ -892,16 +866,6 @@ class TaskRepository {
       }
       await _write(batch.commit());
     }
-  }
-
-  /// Streams a single task by [taskId]. Emits null if the document does not exist.
-  Stream<Task?> streamTask(String taskId) {
-    return _tasksCollection.doc(taskId).snapshots().map((snapshot) {
-      if (!snapshot.exists || snapshot.data() == null) {
-        return null;
-      }
-      return Task.fromFirestore(snapshot);
-    });
   }
 
   Future<List<Map<String, dynamic>>> _getSubtasksForTask(String taskId) async {

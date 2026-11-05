@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/ui/friendly_error.dart';
 import '../../../core/ui/feedback_snackbar.dart';
 import '../../../core/ui/tag_format.dart';
 import '../../tasks/providers/task_sort_providers.dart';
@@ -18,90 +20,120 @@ Future<void> showRenameTagDialog(
   String uid,
 ) async {
   final messenger = ScaffoldMessenger.of(context);
-  final controller = TextEditingController(text: entry.name);
-  final formKey = GlobalKey<FormState>();
-  String? serverError;
 
   await showDialog<void>(
     context: context,
-    builder: (dialogContext) => StatefulBuilder(
-      builder: (context, setDialogState) => AlertDialog(
-        title: const Text('Rename Tag'),
-        content: Form(
-          key: formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextFormField(
-                key: const Key('renameTagInput'),
-                controller: controller,
-                autofocus: true,
-                decoration: InputDecoration(
-                  labelText: 'Tag Name',
-                  prefixText: '#',
-                  errorText: serverError,
-                ),
-                onChanged: (_) {
-                  if (serverError != null) {
-                    setDialogState(() {
-                      serverError = null;
-                    });
-                  }
-                },
-                validator: (val) {
-                  if (val == null || stripTagPrefix(val).isEmpty) {
-                    return 'Tag name cannot be empty.';
-                  }
-                  return null;
-                },
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            key: const Key('cancelRenameTagButton'),
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            key: const Key('confirmRenameTagButton'),
-            onPressed: () async {
-              if (!formKey.currentState!.validate()) return;
-              final newName = stripTagPrefix(controller.text);
-              if (newName == entry.name) {
-                if (dialogContext.mounted) {
-                  Navigator.of(dialogContext).pop();
-                }
-                return;
-              }
-              try {
-                await ref
-                    .read(tagRepositoryProvider)
-                    .renameTag(uid: uid, tagId: entry.tagId, newName: newName);
-                if (dialogContext.mounted) {
-                  Navigator.of(dialogContext).pop();
-                }
-                showFeedbackSnackBar(
-                  messenger,
-                  'Renamed tag to "${formatTag(newName)}"',
-                );
-              } on ArgumentError catch (e) {
-                setDialogState(() {
-                  serverError = e.message.toString();
-                });
-              } catch (e) {
-                setDialogState(() {
-                  serverError = 'Failed to rename tag: $e';
-                });
-              }
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
+    builder: (dialogContext) => _RenameTagDialog(
+      entry: entry,
+      onRename: (newName) async {
+        await ref
+            .read(tagRepositoryProvider)
+            .renameTag(uid: uid, tagId: entry.tagId, newName: newName);
+        showFeedbackSnackBar(
+          messenger,
+          'Renamed tag to "${formatTag(newName)}"',
+        );
+      },
     ),
   );
+}
+
+/// Owns the name controller so it is disposed after the dialog's exit
+/// animation, not while the field is still mounted.
+class _RenameTagDialog extends StatefulWidget {
+  const _RenameTagDialog({required this.entry, required this.onRename});
+
+  final TagBrowserEntry entry;
+  final Future<void> Function(String newName) onRename;
+
+  @override
+  State<_RenameTagDialog> createState() => _RenameTagDialogState();
+}
+
+class _RenameTagDialogState extends State<_RenameTagDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _controller;
+  String? _serverError;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.entry.name);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+    final newName = stripTagPrefix(_controller.text);
+    if (newName == widget.entry.name) {
+      Navigator.of(context).pop();
+      return;
+    }
+    try {
+      await widget.onRename(newName);
+      if (mounted) Navigator.of(context).pop();
+    } on ArgumentError catch (e) {
+      if (mounted) setState(() => _serverError = friendlyError(e));
+    } catch (e) {
+      if (mounted) {
+        setState(
+          () => _serverError = 'Failed to rename tag: ${friendlyError(e)}',
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Rename Tag'),
+      content: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextFormField(
+              key: const Key('renameTagInput'),
+              controller: _controller,
+              inputFormatters: [LengthLimitingTextInputFormatter(100)],
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: 'Tag Name',
+                prefixText: '#',
+                errorText: _serverError,
+              ),
+              onChanged: (_) {
+                if (_serverError != null) setState(() => _serverError = null);
+              },
+              validator: (val) {
+                if (val == null || stripTagPrefix(val).isEmpty) {
+                  return 'Tag name cannot be empty.';
+                }
+                return null;
+              },
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          key: const Key('cancelRenameTagButton'),
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          key: const Key('confirmRenameTagButton'),
+          onPressed: _save,
+          child: const Text('Save'),
+        ),
+      ],
+    );
+  }
 }
 
 /// Displays a confirmation dialog to delete an existing tag, warning if active tasks use it.
@@ -152,7 +184,7 @@ Future<void> showDeleteTagDialog(
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('Failed to delete tag: $e'),
+                    content: Text('Failed to delete tag: ${friendlyError(e)}'),
                     backgroundColor: Colors.red,
                   ),
                 );

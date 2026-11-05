@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/ui/friendly_error.dart';
 import '../../../core/notifications/web_reminder_scheduler.dart';
 import '../../lists/data/list.dart';
 import '../../lists/presentation/list_detail_screen.dart';
@@ -175,8 +176,9 @@ mixin SearchLogicMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Failed to add task: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to add task: ${friendlyError(e)}')),
+        );
       }
     } finally {
       if (mounted) {

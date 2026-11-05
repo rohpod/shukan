@@ -1,12 +1,16 @@
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/ui/friendly_error.dart';
 import '../../../core/notifications/web_reminder_scheduler.dart';
 import '../../../core/ui/feedback_snackbar.dart';
 import '../../../core/ui/tag_format.dart';
+import '../../../core/ui/safe_url.dart';
 import '../../auth/providers/auth_providers.dart';
 import '../../lists/data/list.dart';
+import '../../lists/presentation/widgets/list_name_dialog.dart';
 import '../../lists/providers/list_providers.dart';
 
 import '../../tags/presentation/widgets/tag_chips_section.dart';
@@ -25,8 +29,10 @@ import 'widgets/empty_state_view.dart';
 import 'widgets/task_priority_filter_selector.dart';
 import 'widgets/task_priority_marker.dart';
 import 'widgets/task_row_tag_chips.dart';
+import 'widgets/task_schedule_line.dart';
 import 'widgets/task_sort_selector.dart';
 import 'widgets/task_tag_filter_selector.dart';
+import 'widgets/task_url_link.dart';
 import 'quick_add_bar.dart';
 
 sealed class _TaskMenuAction {
@@ -103,7 +109,7 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
     } catch (e) {
       if (!mounted) return;
       messenger.showSnackBar(
-        SnackBar(content: Text('Failed to move task: $e')),
+        SnackBar(content: Text('Failed to move task: ${friendlyError(e)}')),
       );
     }
   }
@@ -114,60 +120,34 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
     Task task,
     ScaffoldMessengerState messenger,
   ) async {
-    final controller = TextEditingController();
-    final formKey = GlobalKey<FormState>();
-
     final createdList = await showDialog<ListModel>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Create New List'),
-        content: Form(
-          key: formKey,
-          child: TextFormField(
-            key: const Key('createListNameInput'),
-            controller: controller,
-            autofocus: true,
-            decoration: const InputDecoration(
-              labelText: 'List Name',
-              hintText: 'e.g. Work, Groceries',
-            ),
-            validator: (val) {
-              if (val == null || val.trim().isEmpty) {
-                return 'Please enter a list name.';
-              }
-              return null;
-            },
-          ),
-        ),
-        actions: [
-          TextButton(
-            key: const Key('cancelCreateListButton'),
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            key: const Key('confirmCreateListButton'),
-            onPressed: () async {
-              if (!formKey.currentState!.validate()) return;
-              final name = controller.text.trim();
-              try {
-                final newList = await ref
-                    .read(listRepositoryProvider)
-                    .createList(uid: uid, name: name);
-                if (dialogContext.mounted) {
-                  Navigator.of(dialogContext).pop(newList);
-                }
-              } catch (e) {
-                if (dialogContext.mounted) {
-                  ScaffoldMessenger.of(dialogContext).showSnackBar(
-                    SnackBar(content: Text('Failed to create list: $e')),
-                  );
-                }
-              }
-            },
-            child: const Text('Create'),
-          ),
-        ],
+      builder: (dialogContext) => ListNameDialog(
+        title: 'Create New List',
+        confirmLabel: 'Create',
+        inputKey: const Key('createListNameInput'),
+        confirmKey: const Key('confirmCreateListButton'),
+        cancelKey: const Key('cancelCreateListButton'),
+        hintText: 'e.g. Work, Groceries',
+        emptyMessage: 'Please enter a list name.',
+        onConfirm: (dialogContext, name) async {
+          try {
+            final newList = await ref
+                .read(listRepositoryProvider)
+                .createList(uid: uid, name: name);
+            if (dialogContext.mounted) {
+              Navigator.of(dialogContext).pop(newList);
+            }
+          } catch (e) {
+            if (dialogContext.mounted) {
+              ScaffoldMessenger.of(dialogContext).showSnackBar(
+                SnackBar(
+                  content: Text('Failed to create list: ${friendlyError(e)}'),
+                ),
+              );
+            }
+          }
+        },
       ),
     );
 
@@ -205,7 +185,9 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
         key: Key('defaultListLoadingIndicator'),
         child: CircularProgressIndicator(),
       ),
-      error: (e, _) => Center(child: Text('Error loading default list: $e')),
+      error: (e, _) => Center(
+        child: Text('Error loading default list: ${friendlyError(e)}'),
+      ),
     );
   }
 
@@ -277,7 +259,11 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
     } catch (e) {
       if (!mounted) return;
       scaffoldMessenger.showSnackBar(
-        SnackBar(content: Text('Failed to delete completed tasks: $e')),
+        SnackBar(
+          content: Text(
+            'Failed to delete completed tasks: ${friendlyError(e)}',
+          ),
+        ),
       );
     }
   }
@@ -377,10 +363,13 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                     subtitle:
                         (task.notes.isNotEmpty ||
                             task.url.isNotEmpty ||
+                            task.dueDate != null ||
                             tagFilter.isNotEmpty)
                         ? Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              if (task.dueDate != null)
+                                TaskScheduleLine(task: task),
                               if (task.notes.isNotEmpty)
                                 Text(
                                   task.notes,
@@ -392,13 +381,9 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                                   ),
                                 ),
                               if (task.url.isNotEmpty)
-                                Text(
-                                  task.url,
-                                  key: Key('taskUrl_${task.taskId}'),
-                                  style: const TextStyle(
-                                    color: Colors.blue,
-                                    decoration: TextDecoration.underline,
-                                  ),
+                                TaskUrlLink(
+                                  task: task,
+                                  enabled: !isSelectionMode,
                                 ),
                               if (tagFilter.isNotEmpty)
                                 TaskRowTagChips(task: task),
@@ -479,7 +464,9 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                               if (!mounted) return;
                               messenger.showSnackBar(
                                 SnackBar(
-                                  content: Text('Failed to delete task: $e'),
+                                  content: Text(
+                                    'Failed to delete task: ${friendlyError(e)}',
+                                  ),
                                 ),
                               );
                             }
@@ -976,7 +963,9 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                 key: Key('tasksLoadingIndicator'),
                 child: CircularProgressIndicator(),
               ),
-              error: (e, _) => Center(child: Text('Error loading tasks: $e')),
+              error: (e, _) => Center(
+                child: Text('Error loading tasks: ${friendlyError(e)}'),
+              ),
             ),
           ),
           QuickAddBar(uid: uid, listId: listId),
@@ -1156,8 +1145,9 @@ class _AddSubtaskInputRowState extends ConsumerState<_AddSubtaskInputRow> {
       _controller.clear();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Failed to add subtask: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to add subtask: ${friendlyError(e)}')),
+        );
       }
     } finally {
       if (mounted) {
@@ -1180,6 +1170,7 @@ class _AddSubtaskInputRowState extends ConsumerState<_AddSubtaskInputRow> {
           child: TextField(
             key: Key('addSubtaskInput_${widget.taskId}'),
             controller: _controller,
+            inputFormatters: [LengthLimitingTextInputFormatter(500)],
             autofocus: widget.autofocus,
             style: const TextStyle(fontSize: 13),
             decoration: const InputDecoration(
@@ -1329,8 +1320,9 @@ class _TaskDialogState extends ConsumerState<TaskDialog> {
       _tagInputController.clear();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Failed to add tag: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to add tag: ${friendlyError(e)}')),
+        );
       }
     }
   }
@@ -1387,8 +1379,8 @@ class _TaskDialogState extends ConsumerState<TaskDialog> {
           SnackBar(
             content: Text(
               isEditing
-                  ? 'Failed to update task: $e'
-                  : 'Failed to add task: $e',
+                  ? 'Failed to update task: ${friendlyError(e)}'
+                  : 'Failed to add task: ${friendlyError(e)}',
             ),
           ),
         );
@@ -1428,6 +1420,7 @@ class _TaskDialogState extends ConsumerState<TaskDialog> {
                 key: Key(isEditing ? 'editTaskTitleInput' : 'taskTitleInput'),
                 controller: _titleController,
                 autofocus: true,
+                inputFormatters: [LengthLimitingTextInputFormatter(500)],
                 decoration: const InputDecoration(labelText: 'Title'),
                 validator: (val) {
                   if (val == null || val.trim().isEmpty) {
@@ -1442,6 +1435,7 @@ class _TaskDialogState extends ConsumerState<TaskDialog> {
               TextFormField(
                 key: Key(isEditing ? 'editTaskNotesInput' : 'taskNotesInput'),
                 controller: _notesController,
+                inputFormatters: [LengthLimitingTextInputFormatter(10000)],
                 decoration: const InputDecoration(
                   labelText: 'Notes (optional)',
                 ),
@@ -1451,7 +1445,14 @@ class _TaskDialogState extends ConsumerState<TaskDialog> {
               TextFormField(
                 key: Key(isEditing ? 'editTaskUrlInput' : 'taskUrlInput'),
                 controller: _urlController,
+                inputFormatters: [LengthLimitingTextInputFormatter(2048)],
                 decoration: const InputDecoration(labelText: 'URL (optional)'),
+                validator: (val) {
+                  if (val == null || val.trim().isEmpty) return null;
+                  return parseWebUrl(val) == null
+                      ? 'Enter a valid web link (http or https).'
+                      : null;
+                },
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
@@ -1673,6 +1674,7 @@ class _TaskDialogState extends ConsumerState<TaskDialog> {
                     child: TextField(
                       key: const Key('editTaskTagInput'),
                       controller: _tagInputController,
+                      inputFormatters: [LengthLimitingTextInputFormatter(100)],
                       decoration: const InputDecoration(
                         labelText: 'Add tag',
                         hintText: 'Press enter or + to add',

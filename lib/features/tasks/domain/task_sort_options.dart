@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 
 import '../data/task.dart';
@@ -161,7 +163,11 @@ class TaskSortUtils {
 
   /// Returns true if the order gap between [before] and [after] is so small that
   /// numerical precision issues could occur on further subdivisions.
+  ///
+  /// The threshold scales with magnitude: new tasks are ordered by epoch
+  /// millis (about 1.7e12), where a double can't hold gaps below roughly 2e-4.
   static bool needsRenumbering({required Task before, required Task after}) {
-    return (after.order - before.order).abs() < 1e-6;
+    final threshold = max(1e-6, after.order.abs() * 1e-12);
+    return (after.order - before.order).abs() < threshold;
   }
 }

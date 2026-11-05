@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/ui/friendly_error.dart';
 import '../../../core/firebase/firebase_providers.dart';
 import '../../../core/ui/feedback_snackbar.dart';
 import '../../auth/providers/auth_providers.dart';
@@ -51,8 +52,9 @@ class ListDetailScreen extends ConsumerWidget {
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Failed to export list: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to export list: ${friendlyError(e)}')),
+        );
       }
     }
   }
@@ -113,7 +115,7 @@ class ListDetailScreen extends ConsumerWidget {
       );
     } catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text('Failed to delete tasks: $e')),
+        SnackBar(content: Text('Failed to delete tasks: ${friendlyError(e)}')),
       );
     }
   }
@@ -153,7 +155,7 @@ class ListDetailScreen extends ConsumerWidget {
       );
     } catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text('Failed to move tasks: $e')),
+        SnackBar(content: Text('Failed to move tasks: ${friendlyError(e)}')),
       );
     }
   }

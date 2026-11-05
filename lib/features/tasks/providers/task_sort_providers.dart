@@ -1,7 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../auth/providers/auth_providers.dart';
 import '../data/task.dart';
 import '../domain/smart_view_models.dart';
 import '../domain/task_priority_filter.dart';
@@ -52,41 +51,6 @@ class TaskSortModeNotifier extends Notifier<TaskSortOption> {
 final taskSortModeProvider =
     NotifierProvider.family<TaskSortModeNotifier, TaskSortOption, String>(
       (arg) => TaskSortModeNotifier(arg),
-    );
-
-/// Per-view toggle for displaying completed tasks, keyed by `listId` (for list views)
-/// or `viewType.name` (for smart views).
-///
-/// Persists a boolean to SharedPreferences under `task_show_completed_<viewKey>`.
-/// Defaults to `false` (hide completed tasks).
-class ShowCompletedTasksNotifier extends Notifier<bool> {
-  ShowCompletedTasksNotifier(this.viewKey);
-
-  final String viewKey;
-
-  @override
-  bool build() {
-    final prefs = ref.watch(sharedPreferencesProvider);
-    return prefs?.getBool('task_show_completed_$viewKey') ?? false;
-  }
-
-  Future<void> toggle() async {
-    state = !state;
-    final prefs = ref.read(sharedPreferencesProvider);
-    await prefs?.setBool('task_show_completed_$viewKey', state);
-  }
-
-  Future<void> setShowCompleted(bool show) async {
-    state = show;
-    final prefs = ref.read(sharedPreferencesProvider);
-    await prefs?.setBool('task_show_completed_$viewKey', state);
-  }
-}
-
-/// Provider exposing whether completed tasks should be shown for a given view.
-final showCompletedTasksProvider =
-    NotifierProvider.family<ShowCompletedTasksNotifier, bool, String>(
-      (arg) => ShowCompletedTasksNotifier(arg),
     );
 
 /// Per-view priority filter notifier, keyed by `listId` (for list views) or `viewType.name` (for smart views).
@@ -287,16 +251,3 @@ final sortedSmartViewTasksProvider =
       }
       return const AsyncLoading();
     });
-
-/// One-time backfill provider that ensures existing tasks for the user have an initial `order`.
-final taskOrderBackfillProvider = FutureProvider<void>((ref) async {
-  final uid = ref.watch(currentUidProvider);
-  if (uid == null) return;
-  final prefs = ref.watch(sharedPreferencesProvider);
-  final key = 'tasks_order_backfilled_$uid';
-  if (prefs?.getBool(key) == true) return;
-
-  final repository = ref.read(taskRepositoryProvider);
-  await repository.backfillTaskOrders(uid);
-  await prefs?.setBool(key, true);
-});

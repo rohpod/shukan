@@ -76,37 +76,6 @@ class ExportService {
     return buffer.toString();
   }
 
-  /// Fetches tasks for [listId] from Firestore (filtering soft-deleted tasks)
-  /// and generates the markdown string.
-  Future<String> exportListToMarkdown({
-    required String listId,
-    required String uid,
-    String? listName,
-    DateTime? exportDate,
-  }) async {
-    final firestore = _firestore ?? FirebaseFirestore.instance;
-
-    var resolvedName = listName;
-    if (resolvedName == null) {
-      final listDoc = await firestore.collection('lists').doc(listId).get();
-      resolvedName = listDoc.data()?['name'] as String? ?? 'Untitled List';
-    }
-
-    final snapshot = await firestore
-        .collection('tasks')
-        .where('uid', isEqualTo: uid)
-        .where('listId', isEqualTo: listId)
-        .where('deletedAt', isNull: true)
-        .get();
-    final tasks = snapshot.docs.map(Task.fromFirestore).toList();
-
-    return generateMarkdown(
-      listName: resolvedName,
-      tasks: tasks,
-      exportDate: exportDate,
-    );
-  }
-
   /// Exports [tasks] to markdown and triggers a browser file download.
   /// [downloadTrigger] defaults to the web download implementation,
   /// but can be injected for testing.

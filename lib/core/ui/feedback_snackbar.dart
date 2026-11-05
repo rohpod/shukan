@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'friendly_error.dart';
+
 /// Shows a standardized feedback [SnackBar] through [messenger].
 ///
 /// Always clears existing snackbars first.
@@ -34,7 +36,9 @@ void showFeedbackSnackBar(
               await onAction();
             } catch (e) {
               messenger.showSnackBar(
-                SnackBar(content: Text('$actionErrorPrefix: $e')),
+                SnackBar(
+                  content: Text('$actionErrorPrefix: ${friendlyError(e)}'),
+                ),
               );
             }
           },

@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/notifications/notification_date_utils.dart';
 import '../../../core/ui/feedback_snackbar.dart';
 import '../../auth/providers/auth_providers.dart';
 import '../../lists/data/list.dart';
@@ -18,6 +17,7 @@ import 'quick_add_bar.dart';
 import 'task_list_screen.dart';
 import 'widgets/empty_state_view.dart';
 import 'widgets/task_priority_marker.dart';
+import 'widgets/task_schedule_line.dart';
 
 class SmartViewDetailScreen extends ConsumerStatefulWidget {
   final SmartViewType viewType;
@@ -48,18 +48,6 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
     );
   }
 
-  String _formatDueDate(DateTime? date, String? dueTime) {
-    if (date == null) return '';
-    final local = date.toLocal();
-    final y = local.year.toString().padLeft(4, '0');
-    final m = local.month.toString().padLeft(2, '0');
-    final d = local.day.toString().padLeft(2, '0');
-    if (dueTime != null && dueTime.isNotEmpty) {
-      return '$y-$m-$d $dueTime';
-    }
-    return '$y-$m-$d';
-  }
-
   @override
   Widget build(BuildContext context) {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
@@ -78,8 +66,6 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
     final effectiveList = ref.watch(effectiveDefaultListProvider);
     final effectiveListId = effectiveList?.listId;
     final destinationListName = effectiveList?.name;
-
-    final now = ref.watch(currentMinuteProvider).value ?? DateTime.now();
 
     return Scaffold(
       appBar: AppBar(
@@ -149,16 +135,6 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                   itemBuilder: (context, index) {
                     final task = tasks[index];
                     final listName = listNames[task.listId] ?? 'Inbox';
-                    final isOverdue =
-                        !task.isCompleted &&
-                        isTaskOverdue(
-                          dueDate: task.dueDate,
-                          dueTime: task.dueTime,
-                          now: now,
-                        );
-                    final dueDateColor = isOverdue
-                        ? Colors.red.shade700
-                        : Colors.blueGrey;
 
                     final row = Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -219,33 +195,7 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                                 crossAxisAlignment: WrapCrossAlignment.center,
                                 children: [
                                   if (task.dueDate != null)
-                                    Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          Icons.calendar_today,
-                                          size: 13,
-                                          color: dueDateColor,
-                                        ),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          _formatDueDate(
-                                            task.dueDate,
-                                            task.dueTime,
-                                          ),
-                                          key: Key(
-                                            'taskDueDate_${task.taskId}',
-                                          ),
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: dueDateColor,
-                                            fontWeight: isOverdue
-                                                ? FontWeight.w600
-                                                : FontWeight.w500,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
+                                    TaskScheduleLine(task: task),
                                   Text(
                                     '• List: $listName',
                                     key: Key('taskListOrigin_${task.taskId}'),

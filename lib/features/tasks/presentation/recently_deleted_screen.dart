@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/ui/friendly_error.dart';
 import '../../auth/providers/auth_providers.dart';
 import '../../lists/data/list.dart';
 import '../../lists/providers/list_providers.dart';
@@ -24,7 +25,13 @@ class _RecentlyDeletedScreenState extends ConsumerState<RecentlyDeletedScreen> {
       _hasPurged = true;
       Future.microtask(() {
         if (mounted) {
-          ref.read(taskRepositoryProvider).purgeExpiredDeletedTasks(uid);
+          ref
+              .read(taskRepositoryProvider)
+              .purgeExpiredDeletedTasks(uid)
+              .catchError((Object e) {
+                debugPrint('Purge on open failed: $e');
+                return 0;
+              });
         }
       });
     }
@@ -70,7 +77,11 @@ class _RecentlyDeletedScreenState extends ConsumerState<RecentlyDeletedScreen> {
                 }
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Failed to empty trash: $e')),
+                    SnackBar(
+                      content: Text(
+                        'Failed to empty trash: ${friendlyError(e)}',
+                      ),
+                    ),
                   );
                 }
               }
@@ -128,7 +139,11 @@ class _RecentlyDeletedScreenState extends ConsumerState<RecentlyDeletedScreen> {
                 }
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Failed to delete task: $e')),
+                    SnackBar(
+                      content: Text(
+                        'Failed to delete task: ${friendlyError(e)}',
+                      ),
+                    ),
                   );
                 }
               }
@@ -280,7 +295,9 @@ class _RecentlyDeletedScreenState extends ConsumerState<RecentlyDeletedScreen> {
                             if (context.mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                  content: Text('Failed to restore task: $e'),
+                                  content: Text(
+                                    'Failed to restore task: ${friendlyError(e)}',
+                                  ),
                                 ),
                               );
                             }
@@ -322,7 +339,7 @@ class _RecentlyDeletedScreenState extends ConsumerState<RecentlyDeletedScreen> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Error loading recently deleted tasks: $e',
+                  'Error loading recently deleted tasks: ${friendlyError(e)}',
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 16),

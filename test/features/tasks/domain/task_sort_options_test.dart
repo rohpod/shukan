@@ -219,6 +219,24 @@ void main() {
       );
     });
 
+    test('needsRenumbering scales its threshold for epoch-sized orders', () {
+      const base = 1.7e12;
+      expect(
+        TaskSortUtils.needsRenumbering(
+          before: dummyTask(base),
+          after: dummyTask(base + 0.001),
+        ),
+        isTrue,
+      );
+      expect(
+        TaskSortUtils.needsRenumbering(
+          before: dummyTask(base),
+          after: dummyTask(base + 1000),
+        ),
+        isFalse,
+      );
+    });
+
     test('needsRenumbering detects close precision', () {
       expect(
         TaskSortUtils.needsRenumbering(

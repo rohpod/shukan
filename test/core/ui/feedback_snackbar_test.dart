@@ -115,7 +115,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.text('Failed to undo move: Exception: Network timeout'),
+      find.text('Failed to undo move: Something went wrong. Please try again.'),
       findsOneWidget,
     );
   });

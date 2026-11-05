@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/ui/friendly_error.dart';
 import '../../lists/providers/list_providers.dart';
 
 /// Dialog allowing the user to pick a target list to move selected tasks into.
@@ -62,7 +63,8 @@ class MoveTasksDialog extends ConsumerWidget {
               child: CircularProgressIndicator(),
             ),
           ),
-          error: (e, _) => Center(child: Text('Error loading lists: $e')),
+          error: (e, _) =>
+              Center(child: Text('Error loading lists: ${friendlyError(e)}')),
         ),
       ),
       actions: [

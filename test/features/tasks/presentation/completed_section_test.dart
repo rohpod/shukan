@@ -14,7 +14,6 @@ import 'package:shukan/features/tasks/domain/task_priority_filter.dart';
 import 'package:shukan/features/tasks/domain/task_sort_options.dart';
 import 'package:shukan/features/tasks/presentation/smart_view_detail_screen.dart';
 import 'package:shukan/features/tasks/presentation/task_list_screen.dart';
-import 'package:shukan/features/tasks/presentation/widgets/show_completed_toggle.dart';
 import 'package:shukan/features/tasks/providers/smart_view_providers.dart';
 import 'package:shukan/features/tasks/providers/task_selection_providers.dart';
 import 'package:shukan/features/tasks/providers/task_sort_providers.dart';
@@ -598,7 +597,6 @@ void main() {
           );
           await tester.pumpAndSettle();
 
-          expect(find.byType(ShowCompletedToggle), findsNothing);
           expect(
             find.byKey(const Key('toggleShowCompleted_today')),
             findsNothing,
@@ -630,7 +628,6 @@ void main() {
           );
           await tester.pumpAndSettle();
 
-          expect(find.byType(ShowCompletedToggle), findsNothing);
           expect(
             find.byKey(const Key('toggleShowCompleted_scheduled')),
             findsNothing,
