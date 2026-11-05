@@ -16,6 +16,9 @@ export 'web_reminder_logic.dart';
 /// The result of requesting web notification permission.
 enum WebPermissionResult { granted, denied, dismissed, notWeb, unsupported }
 
+/// Whether reminders can reach the user as browser notifications.
+enum WebNotificationStatus { granted, blocked, notAsked, unsupported }
+
 /// Payload of the test notification, which has no real task behind it.
 const testNotificationTaskId = 'test-notification';
 
@@ -261,6 +264,19 @@ class NotificationService {
   bool get webNotificationsGranted {
     if (!_isWeb) return false;
     return _webPermission == WebNotificationPermission.granted;
+  }
+
+  /// The current state of browser notifications, without prompting.
+  WebNotificationStatus get webNotificationStatus {
+    final permission = _webPermission;
+    if (permission == null) return WebNotificationStatus.unsupported;
+    if (permission == WebNotificationPermission.granted) {
+      return WebNotificationStatus.granted;
+    }
+    if (permission == WebNotificationPermission.denied) {
+      return WebNotificationStatus.blocked;
+    }
+    return WebNotificationStatus.notAsked;
   }
 
   /// Requests notification permission on web if undetermined/default.

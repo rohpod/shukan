@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -124,8 +126,70 @@ class ExportService {
       exportDate: exportDate,
     );
 
-    final trigger = downloadTrigger ?? downloadMarkdownFile;
+    final trigger =
+        downloadTrigger ??
+        (content, name) => downloadTextFile(content, name, 'text/markdown');
     trigger(markdown, filename);
+  }
+
+  /// Builds a JSON export of a user's documents, with timestamps as ISO 8601.
+  String generateAccountJson({
+    required List<Map<String, dynamic>> lists,
+    required List<Map<String, dynamic>> tags,
+    required List<Map<String, dynamic>> tasks,
+    DateTime? exportDate,
+  }) {
+    return const JsonEncoder.withIndent('  ').convert(
+      _jsonSafe({
+        'exportedAt': exportDate ?? DateTime.now(),
+        'lists': lists,
+        'tags': tags,
+        'tasks': tasks,
+      }),
+    );
+  }
+
+  static Object? _jsonSafe(Object? value) {
+    if (value is Timestamp) return _jsonSafe(value.toDate());
+    if (value is DateTime) return value.toUtc().toIso8601String();
+    if (value is Map) {
+      return value.map((key, item) => MapEntry('$key', _jsonSafe(item)));
+    }
+    if (value is List) return value.map(_jsonSafe).toList();
+    return value;
+  }
+
+  /// Downloads everything [uid] owns, including completed and deleted tasks.
+  Future<void> exportAccount({
+    required String uid,
+    DateTime? exportDate,
+    void Function(String content, String filename)? downloadTrigger,
+  }) async {
+    final firestore = _firestore ?? FirebaseFirestore.instance;
+
+    Future<List<Map<String, dynamic>>> ownedBy(String collection) async {
+      final snapshot = await firestore
+          .collection(collection)
+          .where('uid', isEqualTo: uid)
+          .get();
+      return snapshot.docs.map((doc) => doc.data()).toList();
+    }
+
+    final json = generateAccountJson(
+      lists: await ownedBy('lists'),
+      tags: await ownedBy('tags'),
+      tasks: await ownedBy('tasks'),
+      exportDate: exportDate,
+    );
+
+    final filename = generateExportFileName(
+      listName: 'shukan-export',
+      exportDate: exportDate,
+    ).replaceFirst(RegExp(r'\.md$'), '.json');
+    final trigger =
+        downloadTrigger ??
+        (content, name) => downloadTextFile(content, name, 'application/json');
+    trigger(json, filename);
   }
 }
 

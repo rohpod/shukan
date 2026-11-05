@@ -1,17 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/notifications/notification_service.dart';
-import '../../../core/notifications/web_reminder_scheduler.dart';
 import '../../../core/ui/feedback_snackbar.dart';
-import '../../tasks/data/task.dart';
-import '../../tasks/providers/task_sort_providers.dart';
 import '../../lists/data/list.dart';
 import '../../lists/domain/list_icons.dart';
 import '../../lists/presentation/list_detail_screen.dart';
 import '../../lists/presentation/list_icon_picker_dialog.dart';
 import '../../lists/providers/list_providers.dart';
 import '../../search/presentation/search_screen.dart';
+import '../../settings/presentation/settings_screen.dart';
 import '../../tags/presentation/widgets/tag_chips_section.dart';
 import '../../tasks/domain/smart_view_models.dart';
 import '../../tasks/presentation/missed_tasks_banner.dart';
@@ -31,51 +28,6 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> with SearchLogicMixin {
   bool _isSearchActive = false;
-  bool _isSendingTestNotification = false;
-
-  Future<void> _sendTestNotification() async {
-    if (_isSendingTestNotification) return;
-    setState(() => _isSendingTestNotification = true);
-
-    try {
-      ref.read(chimePreparerProvider)();
-
-      final notifService = ref.read(notificationServiceProvider);
-      final permResult = await notifService.requestWebPermissionIfNeeded();
-      final playChimeFn = ref.read(chimePlayerProvider);
-
-      if (permResult == WebPermissionResult.granted) {
-        playChimeFn();
-        final testTask = Task(
-          taskId: testNotificationTaskId,
-          uid: ref.read(currentUidProvider) ?? 'test-uid',
-          listId: 'test-list',
-          title: 'Test notification',
-          notes: 'If you can see and hear this, notifications are working.',
-        );
-        final testReminder = WebReminder(
-          task: testTask,
-          kind: WebReminderKind.due,
-          fireTime: DateTime.now(),
-        );
-        await notifService.showWebReminder(testReminder);
-      } else {
-        playChimeFn();
-        if (permResult == WebPermissionResult.denied) {
-          if (!mounted) return;
-          final prefs = ref.read(sharedPreferencesProvider);
-          await showWebNotificationsDeniedSnackBar(
-            prefs: prefs,
-            context: context,
-          );
-        }
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isSendingTestNotification = false);
-      }
-    }
-  }
 
   @override
   void initState() {
@@ -290,7 +242,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SearchLogicMixin {
     final tagEntries =
         ref.watch(tagBrowserEntriesProvider).value ?? const <TagBrowserEntry>[];
     final effectiveList = ref.watch(effectiveDefaultListProvider);
-    final isWeb = ref.watch(isWebPlatformProvider);
 
     return PopScope(
       canPop: !_isSearchActive,
@@ -333,14 +284,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SearchLogicMixin {
                 }
               },
             ),
-            if (!_isSearchActive && isWeb)
+            if (!_isSearchActive)
               IconButton(
-                key: const Key('testNotificationButton'),
-                icon: const Icon(Icons.notifications_outlined),
-                tooltip: 'Send a test notification',
-                onPressed: _isSendingTestNotification
-                    ? null
-                    : _sendTestNotification,
+                key: const Key('settingsButton'),
+                icon: const Icon(Icons.settings_outlined),
+                tooltip: 'Settings',
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const SettingsScreen(),
+                    ),
+                  );
+                },
               ),
             if (!_isSearchActive)
               IconButton(
@@ -391,10 +346,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SearchLogicMixin {
                         data: (lists) {
                           final showRecentlyDeleted = recentlyDeletedCount > 0;
                           if (lists.isEmpty && !showRecentlyDeleted) {
-                            return const Center(
-                              child: Text(
-                                'No lists found',
-                                key: Key('noListsText'),
+                            return Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Text(
+                                    'No lists found',
+                                    key: Key('noListsText'),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  TextButton(
+                                    key: const Key('repairAccountButton'),
+                                    onPressed: () =>
+                                        ref.invalidate(userBootstrapProvider),
+                                    child: const Text('Set up my Inbox'),
+                                  ),
+                                ],
                               ),
                             );
                           }

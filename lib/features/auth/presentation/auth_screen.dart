@@ -23,6 +23,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   AuthMode _authMode = AuthMode.signIn;
   bool _isLoading = false;
   String? _errorMessage;
+  String? _infoMessage;
 
   @override
   void initState() {
@@ -49,6 +50,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           ? AuthMode.signUp
           : AuthMode.signIn;
       _errorMessage = null;
+      _infoMessage = null;
     });
   }
 
@@ -81,6 +83,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
+      _infoMessage = null;
     });
 
     final authRepo = ref.read(authRepositoryProvider);
@@ -100,10 +103,56 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
         );
       }
     } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
       setState(() {
         _errorMessage = _mapFirebaseAuthError(e);
       });
     } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'An unexpected error occurred. Please try again.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _sendPasswordReset() async {
+    final emailError = _validateEmail(_emailController.text);
+    if (emailError != null) {
+      setState(() {
+        _infoMessage = null;
+        _errorMessage = emailError;
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+      _infoMessage = null;
+    });
+
+    try {
+      await ref
+          .read(authRepositoryProvider)
+          .sendPasswordResetEmail(_emailController.text);
+      if (!mounted) return;
+      setState(() {
+        _infoMessage =
+            'If an account exists for that email, a reset link is on its way.';
+      });
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = _mapFirebaseAuthError(e);
+      });
+    } catch (e) {
+      if (!mounted) return;
       setState(() {
         _errorMessage = 'An unexpected error occurred. Please try again.';
       });
@@ -205,6 +254,14 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                         ),
                         const SizedBox(height: 16),
                       ],
+                      if (_infoMessage != null) ...[
+                        Text(
+                          _infoMessage!,
+                          key: const Key('authInfoMessage'),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 16),
+                      ],
                       TextFormField(
                         key: const Key('emailField'),
                         controller: _emailController,
@@ -261,6 +318,12 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                               ),
                       ),
                       const SizedBox(height: 16),
+                      if (isSignIn)
+                        TextButton(
+                          key: const Key('forgotPasswordButton'),
+                          onPressed: _isLoading ? null : _sendPasswordReset,
+                          child: const Text('Forgot password?'),
+                        ),
                       TextButton(
                         key: const Key('toggleAuthModeButton'),
                         onPressed: _isLoading ? null : _toggleAuthMode,
