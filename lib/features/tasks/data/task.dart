@@ -16,6 +16,7 @@ class Task {
   final int earlyReminderMinutes;
   final String repeatRule;
   final Map<String, dynamic>? repeatCustomConfig;
+  final int? repeatAnchorDay;
   final double order;
   final List<Map<String, dynamic>> subtasks;
   final DateTime? createdAt;
@@ -36,6 +37,7 @@ class Task {
     this.earlyReminderMinutes = 0,
     this.repeatRule = 'none',
     this.repeatCustomConfig,
+    this.repeatAnchorDay,
     this.order = 0.0,
     this.subtasks = const [],
     this.createdAt,
@@ -108,6 +110,9 @@ class Task {
       repeatCustomConfig: data['repeatCustomConfig'] is Map
           ? Map<String, dynamic>.from(data['repeatCustomConfig'] as Map)
           : null,
+      repeatAnchorDay: data['repeatAnchorDay'] is num
+          ? (data['repeatAnchorDay'] as num).toInt()
+          : null,
       order: _parseDouble(data['order']),
       subtasks: data['subtasks'] is List
           ? (data['subtasks'] as List)
@@ -140,6 +145,7 @@ class Task {
       'earlyReminderMinutes': earlyReminderMinutes,
       'repeatRule': repeatRule,
       'repeatCustomConfig': repeatCustomConfig,
+      if (repeatAnchorDay != null) 'repeatAnchorDay': repeatAnchorDay,
       'order': order,
       'subtasks': subtasks,
       if (createdAt != null) 'createdAt': Timestamp.fromDate(createdAt!),
@@ -166,6 +172,7 @@ class Task {
     int? earlyReminderMinutes,
     String? repeatRule,
     Map<String, dynamic>? repeatCustomConfig,
+    int? repeatAnchorDay,
     double? order,
     List<Map<String, dynamic>>? subtasks,
     DateTime? createdAt,
@@ -186,6 +193,7 @@ class Task {
       earlyReminderMinutes: earlyReminderMinutes ?? this.earlyReminderMinutes,
       repeatRule: repeatRule ?? this.repeatRule,
       repeatCustomConfig: repeatCustomConfig ?? this.repeatCustomConfig,
+      repeatAnchorDay: repeatAnchorDay ?? this.repeatAnchorDay,
       order: order ?? this.order,
       subtasks: subtasks ?? this.subtasks,
       createdAt: createdAt ?? this.createdAt,
@@ -229,6 +237,7 @@ class Task {
           dueTime == other.dueTime &&
           earlyReminderMinutes == other.earlyReminderMinutes &&
           repeatRule == other.repeatRule &&
+          repeatAnchorDay == other.repeatAnchorDay &&
           _subtasksEquals(subtasks, other.subtasks) &&
           order == other.order &&
           createdAt == other.createdAt &&
@@ -248,6 +257,7 @@ class Task {
       dueTime.hashCode ^
       earlyReminderMinutes.hashCode ^
       repeatRule.hashCode ^
+      repeatAnchorDay.hashCode ^
       _subtasksHash(subtasks) ^
       order.hashCode ^
       createdAt.hashCode ^

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'calendar_utils.dart';
+
 enum SmartViewType {
   today('Today', Icons.today),
   thisWeek('This Week', Icons.calendar_view_week),
@@ -34,7 +36,7 @@ class SmartViewDateUtils {
   static DateTime endOfWeek(DateTime date) {
     final diff = date.weekday - DateTime.monday;
     final monday = DateTime(date.year, date.month, date.day - diff);
-    final sunday = monday.add(const Duration(days: 6));
+    final sunday = addCalendarDays(monday, 6);
     return endOfDay(sunday);
   }
 

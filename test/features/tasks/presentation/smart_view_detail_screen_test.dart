@@ -54,6 +54,8 @@ void main() {
         firestoreProvider.overrideWithValue(fakeFirestore),
         if (overrideDate != null)
           currentDateProvider.overrideWithValue(overrideDate),
+        if (overrideDate != null)
+          currentMinuteProvider.overrideWithValue(AsyncData(overrideDate)),
       ],
       child: MaterialApp(home: SmartViewDetailScreen(viewType: viewType)),
     );
@@ -228,8 +230,8 @@ void main() {
           'uid': uid,
           'listId': defaultListId,
           'title': 'Today Standup',
-          'dueDate': Timestamp.fromDate(DateTime(2026, 10, 14, 9, 30)),
-          'dueTime': '09:30',
+          'dueDate': Timestamp.fromDate(DateTime(2026, 10, 14, 17, 30)),
+          'dueTime': '17:30',
           'deletedAt': null,
           'completedAt': null,
         });

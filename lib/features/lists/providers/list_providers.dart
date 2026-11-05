@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/firebase/firebase_providers.dart';
+import '../../../core/firebase/settled_write.dart';
 import '../../auth/providers/auth_providers.dart';
 import '../../tasks/providers/task_providers.dart';
 import '../data/list.dart';
@@ -8,7 +9,7 @@ import '../data/list_repository.dart';
 
 final listRepositoryProvider = Provider<ListRepository>((ref) {
   final firestore = ref.watch(firestoreProvider);
-  return ListRepository(firestore);
+  return ListRepository(firestore, ref.watch(lateWriteFailureProvider));
 });
 
 /// Streams all lists belonging to the currently authenticated user.

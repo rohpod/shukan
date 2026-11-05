@@ -2,8 +2,10 @@
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_auth_mocks/firebase_auth_mocks.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mock_exceptions/mock_exceptions.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shukan/features/auth/data/auth_repository.dart';
 
@@ -181,6 +183,165 @@ void main() {
 
       await repository.signOut();
       expect(repository.currentUser, isNull);
+    });
+  });
+
+  group('AuthRepository - sign-in repair', () {
+    final user = MockUser(uid: 'u1', email: 'a@b.c');
+
+    Future<List<Map<String, dynamic>>> listsFor(String uid) async {
+      final snapshot = await fakeFirestore
+          .collection('lists')
+          .where('uid', isEqualTo: uid)
+          .get();
+      return snapshot.docs.map((d) => d.data()).toList();
+    }
+
+    test('creates the profile and Inbox when both are missing', () async {
+      await repository.ensureUserBootstrapped(user);
+
+      final userDoc = await fakeFirestore.collection('users').doc('u1').get();
+      final lists = await listsFor('u1');
+      expect(lists, hasLength(1));
+      expect(userDoc.data()!['defaultListId'], lists.first['listId']);
+    });
+
+    test('running twice creates only one Inbox', () async {
+      await repository.ensureUserBootstrapped(user);
+      await repository.ensureUserBootstrapped(user);
+
+      expect(await listsFor('u1'), hasLength(1));
+    });
+
+    test('leaves an existing defaultListId alone', () async {
+      await fakeFirestore.collection('users').doc('u1').set({
+        'uid': 'u1',
+        'defaultListId': 'kept',
+      });
+
+      await repository.ensureUserBootstrapped(user);
+
+      final userDoc = await fakeFirestore.collection('users').doc('u1').get();
+      expect(userDoc.data()!['defaultListId'], 'kept');
+      expect(await listsFor('u1'), isEmpty);
+    });
+
+    test('links an orphaned Inbox instead of creating another', () async {
+      await fakeFirestore.collection('lists').doc('orphan').set({
+        'listId': 'orphan',
+        'uid': 'u1',
+        'name': 'Inbox',
+        'isDefault': true,
+      });
+
+      await repository.ensureUserBootstrapped(user);
+
+      final userDoc = await fakeFirestore.collection('users').doc('u1').get();
+      expect(userDoc.data()!['defaultListId'], 'orphan');
+      expect(await listsFor('u1'), hasLength(1));
+    });
+
+    test('adds an Inbox to a profile that lost its default list', () async {
+      await fakeFirestore.collection('users').doc('u1').set({'uid': 'u1'});
+
+      await repository.ensureUserBootstrapped(user);
+
+      final userDoc = await fakeFirestore.collection('users').doc('u1').get();
+      final lists = await listsFor('u1');
+      expect(lists, hasLength(1));
+      expect(userDoc.data()!['defaultListId'], lists.first['listId']);
+    });
+
+    test('does not race a sign-up that is still bootstrapping', () async {
+      final credential = repository.createUserWithEmailAndPassword(
+        email: 'a@b.c',
+        password: 'password123',
+      );
+      final repair = repository.ensureUserBootstrapped(user);
+      final created = await credential;
+      await repair;
+
+      final lists = await listsFor(created.user!.uid);
+      expect(lists, hasLength(1));
+    });
+  });
+
+  group('AuthRepository - password reset', () {
+    test('an unknown address looks the same as a known one', () async {
+      final auth = MockFirebaseAuth();
+      whenCalling(
+        Invocation.method(#sendPasswordResetEmail, null, {#email: 'a@b.c'}),
+      ).on(auth).thenThrow(FirebaseAuthException(code: 'user-not-found'));
+
+      await AuthRepository(auth, fakeFirestore).sendPasswordResetEmail('a@b.c');
+    });
+
+    test('other failures reach the caller', () async {
+      final auth = MockFirebaseAuth();
+      whenCalling(
+        Invocation.method(#sendPasswordResetEmail, null, {#email: 'a@b.c'}),
+      ).on(auth).thenThrow(FirebaseAuthException(code: 'too-many-requests'));
+
+      await expectLater(
+        AuthRepository(auth, fakeFirestore).sendPasswordResetEmail('a@b.c'),
+        throwsA(isA<FirebaseAuthException>()),
+      );
+    });
+  });
+
+  group('AuthRepository - account deletion', () {
+    late MockUser user;
+    late AuthRepository signedIn;
+
+    setUp(() async {
+      user = MockUser(uid: 'u1', email: 'a@b.c');
+      signedIn = AuthRepository(
+        MockFirebaseAuth(signedIn: true, mockUser: user),
+        fakeFirestore,
+      );
+      await fakeFirestore.collection('users').doc('u1').set({'uid': 'u1'});
+      await fakeFirestore.collection('users').doc('other').set({
+        'uid': 'other',
+      });
+      await fakeFirestore.collection('lists').doc('inbox').set({
+        'uid': 'u1',
+        'isDefault': true,
+      });
+      await fakeFirestore.collection('lists').doc('work').set({
+        'uid': 'u1',
+        'isDefault': false,
+      });
+      for (var i = 0; i < 5; i++) {
+        await fakeFirestore.collection('tasks').doc('t$i').set({'uid': 'u1'});
+      }
+      await fakeFirestore.collection('tags').doc('g1').set({'uid': 'u1'});
+      await fakeFirestore.collection('tasks').doc('keep').set({'uid': 'other'});
+    });
+
+    Future<int> count(String collection) async =>
+        (await fakeFirestore.collection(collection).get()).docs.length;
+
+    test('removes only the user\'s data', () async {
+      await signedIn.deleteAccount(password: 'pw', batchChunkSize: 2);
+
+      expect(await count('lists'), 0);
+      expect(await count('tags'), 0);
+      expect(await count('tasks'), 1);
+      expect(await count('users'), 1);
+    });
+
+    test('a wrong password deletes nothing', () async {
+      whenCalling(Invocation.method(#reauthenticateWithCredential, null))
+          .on(user)
+          .thenThrow(FirebaseAuthException(code: 'wrong-password'));
+
+      await expectLater(
+        signedIn.deleteAccount(password: 'bad'),
+        throwsA(isA<FirebaseAuthException>()),
+      );
+
+      expect(await count('tasks'), 6);
+      expect(await count('lists'), 2);
     });
   });
 }

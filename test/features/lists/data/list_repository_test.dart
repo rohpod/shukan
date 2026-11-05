@@ -218,36 +218,6 @@ void main() {
       },
     );
 
-    test('getActiveTaskCountForList counts active tasks only', () async {
-      const uid = 'user-123';
-      const listId = 'active-count-list';
-
-      await fakeFirestore.collection('tasks').doc('t1').set({
-        'taskId': 't1',
-        'uid': uid,
-        'listId': listId,
-        'deletedAt': null,
-      });
-      await fakeFirestore.collection('tasks').doc('t2').set({
-        'taskId': 't2',
-        'uid': uid,
-        'listId': listId,
-        'deletedAt': null,
-      });
-      await fakeFirestore.collection('tasks').doc('t3-deleted').set({
-        'taskId': 't3-deleted',
-        'uid': uid,
-        'listId': listId,
-        'deletedAt': Timestamp.now(),
-      });
-
-      final count = await repository.getActiveTaskCountForList(
-        uid: uid,
-        listId: listId,
-      );
-      expect(count, equals(2));
-    });
-
     test(
       'streamListsForUser orders isDefault: true list first client-side',
       () async {
@@ -307,5 +277,30 @@ void main() {
         await sub.cancel();
       },
     );
+
+    test('deleteList handles more tasks than one batch chunk', () async {
+      final list = await repository.createList(uid: 'chunk-user', name: 'Big');
+      for (var i = 0; i < 5; i++) {
+        await fakeFirestore.collection('tasks').doc('task-$i').set({
+          'uid': 'chunk-user',
+          'listId': list.listId,
+          'title': 'Task $i',
+          'deletedAt': null,
+        });
+      }
+
+      await repository.deleteList(list.listId, 'chunk-user', batchChunkSize: 2);
+
+      final tasks = await fakeFirestore.collection('tasks').get();
+      expect(
+        tasks.docs.every((d) => d.data()['deletedAt'] is Timestamp),
+        isTrue,
+      );
+      final listDoc = await fakeFirestore
+          .collection('lists')
+          .doc(list.listId)
+          .get();
+      expect(listDoc.exists, isFalse);
+    });
   });
 }

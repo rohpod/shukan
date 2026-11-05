@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/notifications/notification_date_utils.dart';
 import '../../../core/ui/feedback_snackbar.dart';
 import '../../auth/providers/auth_providers.dart';
 import '../../lists/data/list.dart';
@@ -78,7 +79,7 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
     final effectiveListId = effectiveList?.listId;
     final destinationListName = effectiveList?.name;
 
-    final currentDate = ref.watch(currentDateProvider);
+    final now = ref.watch(currentMinuteProvider).value ?? DateTime.now();
 
     return Scaffold(
       appBar: AppBar(
@@ -149,11 +150,12 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                     final task = tasks[index];
                     final listName = listNames[task.listId] ?? 'Inbox';
                     final isOverdue =
-                        SmartViewDateUtils.isOverdue(
-                          task.dueDate,
-                          currentDate,
-                        ) &&
-                        !task.isCompleted;
+                        !task.isCompleted &&
+                        isTaskOverdue(
+                          dueDate: task.dueDate,
+                          dueTime: task.dueTime,
+                          now: now,
+                        );
                     final dueDateColor = isOverdue
                         ? Colors.red.shade700
                         : Colors.blueGrey;
@@ -172,16 +174,16 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                           leading: Checkbox(
                             key: Key('taskCompleteCheckbox_${task.taskId}'),
                             value: task.isCompleted,
-                            onChanged: (val) async {
-                              if (val != null) {
-                                await ref
-                                    .read(taskRepositoryProvider)
-                                    .toggleTaskCompleted(
-                                      task.taskId,
-                                      isCompleted: val,
-                                    );
-                              }
-                            },
+                            onChanged: (val) => runWithFeedback(
+                              scaffoldMessenger,
+                              "Couldn't update the task.",
+                              () => ref
+                                  .read(taskRepositoryProvider)
+                                  .toggleTaskCompleted(
+                                    task.taskId,
+                                    isCompleted: val ?? false,
+                                  ),
+                            ),
                           ),
                           title: Row(
                             children: [
@@ -271,7 +273,18 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                                   final taskRepo = ref.read(
                                     taskRepositoryProvider,
                                   );
-                                  await taskRepo.softDeleteTask(task.taskId);
+                                  try {
+                                    await taskRepo.softDeleteTask(task.taskId);
+                                  } catch (e) {
+                                    messenger.showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          "Couldn't delete the task.",
+                                        ),
+                                      ),
+                                    );
+                                    return;
+                                  }
                                   if (!mounted) return;
                                   showFeedbackSnackBar(
                                     messenger,

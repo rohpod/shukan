@@ -281,4 +281,29 @@ void main() {
       expect(fireTime.minute, equals(30));
     });
   });
+
+  group('isTaskOverdue', () {
+    final now = DateTime(2026, 6, 10, 15, 0);
+
+    test('a date-only task is on time all through its due day', () {
+      expect(isTaskOverdue(dueDate: DateTime(2026, 6, 10), now: now), isFalse);
+    });
+
+    test('a date-only task is overdue the next day', () {
+      expect(isTaskOverdue(dueDate: DateTime(2026, 6, 9), now: now), isTrue);
+    });
+
+    test('a timed task is overdue once its time passes', () {
+      final today = DateTime(2026, 6, 10);
+      expect(isTaskOverdue(dueDate: today, dueTime: '14:59', now: now), isTrue);
+      expect(
+        isTaskOverdue(dueDate: today, dueTime: '15:01', now: now),
+        isFalse,
+      );
+    });
+
+    test('a task with no due date is never overdue', () {
+      expect(isTaskOverdue(dueDate: null, now: now), isFalse);
+    });
+  });
 }

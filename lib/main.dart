@@ -12,6 +12,7 @@ import 'core/notifications/notification_service.dart';
 import 'core/notifications/web_reminder_scheduler.dart';
 import 'core/sync/sync_banner.dart';
 import 'features/auth/presentation/auth_gate.dart';
+import 'features/tasks/presentation/reminder_navigation_handler.dart';
 import 'features/tasks/providers/task_sort_providers.dart';
 import 'firebase_options.dart';
 
@@ -33,6 +34,7 @@ void main() async {
 
   FirebaseFirestore.instance.settings = const Settings(
     persistenceEnabled: true,
+    webPersistentTabManager: WebPersistentMultipleTabManager(),
   );
 
   final sharedPreferences = await SharedPreferences.getInstance();
@@ -67,17 +69,20 @@ class ShukanApp extends StatelessWidget {
     return MaterialApp(
       title: 'shukan',
       scaffoldMessengerKey: rootScaffoldMessengerKey,
+      navigatorKey: rootNavigatorKey,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
       builder: (context, child) {
         return WebReminderHost(
-          child: Column(
-            children: [
-              const SyncBanner(),
-              Expanded(child: child ?? const SizedBox.shrink()),
-            ],
+          child: ReminderNavigationHandler(
+            child: Column(
+              children: [
+                const SyncBanner(),
+                Expanded(child: child ?? const SizedBox.shrink()),
+              ],
+            ),
           ),
         );
       },

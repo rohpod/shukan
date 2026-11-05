@@ -15,6 +15,7 @@ class AuthGate extends ConsumerWidget {
     return authState.when(
       data: (user) {
         if (user != null) {
+          ref.watch(userBootstrapProvider);
           return const HomeScreen();
         }
         return const AuthScreen();

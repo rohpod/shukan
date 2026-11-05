@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,7 +14,13 @@ export 'notification_date_utils.dart';
 export 'web_reminder_logic.dart';
 
 /// The result of requesting web notification permission.
-enum WebPermissionResult { granted, denied, dismissed, notWeb }
+enum WebPermissionResult { granted, denied, dismissed, notWeb, unsupported }
+
+/// Whether reminders can reach the user as browser notifications.
+enum WebNotificationStatus { granted, blocked, notAsked, unsupported }
+
+/// Payload of the test notification, which has no real task behind it.
+const testNotificationTaskId = 'test-notification';
 
 /// Provider for the [FlutterLocalNotificationsPlugin] instance.
 final flutterLocalNotificationsPluginProvider =
@@ -25,6 +33,10 @@ final flutterLocalNotificationsPluginProvider =
 class NotificationService {
   final FlutterLocalNotificationsPlugin _plugin;
   final bool _isWeb;
+  final _taskTaps = StreamController<String>.broadcast();
+
+  /// Emits the task ID of each notification the user clicks.
+  Stream<String> get taskTaps => _taskTaps.stream;
 
   NotificationService(this._plugin, {bool? isWeb}) : _isWeb = isWeb ?? kIsWeb;
 
@@ -53,9 +65,23 @@ class NotificationService {
     await _plugin.initialize(
       settings: initSettings,
       onDidReceiveNotificationResponse: (NotificationResponse response) {
-        // Reserved for handling notification click navigation if needed.
+        final taskId = response.payload;
+        if (taskId != null && taskId.isNotEmpty) _taskTaps.add(taskId);
       },
     );
+  }
+
+  /// Returns the task behind the notification that opened the app, if any.
+  Future<String?> launchTaskId() async {
+    try {
+      final details = await _plugin.getNotificationAppLaunchDetails();
+      if (details == null || !details.didNotificationLaunchApp) return null;
+      final taskId = details.notificationResponse?.payload;
+      return (taskId == null || taskId.isEmpty) ? null : taskId;
+    } catch (e) {
+      debugPrint('NotificationService.launchTaskId error: $e');
+      return null;
+    }
   }
 
   /// Requests notification and exact alarm permissions across supported platforms.
@@ -217,19 +243,46 @@ class NotificationService {
     }
   }
 
+  /// The browser's notification permission, or null where it can't be read.
+  ///
+  /// Reading it throws on browsers with no Notification API, such as iOS Safari
+  /// outside an installed web app.
+  WebNotificationPermission? get _webPermission {
+    try {
+      return _plugin
+          .resolvePlatformSpecificImplementation<
+            WebFlutterLocalNotificationsPlugin
+          >()
+          ?.permissionStatus;
+    } catch (e) {
+      debugPrint('Web notifications unavailable: $e');
+      return null;
+    }
+  }
+
   /// Returns true if web notification permission is currently granted.
   bool get webNotificationsGranted {
     if (!_isWeb) return false;
-    final webPlugin = _plugin
-        .resolvePlatformSpecificImplementation<
-          WebFlutterLocalNotificationsPlugin
-        >();
-    return webPlugin?.permissionStatus == WebNotificationPermission.granted;
+    return _webPermission == WebNotificationPermission.granted;
+  }
+
+  /// The current state of browser notifications, without prompting.
+  WebNotificationStatus get webNotificationStatus {
+    final permission = _webPermission;
+    if (permission == null) return WebNotificationStatus.unsupported;
+    if (permission == WebNotificationPermission.granted) {
+      return WebNotificationStatus.granted;
+    }
+    if (permission == WebNotificationPermission.denied) {
+      return WebNotificationStatus.blocked;
+    }
+    return WebNotificationStatus.notAsked;
   }
 
   /// Requests notification permission on web if undetermined/default.
   ///
-  /// Returns [WebPermissionResult.notWeb] if not running on web.
+  /// Returns [WebPermissionResult.notWeb] if not running on web, and
+  /// [WebPermissionResult.unsupported] if this browser has no notifications.
   /// Returns [WebPermissionResult.granted] or [WebPermissionResult.denied] without
   /// prompting if the permission has already been determined.
   Future<WebPermissionResult> requestWebPermissionIfNeeded() async {
@@ -241,19 +294,21 @@ class NotificationService {
         >();
     if (webPlugin == null) return WebPermissionResult.denied;
 
-    if (webPlugin.permissionStatus == WebNotificationPermission.granted) {
+    final current = _webPermission;
+    if (current == null) return WebPermissionResult.unsupported;
+    if (current == WebNotificationPermission.granted) {
       return WebPermissionResult.granted;
     }
-    if (webPlugin.permissionStatus == WebNotificationPermission.denied) {
+    if (current == WebNotificationPermission.denied) {
       return WebPermissionResult.denied;
     }
 
     final granted = await webPlugin.requestNotificationsPermission();
     if (granted == true ||
-        webPlugin.permissionStatus == WebNotificationPermission.granted) {
+        _webPermission == WebNotificationPermission.granted) {
       return WebPermissionResult.granted;
     }
-    if (webPlugin.permissionStatus == WebNotificationPermission.denied) {
+    if (_webPermission == WebNotificationPermission.denied) {
       return WebPermissionResult.denied;
     }
     return WebPermissionResult.dismissed;

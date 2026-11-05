@@ -378,7 +378,7 @@ void main() {
             dueDate: null,
             dueTime: null,
             earlyReminderMinutes: 10,
-            repeatRule: 'daily',
+            repeatRule: 'none',
             clearDueDate: true,
             clearDueTime: true,
           ),

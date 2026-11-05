@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shukan/features/export/export_service.dart';
@@ -274,5 +277,61 @@ void main() {
         expect(downloadedContent, contains('- [ ] Download Me'));
       },
     );
+  });
+
+  group('ExportService - account export', () {
+    test('exports all owned data with timestamps as ISO strings', () async {
+      final firestore = FakeFirebaseFirestore();
+      final due = DateTime.utc(2026, 6, 5, 9);
+      await firestore.collection('lists').doc('l1').set({
+        'uid': 'u1',
+        'name': 'Inbox',
+      });
+      await firestore.collection('tags').doc('g1').set({
+        'uid': 'u1',
+        'name': 'home',
+      });
+      await firestore.collection('tasks').doc('t1').set({
+        'uid': 'u1',
+        'title': 'Active',
+        'dueDate': Timestamp.fromDate(due),
+        'subtasks': [
+          {'id': 's1', 'title': 'Step', 'completed': true},
+        ],
+      });
+      await firestore.collection('tasks').doc('t2').set({
+        'uid': 'u1',
+        'title': 'Deleted',
+        'deletedAt': Timestamp.fromDate(due),
+      });
+      await firestore.collection('tasks').doc('t3').set({
+        'uid': 'someone-else',
+        'title': 'Private',
+      });
+
+      String? content;
+      String? filename;
+      await ExportService(firestore).exportAccount(
+        uid: 'u1',
+        exportDate: DateTime(2026, 9, 13),
+        downloadTrigger: (c, f) {
+          content = c;
+          filename = f;
+        },
+      );
+
+      expect(filename, 'shukan-export-2026-09-13.json');
+      final data = jsonDecode(content!) as Map<String, dynamic>;
+      final tasks = data['tasks'] as List;
+      expect(
+        tasks.map((t) => t['title']),
+        unorderedEquals(['Active', 'Deleted']),
+      );
+      expect(data['lists'], hasLength(1));
+      expect(data['tags'], hasLength(1));
+      final active = tasks.firstWhere((t) => t['title'] == 'Active');
+      expect(active['dueDate'], '2026-06-05T09:00:00.000Z');
+      expect(active['subtasks'][0]['title'], 'Step');
+    });
   });
 }

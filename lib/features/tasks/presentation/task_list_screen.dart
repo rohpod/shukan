@@ -321,14 +321,16 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                     : Checkbox(
                         key: Key('taskCompleteCheckbox_${task.taskId}'),
                         value: task.isCompleted,
-                        onChanged: (val) async {
-                          await ref
+                        onChanged: (val) => runWithFeedback(
+                          scaffoldMessenger,
+                          "Couldn't update the task.",
+                          () => ref
                               .read(taskRepositoryProvider)
                               .toggleTaskCompleted(
                                 task.taskId,
                                 isCompleted: val ?? false,
-                              );
-                        },
+                              ),
+                        ),
                       ),
               ),
               Expanded(
@@ -905,30 +907,36 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                         ? remainingTasks[targetIndex]
                         : null;
 
-                    if (before != null &&
-                        after != null &&
-                        TaskSortUtils.needsRenumbering(
-                          before: before,
-                          after: after,
-                        )) {
-                      final updatedList = List<Task>.from(remainingTasks)
-                        ..insert(targetIndex, movedTask);
-                      final batchMap = <String, double>{};
-                      for (int i = 0; i < updatedList.length; i++) {
-                        batchMap[updatedList[i].taskId] = (i + 1) * 1000.0;
-                      }
-                      await ref
-                          .read(taskRepositoryProvider)
-                          .batchUpdateTaskOrders(batchMap);
-                    } else {
-                      final newOrder = TaskSortUtils.computeMidpointOrder(
-                        before: before,
-                        after: after,
-                      );
-                      await ref
-                          .read(taskRepositoryProvider)
-                          .updateTaskOrder(movedTask.taskId, newOrder);
-                    }
+                    await runWithFeedback(
+                      scaffoldMessenger,
+                      "Couldn't reorder the task.",
+                      () async {
+                        if (before != null &&
+                            after != null &&
+                            TaskSortUtils.needsRenumbering(
+                              before: before,
+                              after: after,
+                            )) {
+                          final updatedList = List<Task>.from(remainingTasks)
+                            ..insert(targetIndex, movedTask);
+                          final batchMap = <String, double>{};
+                          for (int i = 0; i < updatedList.length; i++) {
+                            batchMap[updatedList[i].taskId] = (i + 1) * 1000.0;
+                          }
+                          await ref
+                              .read(taskRepositoryProvider)
+                              .batchUpdateTaskOrders(batchMap);
+                        } else {
+                          final newOrder = TaskSortUtils.computeMidpointOrder(
+                            before: before,
+                            after: after,
+                          );
+                          await ref
+                              .read(taskRepositoryProvider)
+                              .updateTaskOrder(movedTask.taskId, newOrder);
+                        }
+                      },
+                    );
 
                     if (priorSortOption != TaskSortOption.manual) {
                       await ref
@@ -1034,15 +1042,17 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                           key: Key('subtaskCheckbox_$subtaskId'),
                           value: isCompleted,
                           visualDensity: VisualDensity.compact,
-                          onChanged: (val) async {
-                            await ref
+                          onChanged: (val) => runWithFeedback(
+                            ScaffoldMessenger.of(context),
+                            "Couldn't update the subtask.",
+                            () => ref
                                 .read(taskRepositoryProvider)
                                 .toggleSubtask(
                                   task.taskId,
                                   subtaskId,
                                   completed: val ?? false,
-                                );
-                          },
+                                ),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 6),
@@ -1070,11 +1080,13 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                         visualDensity: VisualDensity.compact,
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
-                        onPressed: () async {
-                          await ref
+                        onPressed: () => runWithFeedback(
+                          ScaffoldMessenger.of(context),
+                          "Couldn't delete the subtask.",
+                          () => ref
                               .read(taskRepositoryProvider)
-                              .removeSubtask(task.taskId, subtaskId);
-                        },
+                              .removeSubtask(task.taskId, subtaskId),
+                        ),
                       ),
                     ],
                   ),
@@ -1085,9 +1097,13 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                 final item = items.removeAt(oldIndex);
                 items.insert(newIndex, item);
                 final orderedIds = items.map((e) => e['id'] as String).toList();
-                await ref
-                    .read(taskRepositoryProvider)
-                    .reorderSubtasks(task.taskId, orderedIds);
+                await runWithFeedback(
+                  ScaffoldMessenger.of(context),
+                  "Couldn't reorder the subtasks.",
+                  () => ref
+                      .read(taskRepositoryProvider)
+                      .reorderSubtasks(task.taskId, orderedIds),
+                );
               },
             ),
           const SizedBox(height: 6),
@@ -1315,7 +1331,7 @@ class _TaskDialogState extends ConsumerState<TaskDialog> {
               clearDueTime: _dueTime == null,
             );
       } else {
-        final createdTask = await ref
+        await ref
             .read(taskRepositoryProvider)
             .createTask(
               uid: widget.uid,
@@ -1325,21 +1341,11 @@ class _TaskDialogState extends ConsumerState<TaskDialog> {
               url: _urlController.text,
               dueDate: _dueDate,
               dueTime: _dueTime,
+              priority: _priority,
+              tagIds: _tagIds,
+              earlyReminderMinutes: _earlyReminderMinutes,
+              repeatRule: _repeatRule,
             );
-        if (_priority != 'none' ||
-            _tagIds.isNotEmpty ||
-            _earlyReminderMinutes != 0 ||
-            _repeatRule != 'none') {
-          await ref
-              .read(taskRepositoryProvider)
-              .updateTask(
-                createdTask.taskId,
-                priority: _priority,
-                tagIds: _tagIds,
-                earlyReminderMinutes: _earlyReminderMinutes,
-                repeatRule: _repeatRule,
-              );
-        }
       }
       if (mounted) {
         Navigator.of(context).pop();
@@ -1461,6 +1467,7 @@ class _TaskDialogState extends ConsumerState<TaskDialog> {
                               setState(() {
                                 _dueDate = null;
                                 _dueTime = null;
+                                _repeatRule = 'none';
                               });
                             },
                           )
@@ -1562,6 +1569,12 @@ class _TaskDialogState extends ConsumerState<TaskDialog> {
                 key: const Key('editTaskRepeatRuleInput'),
                 initialValue: _repeatRule,
                 decoration: const InputDecoration(labelText: 'Repeat Rule'),
+                validator: (val) {
+                  if (val != 'none' && _dueDate == null) {
+                    return 'Set a due date to repeat this task.';
+                  }
+                  return null;
+                },
                 items: kTaskRepeatRules.map((rule) {
                   return DropdownMenuItem<String>(
                     value: rule,

@@ -45,3 +45,17 @@ void showFeedbackSnackBar(
     messenger.showSnackBar(SnackBar(content: Text(message)));
   }
 }
+
+/// Runs [action], showing [failureMessage] through [messenger] if it throws.
+Future<void> runWithFeedback(
+  ScaffoldMessengerState messenger,
+  String failureMessage,
+  Future<void> Function() action,
+) async {
+  try {
+    await action();
+  } catch (e) {
+    debugPrint('$failureMessage: $e');
+    messenger.showSnackBar(SnackBar(content: Text(failureMessage)));
+  }
+}

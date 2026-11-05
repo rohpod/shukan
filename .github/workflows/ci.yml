@@ -93,6 +93,9 @@ jobs:
       - name: Run tests
         run: flutter test
 
+      - name: Run date tests in a daylight-saving timezone
+        run: TZ=America/New_York flutter test test/features/tasks/domain
+
       - name: Build web
         run: flutter build web
 

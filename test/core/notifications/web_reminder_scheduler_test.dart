@@ -460,10 +460,167 @@ void main() {
       taskStreamController.add([]);
       await tester.pump();
 
-      // Timer and state are cleared
+      // Timer and tasks are cleared
       expect(capturedScheduler.activeTimer, isNull);
       expect(capturedScheduler.latestTasks, isEmpty);
-      expect(capturedScheduler.firedKeys, isEmpty);
+    });
+
+    group('reliability', () {
+      Task dueAt(String id, int hour, int minute) => Task(
+        taskId: id,
+        uid: 'u1',
+        listId: 'l1',
+        title: 'Task $id',
+        dueDate: DateTime(2026, 10, 15),
+        dueTime:
+            '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}',
+      );
+
+      Future<WebReminderScheduler> pumpScheduler(
+        WidgetTester tester,
+        SharedPreferences prefs, {
+        void Function(void Function())? leader,
+      }) async {
+        late WebReminderScheduler scheduler;
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              isWebPlatformProvider.overrideWithValue(true),
+              reminderClockProvider.overrideWithValue(() => fakeCurrentTime),
+              notificationServiceProvider.overrideWithValue(mockNotifService),
+              sharedPreferencesProvider.overrideWithValue(prefs),
+              chimePlayerProvider.overrideWithValue(() => true),
+              allTasksForCurrentUserProvider.overrideWith(
+                (ref) => taskStreamController.stream,
+              ),
+              if (leader != null)
+                reminderLeaderProvider.overrideWithValue(leader),
+            ],
+            child: MaterialApp(
+              scaffoldMessengerKey: rootScaffoldMessengerKey,
+              home: Consumer(
+                builder: (context, ref, _) {
+                  scheduler = ref.watch(webReminderSchedulerProvider);
+                  return const Scaffold(body: SizedBox.shrink());
+                },
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+        return scheduler;
+      }
+
+      testWidgets('reminders missed while closed are reported once', (
+        tester,
+      ) async {
+        SharedPreferences.setMockInitialValues({
+          'web_reminders_caught_up_at': DateTime(
+            2026,
+            10,
+            15,
+            8,
+            0,
+          ).millisecondsSinceEpoch,
+        });
+        final prefs = await SharedPreferences.getInstance();
+        final scheduler = await pumpScheduler(tester, prefs);
+        final counts = <int>[];
+        scheduler.missedReminders.listen(counts.add);
+
+        fakeCurrentTime = DateTime(2026, 10, 15, 12, 0);
+        taskStreamController.add([dueAt('a', 9, 0), dueAt('b', 10, 0)]);
+        await tester.pump();
+        taskStreamController.add([dueAt('a', 9, 0), dueAt('b', 10, 0)]);
+        await tester.pump();
+
+        expect(counts, [2]);
+        verifyNever(() => mockNotifService.showWebReminder(any()));
+      });
+
+      testWidgets('nothing is reported on the first ever run', (tester) async {
+        final prefs = await SharedPreferences.getInstance();
+        final scheduler = await pumpScheduler(tester, prefs);
+        final counts = <int>[];
+        scheduler.missedReminders.listen(counts.add);
+
+        fakeCurrentTime = DateTime(2026, 10, 15, 12, 0);
+        taskStreamController.add([dueAt('a', 9, 0)]);
+        await tester.pump();
+
+        expect(counts, isEmpty);
+      });
+
+      testWidgets('reminders that already fired are not reported as missed', (
+        tester,
+      ) async {
+        final prefs = await SharedPreferences.getInstance();
+        final scheduler = await pumpScheduler(tester, prefs);
+        final counts = <int>[];
+        scheduler.missedReminders.listen(counts.add);
+
+        fakeCurrentTime = DateTime(2026, 10, 15, 9, 0);
+        taskStreamController.add([dueAt('a', 9, 0)]);
+        await tester.pump();
+        verify(() => mockNotifService.showWebReminder(any())).called(1);
+
+        fakeCurrentTime = DateTime(2026, 10, 15, 12, 0);
+        await scheduler.evaluate();
+
+        expect(counts, isEmpty);
+      });
+
+      testWidgets('a failed notification falls back to an in-app reminder', (
+        tester,
+      ) async {
+        when(() => mockNotifService.showWebReminder(any()))
+            .thenAnswer((_) async => false);
+        final prefs = await SharedPreferences.getInstance();
+        final scheduler = await pumpScheduler(tester, prefs);
+
+        fakeCurrentTime = DateTime(2026, 10, 15, 9, 0);
+        taskStreamController.add([dueAt('a', 9, 0)]);
+        await tester.pump();
+        await tester.pump();
+
+        expect(find.text('Reminder: Task a'), findsOneWidget);
+        expect(scheduler.firedKeys, hasLength(1));
+      });
+
+      testWidgets('an emptied task list does not refire a reminder', (
+        tester,
+      ) async {
+        final prefs = await SharedPreferences.getInstance();
+        await pumpScheduler(tester, prefs);
+
+        fakeCurrentTime = DateTime(2026, 10, 15, 9, 0);
+        taskStreamController.add([dueAt('a', 9, 0)]);
+        await tester.pump();
+        taskStreamController.add([]);
+        await tester.pump();
+        taskStreamController.add([dueAt('a', 9, 0)]);
+        await tester.pump();
+
+        verify(() => mockNotifService.showWebReminder(any())).called(1);
+      });
+
+      testWidgets('a tab that is not the leader stays silent until it is', (
+        tester,
+      ) async {
+        void Function()? promote;
+        final prefs = await SharedPreferences.getInstance();
+        await pumpScheduler(tester, prefs, leader: (cb) => promote = cb);
+
+        fakeCurrentTime = DateTime(2026, 10, 15, 9, 0);
+        taskStreamController.add([dueAt('a', 9, 0)]);
+        await tester.pump();
+        verifyNever(() => mockNotifService.showWebReminder(any()));
+
+        promote!();
+        await tester.pump();
+        await tester.pump();
+        verify(() => mockNotifService.showWebReminder(any())).called(1);
+      });
     });
   });
 }

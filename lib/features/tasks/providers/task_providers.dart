@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/firebase/firebase_providers.dart';
+import '../../../core/firebase/settled_write.dart';
 import '../../../core/notifications/notification_service.dart';
 import '../../auth/providers/auth_providers.dart';
 import '../data/task.dart';
@@ -10,7 +11,12 @@ export 'missed_tasks_providers.dart';
 final taskRepositoryProvider = Provider<TaskRepository>((ref) {
   final firestore = ref.watch(firestoreProvider);
   final notificationService = ref.watch(notificationServiceProvider);
-  return TaskRepository(firestore, notificationService);
+  return TaskRepository(
+    firestore,
+    notificationService,
+    null,
+    ref.watch(lateWriteFailureProvider),
+  );
 });
 
 /// Streams the defaultListId from users/{uid}.

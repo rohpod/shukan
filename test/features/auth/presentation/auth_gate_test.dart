@@ -125,5 +125,35 @@ void main() {
         expect(mockAuth.currentUser, isNull);
       },
     );
+
+    testWidgets('forgot password needs an email, then confirms neutrally', (
+      tester,
+    ) async {
+      await tester.pumpWidget(createWidgetUnderTest());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('forgotPasswordButton')));
+      await tester.pumpAndSettle();
+      expect(find.text('Please enter your email.'), findsOneWidget);
+
+      await tester.enterText(find.byKey(const Key('emailField')), 'a@b.c');
+      await tester.tap(find.byKey(const Key('forgotPasswordButton')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('authInfoMessage')), findsOneWidget);
+      expect(find.byKey(const Key('authErrorMessage')), findsNothing);
+    });
+
+    testWidgets('forgot password is hidden on the sign-up form', (
+      tester,
+    ) async {
+      await tester.pumpWidget(createWidgetUnderTest());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('toggleAuthModeButton')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('forgotPasswordButton')), findsNothing);
+    });
   });
 }

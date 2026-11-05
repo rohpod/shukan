@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:firebase_auth_mocks/firebase_auth_mocks.dart';
@@ -7,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shukan/core/firebase/firebase_providers.dart';
 import 'package:shukan/core/notifications/notification_service.dart';
 import 'package:shukan/core/notifications/web_reminder_scheduler.dart';
@@ -15,10 +12,10 @@ import 'package:shukan/features/auth/presentation/home_screen.dart';
 import 'package:shukan/features/lists/presentation/list_detail_screen.dart';
 import 'package:shukan/features/lists/presentation/list_icon_picker_dialog.dart';
 import 'package:shukan/features/search/presentation/widgets/search_results_view.dart';
+import 'package:shukan/features/settings/presentation/settings_screen.dart';
 import 'package:shukan/features/tags/presentation/widgets/tag_tasks_popup.dart';
 import 'package:shukan/features/tasks/data/task.dart';
 import 'package:shukan/features/tasks/presentation/recently_deleted_screen.dart';
-import 'package:shukan/features/tasks/providers/task_sort_providers.dart';
 import 'package:timezone/data/latest_all.dart' as tz_data;
 
 class MockNotificationService extends Mock implements NotificationService {}
@@ -1053,199 +1050,29 @@ void main() {
     });
   });
 
-  group('HomeScreen Test Notification Button Tests', () {
-    late MockNotificationService mockNotifService;
-    late SharedPreferences prefs;
-    int chimePrepareCount = 0;
-    int chimePlayCount = 0;
+  group('HomeScreen settings', () {
+    testWidgets('the settings button opens the settings screen', (
+      tester,
+    ) async {
+      await tester.pumpWidget(createWidgetUnderTest());
+      await tester.pumpAndSettle();
 
-    setUp(() async {
-      mockNotifService = MockNotificationService();
-      SharedPreferences.setMockInitialValues({});
-      prefs = await SharedPreferences.getInstance();
-      chimePrepareCount = 0;
-      chimePlayCount = 0;
+      await tester.tap(find.byKey(const Key('settingsButton')));
+      await tester.pumpAndSettle();
 
-      when(() => mockNotifService.requestWebPermissionIfNeeded())
-          .thenAnswer((_) async => WebPermissionResult.granted);
-      when(() => mockNotifService.showWebReminder(any()))
-          .thenAnswer((_) async => true);
+      expect(find.byType(SettingsScreen), findsOneWidget);
     });
 
-    testWidgets(
-      'tapping testNotificationButton with granted permission calls showWebReminder and chime player without throwing',
-      (tester) async {
-        await tester.pumpWidget(
-          createWidgetUnderTest(
-            additionalOverrides: [
-              isWebPlatformProvider.overrideWithValue(true),
-              notificationServiceProvider.overrideWithValue(mockNotifService),
-              sharedPreferencesProvider.overrideWithValue(prefs),
-              chimePreparerProvider.overrideWithValue(
-                () => chimePrepareCount++,
-              ),
-              chimePlayerProvider.overrideWithValue(() {
-                chimePlayCount++;
-                return true;
-              }),
-            ],
-          ),
-        );
-        await tester.pumpAndSettle();
+    testWidgets('the settings button is hidden while search is active', (
+      tester,
+    ) async {
+      await tester.pumpWidget(createWidgetUnderTest());
+      await tester.pumpAndSettle();
 
-        final buttonFinder = find.byKey(const Key('testNotificationButton'));
-        expect(buttonFinder, findsOneWidget);
+      await tester.tap(find.byKey(const Key('searchButton')));
+      await tester.pumpAndSettle();
 
-        await tester.tap(buttonFinder);
-        await tester.pumpAndSettle();
-
-        expect(chimePrepareCount, 1);
-        expect(chimePlayCount, 1);
-        verify(() => mockNotifService.requestWebPermissionIfNeeded()).called(1);
-        final captured = verify(
-          () => mockNotifService.showWebReminder(captureAny()),
-        ).captured;
-        expect(captured.length, 1);
-        final reminder = captured.first as WebReminder;
-        expect(reminder.task.title, 'Test notification');
-        expect(
-          reminder.task.notes,
-          'If you can see and hear this, notifications are working.',
-        );
-      },
-    );
-
-    testWidgets(
-      'tapping testNotificationButton with denied permission shows blocked SnackBar and still plays chime',
-      (tester) async {
-        when(() => mockNotifService.requestWebPermissionIfNeeded())
-            .thenAnswer((_) async => WebPermissionResult.denied);
-
-        await tester.pumpWidget(
-          createWidgetUnderTest(
-            additionalOverrides: [
-              isWebPlatformProvider.overrideWithValue(true),
-              notificationServiceProvider.overrideWithValue(mockNotifService),
-              sharedPreferencesProvider.overrideWithValue(prefs),
-              chimePreparerProvider.overrideWithValue(
-                () => chimePrepareCount++,
-              ),
-              chimePlayerProvider.overrideWithValue(() {
-                chimePlayCount++;
-                return true;
-              }),
-            ],
-          ),
-        );
-        await tester.pumpAndSettle();
-
-        await tester.tap(find.byKey(const Key('testNotificationButton')));
-        await tester.pumpAndSettle();
-
-        expect(chimePrepareCount, 1);
-        expect(chimePlayCount, 1);
-        verify(() => mockNotifService.requestWebPermissionIfNeeded()).called(1);
-        verifyNever(() => mockNotifService.showWebReminder(any()));
-
-        expect(
-          find.text(
-            "Notifications are blocked in your browser. You won't get task reminders from this tab.",
-          ),
-          findsOneWidget,
-        );
-        expect(prefs.getBool('web_notifications_denied_snack_shown'), isTrue);
-      },
-    );
-
-    testWidgets(
-      'testNotificationButton is NOT present when not running on web platform',
-      (tester) async {
-        await tester.pumpWidget(
-          createWidgetUnderTest(
-            additionalOverrides: [
-              isWebPlatformProvider.overrideWithValue(false),
-            ],
-          ),
-        );
-        await tester.pumpAndSettle();
-
-        expect(find.byKey(const Key('testNotificationButton')), findsNothing);
-      },
-    );
-
-    testWidgets(
-      'testNotificationButton is hidden while search is active on web',
-      (tester) async {
-        await tester.pumpWidget(
-          createWidgetUnderTest(
-            additionalOverrides: [
-              isWebPlatformProvider.overrideWithValue(true),
-            ],
-          ),
-        );
-        await tester.pumpAndSettle();
-
-        // Visible before search
-        expect(find.byKey(const Key('testNotificationButton')), findsOneWidget);
-
-        // Tap search button to activate search
-        await tester.tap(find.byKey(const Key('searchButton')));
-        await tester.pumpAndSettle();
-
-        // Hidden during search
-        expect(find.byKey(const Key('testNotificationButton')), findsNothing);
-
-        // Tap close search
-        await tester.tap(find.byKey(const Key('searchButton')));
-        await tester.pumpAndSettle();
-
-        // Visible again after closing search
-        expect(find.byKey(const Key('testNotificationButton')), findsOneWidget);
-      },
-    );
-
-    testWidgets(
-      'rapid repeated taps only trigger one test notification action while in flight',
-      (tester) async {
-        final completer = Completer<WebPermissionResult>();
-        when(() => mockNotifService.requestWebPermissionIfNeeded())
-            .thenAnswer((_) => completer.future);
-
-        await tester.pumpWidget(
-          createWidgetUnderTest(
-            additionalOverrides: [
-              isWebPlatformProvider.overrideWithValue(true),
-              notificationServiceProvider.overrideWithValue(mockNotifService),
-              sharedPreferencesProvider.overrideWithValue(prefs),
-              chimePreparerProvider.overrideWithValue(
-                () => chimePrepareCount++,
-              ),
-              chimePlayerProvider.overrideWithValue(() {
-                chimePlayCount++;
-                return true;
-              }),
-            ],
-          ),
-        );
-        await tester.pumpAndSettle();
-
-        // First tap initiates async work
-        await tester.tap(find.byKey(const Key('testNotificationButton')));
-        await tester.pump();
-
-        // Second tap while in-flight
-        await tester.tap(find.byKey(const Key('testNotificationButton')));
-        await tester.pump();
-
-        // Complete the first call
-        completer.complete(WebPermissionResult.granted);
-        await tester.pumpAndSettle();
-
-        expect(chimePrepareCount, 1);
-        expect(chimePlayCount, 1);
-        verify(() => mockNotifService.requestWebPermissionIfNeeded()).called(1);
-        verify(() => mockNotifService.showWebReminder(any())).called(1);
-      },
-    );
+      expect(find.byKey(const Key('settingsButton')), findsNothing);
+    });
   });
 }

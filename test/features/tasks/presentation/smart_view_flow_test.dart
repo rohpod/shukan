@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shukan/core/firebase/firebase_providers.dart';
+import 'package:shukan/core/notifications/web_reminder_scheduler.dart';
 import 'package:shukan/features/auth/presentation/home_screen.dart';
 import 'package:shukan/features/tasks/presentation/smart_view_detail_screen.dart';
 import 'package:shukan/features/tasks/providers/smart_view_providers.dart';
@@ -42,6 +43,8 @@ void main() {
         firestoreProvider.overrideWithValue(fakeFirestore),
         if (overrideDate != null)
           currentDateProvider.overrideWithValue(overrideDate),
+        if (overrideDate != null)
+          reminderClockProvider.overrideWithValue(() => overrideDate),
       ],
       child: const MaterialApp(home: HomeScreen()),
     );

@@ -1,13 +1,14 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/firebase/firebase_providers.dart';
+import '../../../core/firebase/settled_write.dart';
 import '../../auth/providers/auth_providers.dart';
 import '../data/tag.dart';
 import '../data/tag_repository.dart';
 
 final tagRepositoryProvider = Provider<TagRepository>((ref) {
   final firestore = ref.watch(firestoreProvider);
-  return TagRepository(firestore);
+  return TagRepository(firestore, ref.watch(lateWriteFailureProvider));
 });
 
 /// Family stream provider returning tags for [uid] ordered by name.

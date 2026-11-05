@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shukan/core/firebase/firebase_providers.dart';
+import 'package:shukan/core/notifications/web_reminder_scheduler.dart';
 import 'package:shukan/features/lists/presentation/list_detail_screen.dart';
 import 'package:shukan/features/search/presentation/search_screen.dart';
 import 'package:shukan/features/tags/providers/tag_providers.dart';
@@ -136,6 +137,7 @@ void main() {
         firebaseAuthProvider.overrideWithValue(mockAuth),
         firestoreProvider.overrideWithValue(fakeFirestore),
         currentDateProvider.overrideWithValue(fixedClock),
+        reminderClockProvider.overrideWithValue(() => fixedClock),
         ...additionalOverrides,
       ],
       child: const MaterialApp(home: SearchScreen()),
@@ -1002,6 +1004,10 @@ class _DelayedTaskRepository extends TaskRepository {
     String url = '',
     DateTime? dueDate,
     String? dueTime,
+    String priority = 'none',
+    List<String> tagIds = const [],
+    int earlyReminderMinutes = 0,
+    String repeatRule = 'none',
   }) async {
     await _gate.future;
     return _inner.createTask(

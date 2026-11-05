@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/notifications/web_reminder_scheduler.dart';
 import '../data/task.dart';
 import '../domain/quick_add_parser.dart';
-import '../providers/smart_view_providers.dart';
 import '../providers/task_providers.dart';
 import 'widgets/quick_add_preview_chip.dart';
 
@@ -76,7 +75,7 @@ class _QuickAddBarState extends ConsumerState<QuickAddBar> {
     // Phase 1: First submit runs the natural-language parser
     if (!_hasParsed) {
       _rawInput = currentText;
-      final now = ref.read(currentDateProvider);
+      final now = ref.read(reminderClockProvider)();
       final parseResult = parseQuickAdd(currentText, now: now);
 
       if (parseResult.dueDate != null || parseResult.dueTime != null) {

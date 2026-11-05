@@ -3,10 +3,10 @@
 import 'dart:convert';
 import 'dart:html' as html;
 
-/// Web implementation of markdown file download using Blob and AnchorElement.
-void downloadMarkdownFile(String content, String filename) {
+/// Web implementation of text file download using Blob and AnchorElement.
+void downloadTextFile(String content, String filename, String mimeType) {
   final bytes = utf8.encode(content);
-  final blob = html.Blob([bytes], 'text/markdown');
+  final blob = html.Blob([bytes], mimeType);
   final url = html.Url.createObjectUrlFromBlob(blob);
   html.AnchorElement(href: url)
     ..setAttribute('download', filename)
