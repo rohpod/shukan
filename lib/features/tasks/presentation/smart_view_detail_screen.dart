@@ -174,16 +174,16 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                           leading: Checkbox(
                             key: Key('taskCompleteCheckbox_${task.taskId}'),
                             value: task.isCompleted,
-                            onChanged: (val) async {
-                              if (val != null) {
-                                await ref
-                                    .read(taskRepositoryProvider)
-                                    .toggleTaskCompleted(
-                                      task.taskId,
-                                      isCompleted: val,
-                                    );
-                              }
-                            },
+                            onChanged: (val) => runWithFeedback(
+                              scaffoldMessenger,
+                              "Couldn't update the task.",
+                              () => ref
+                                  .read(taskRepositoryProvider)
+                                  .toggleTaskCompleted(
+                                    task.taskId,
+                                    isCompleted: val ?? false,
+                                  ),
+                            ),
                           ),
                           title: Row(
                             children: [
@@ -273,7 +273,18 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                                   final taskRepo = ref.read(
                                     taskRepositoryProvider,
                                   );
-                                  await taskRepo.softDeleteTask(task.taskId);
+                                  try {
+                                    await taskRepo.softDeleteTask(task.taskId);
+                                  } catch (e) {
+                                    messenger.showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          "Couldn't delete the task.",
+                                        ),
+                                      ),
+                                    );
+                                    return;
+                                  }
                                   if (!mounted) return;
                                   showFeedbackSnackBar(
                                     messenger,

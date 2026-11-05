@@ -143,13 +143,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SearchLogicMixin {
             onPressed: () async {
               if (!formKey.currentState!.validate()) return;
               final name = controller.text.trim();
-              await ref
-                  .read(listRepositoryProvider)
-                  .createList(uid: uid, name: name);
-              if (dialogContext.mounted) {
-                Navigator.of(dialogContext).pop();
-              }
-              showFeedbackSnackBar(messenger, 'Created list "$name"');
+              await runWithFeedback(
+                messenger,
+                "Couldn't create the list.",
+                () async {
+                  await ref
+                      .read(listRepositoryProvider)
+                      .createList(uid: uid, name: name);
+                  if (dialogContext.mounted) {
+                    Navigator.of(dialogContext).pop();
+                  }
+                  showFeedbackSnackBar(messenger, 'Created list "$name"');
+                },
+              );
             },
             child: const Text('Create'),
           ),
@@ -202,13 +208,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SearchLogicMixin {
                 }
                 return;
               }
-              await ref
-                  .read(listRepositoryProvider)
-                  .renameList(list.listId, newName);
-              if (dialogContext.mounted) {
-                Navigator.of(dialogContext).pop();
-              }
-              showFeedbackSnackBar(messenger, 'Renamed list to "$newName"');
+              await runWithFeedback(
+                messenger,
+                "Couldn't rename the list.",
+                () async {
+                  await ref
+                      .read(listRepositoryProvider)
+                      .renameList(list.listId, newName);
+                  if (dialogContext.mounted) {
+                    Navigator.of(dialogContext).pop();
+                  }
+                  showFeedbackSnackBar(messenger, 'Renamed list to "$newName"');
+                },
+              );
             },
             child: const Text('Save'),
           ),
@@ -225,11 +237,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SearchLogicMixin {
   ) async {
     final messenger = ScaffoldMessenger.of(context);
     final listName = list.name;
-    final taskCount = await ref
-        .read(listRepositoryProvider)
-        .getActiveTaskCountForList(uid: uid, listId: list.listId);
-
-    if (!context.mounted) return;
+    final tasks = ref.read(allTasksForCurrentUserProvider).value ?? const [];
+    final taskCount = tasks.where((t) => t.listId == list.listId).length;
 
     await showDialog<void>(
       context: context,
@@ -252,13 +261,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SearchLogicMixin {
               foregroundColor: Colors.white,
             ),
             onPressed: () async {
-              await ref
-                  .read(listRepositoryProvider)
-                  .deleteList(list.listId, uid);
-              if (dialogContext.mounted) {
-                Navigator.of(dialogContext).pop();
-              }
-              showFeedbackSnackBar(messenger, 'Deleted list "$listName"');
+              await runWithFeedback(
+                messenger,
+                "Couldn't delete the list.",
+                () async {
+                  await ref
+                      .read(listRepositoryProvider)
+                      .deleteList(list.listId, uid);
+                  if (dialogContext.mounted) {
+                    Navigator.of(dialogContext).pop();
+                  }
+                  showFeedbackSnackBar(messenger, 'Deleted list "$listName"');
+                },
+              );
             },
             child: const Text('Delete'),
           ),

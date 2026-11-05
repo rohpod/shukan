@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/ui/feedback_snackbar.dart';
 import '../../../auth/providers/auth_providers.dart';
 import '../../../lists/data/list.dart';
 import '../../../lists/providers/list_providers.dart';
@@ -234,14 +235,16 @@ class SearchResultsView extends ConsumerWidget {
                           leading: Checkbox(
                             key: Key('taskCompleteCheckbox_${task.taskId}'),
                             value: task.isCompleted,
-                            onChanged: (val) async {
-                              await ref
+                            onChanged: (val) => runWithFeedback(
+                              ScaffoldMessenger.of(context),
+                              "Couldn't update the task.",
+                              () => ref
                                   .read(taskRepositoryProvider)
                                   .toggleTaskCompleted(
                                     task.taskId,
                                     isCompleted: val ?? false,
-                                  );
-                            },
+                                  ),
+                            ),
                           ),
                           title: Row(
                             children: [

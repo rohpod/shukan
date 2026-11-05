@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../../core/firebase/settled_write.dart';
 import '../../../core/notifications/notification_service.dart';
 import '../domain/task_recurrence_utils.dart';
 import 'task.dart';
@@ -20,11 +21,33 @@ class TaskRepository {
   /// Tail of the pending subtask edits for each task.
   final Map<String, Future<void>> _subtaskEdits = {};
 
+  final void Function(Object error)? _onLateWriteFailure;
+
   TaskRepository(
     this._firestore, [
     this._notificationService,
     DateTime Function()? clock,
+    this._onLateWriteFailure,
   ]) : _clock = clock ?? DateTime.now;
+
+  Future<void> _write(Future<void> write) =>
+      settleWrite(write, onLateFailure: _onLateWriteFailure);
+
+  /// Reads [ref] from the local cache first, so it doesn't stall offline.
+  ///
+  /// Local changes are already in the cache, and active listeners keep it
+  /// current. Falls back to a normal read for documents not cached yet.
+  Future<DocumentSnapshot<Map<String, dynamic>>> _read(
+    DocumentReference<Map<String, dynamic>> ref,
+  ) async {
+    try {
+      final cached = await ref.get(const GetOptions(source: Source.cache));
+      if (cached.exists) return cached;
+    } on FirebaseException catch (_) {
+      // Not in the cache.
+    }
+    return ref.get();
+  }
 
   Future<void> _safeSchedule(Task task) async {
     if (_notificationService == null) return;
@@ -58,8 +81,12 @@ class TaskRepository {
     String url = '',
     DateTime? dueDate,
     String? dueTime,
+    String priority = 'none',
+    List<String> tagIds = const [],
+    int earlyReminderMinutes = 0,
+    String repeatRule = 'none',
   }) async {
-    final listDoc = await _firestore.collection('lists').doc(listId).get();
+    final listDoc = await _read(_firestore.collection('lists').doc(listId));
     if (!listDoc.exists) {
       throw ArgumentError('List not found: $listId');
     }
@@ -75,12 +102,12 @@ class TaskRepository {
       'title': title.trim(),
       'notes': notes.trim(),
       'url': url.trim(),
-      'priority': 'none',
-      'tagIds': <String>[],
+      'priority': priority,
+      'tagIds': tagIds,
       'dueDate': dueDate != null ? Timestamp.fromDate(dueDate) : null,
       'dueTime': dueTime?.trim(),
-      'earlyReminderMinutes': 0,
-      'repeatRule': 'none',
+      'earlyReminderMinutes': earlyReminderMinutes,
+      'repeatRule': repeatRule,
       'repeatCustomConfig': null,
       'order': 0,
       'subtasks': <Map<String, dynamic>>[],
@@ -89,7 +116,7 @@ class TaskRepository {
       'deletedAt': null,
     };
 
-    await docRef.set(data);
+    await _write(docRef.set(data));
 
     final task = Task(
       taskId: docRef.id,
@@ -98,12 +125,12 @@ class TaskRepository {
       title: title.trim(),
       notes: notes.trim(),
       url: url.trim(),
-      priority: 'none',
-      tagIds: const [],
+      priority: priority,
+      tagIds: tagIds,
       dueDate: dueDate,
       dueTime: dueTime?.trim(),
-      earlyReminderMinutes: 0,
-      repeatRule: 'none',
+      earlyReminderMinutes: earlyReminderMinutes,
+      repeatRule: repeatRule,
       repeatCustomConfig: null,
       order: 0.0,
       subtasks: const [],
@@ -199,7 +226,7 @@ class TaskRepository {
     }
 
     if (updates.isNotEmpty) {
-      await _tasksCollection.doc(taskId).update(updates);
+      await _write(_tasksCollection.doc(taskId).update(updates));
     }
 
     final touchesDue =
@@ -210,7 +237,7 @@ class TaskRepository {
         earlyReminderMinutes != null;
 
     if (touchesDue) {
-      final updatedDoc = await _tasksCollection.doc(taskId).get();
+      final updatedDoc = await _read(_tasksCollection.doc(taskId));
       if (updatedDoc.exists && updatedDoc.data() != null) {
         final updatedTask = Task.fromFirestore(updatedDoc);
         if (!updatedTask.isDeleted &&
@@ -228,7 +255,7 @@ class TaskRepository {
 
   /// Updates the manual [order] attribute of a single task.
   Future<void> updateTaskOrder(String taskId, double newOrder) async {
-    await _tasksCollection.doc(taskId).update({'order': newOrder});
+    await _write(_tasksCollection.doc(taskId).update({'order': newOrder}));
   }
 
   /// Updates manual [order] attributes for multiple tasks in a single batch.
@@ -237,7 +264,7 @@ class TaskRepository {
     for (final entry in taskIdToOrder.entries) {
       batch.update(_tasksCollection.doc(entry.key), {'order': entry.value});
     }
-    await batch.commit();
+    await _write(batch.commit());
   }
 
   /// Backfills `order` for tasks owned by [uid] where order is 0.0 or unassigned.
@@ -265,7 +292,7 @@ class TaskRepository {
       final newOrder = (i + 1) * 1000.0;
       batch.update(_tasksCollection.doc(task.taskId), {'order': newOrder});
     }
-    await batch.commit();
+    await _write(batch.commit());
   }
 
   /// Marks a task completed, clears its completion status, or advances its due date if repeating.
@@ -285,7 +312,7 @@ class TaskRepository {
     String taskId, {
     required bool isCompleted,
   }) async {
-    final doc = await _tasksCollection.doc(taskId).get();
+    final doc = await _read(_tasksCollection.doc(taskId));
     if (!doc.exists || doc.data() == null) return;
     final task = Task.fromFirestore(doc);
 
@@ -298,12 +325,14 @@ class TaskRepository {
           .map((subtask) => {...subtask, 'completed': false})
           .toList();
 
-      await _tasksCollection.doc(taskId).update({
-        'dueDate': Timestamp.fromDate(nextDueDate),
-        'completedAt': null,
-        'subtasks': resetSubtasks,
-        if (task.repeatRule == 'monthly') 'repeatAnchorDay': anchorDay,
-      });
+      await _write(
+        _tasksCollection.doc(taskId).update({
+          'dueDate': Timestamp.fromDate(nextDueDate),
+          'completedAt': null,
+          'subtasks': resetSubtasks,
+          if (task.repeatRule == 'monthly') 'repeatAnchorDay': anchorDay,
+        }),
+      );
 
       final advancedTask = task.copyWith(
         dueDate: nextDueDate,
@@ -314,9 +343,11 @@ class TaskRepository {
       return;
     }
 
-    await _tasksCollection.doc(taskId).update({
-      'completedAt': isCompleted ? FieldValue.serverTimestamp() : null,
-    });
+    await _write(
+      _tasksCollection.doc(taskId).update({
+        'completedAt': isCompleted ? FieldValue.serverTimestamp() : null,
+      }),
+    );
 
     if (isCompleted) {
       await _safeCancel(taskId);
@@ -329,7 +360,9 @@ class TaskRepository {
 
   /// Soft-deletes a task by setting its [deletedAt] field to the current timestamp.
   Future<void> softDeleteTask(String taskId) async {
-    await _tasksCollection.doc(taskId).update({'deletedAt': Timestamp.now()});
+    await _write(
+      _tasksCollection.doc(taskId).update({'deletedAt': Timestamp.now()}),
+    );
     await _safeCancel(taskId);
   }
 
@@ -351,7 +384,7 @@ class TaskRepository {
       for (final taskId in chunk) {
         batch.update(_tasksCollection.doc(taskId), {'deletedAt': now});
       }
-      await batch.commit();
+      await _write(batch.commit());
     }
 
     for (final taskId in taskIds) {
@@ -553,7 +586,7 @@ class TaskRepository {
     required String taskId,
     String? defaultListId,
   }) async {
-    final taskDoc = await _tasksCollection.doc(taskId).get();
+    final taskDoc = await _read(_tasksCollection.doc(taskId));
     if (!taskDoc.exists) {
       throw ArgumentError('Task not found: $taskId');
     }
@@ -585,9 +618,9 @@ class TaskRepository {
       updates['listId'] = targetListId;
     }
 
-    await _tasksCollection.doc(taskId).update(updates);
+    await _write(_tasksCollection.doc(taskId).update(updates));
 
-    final restoredDoc = await _tasksCollection.doc(taskId).get();
+    final restoredDoc = await _read(_tasksCollection.doc(taskId));
     if (restoredDoc.exists && restoredDoc.data() != null) {
       final restoredTask = Task.fromFirestore(restoredDoc);
       if (!restoredTask.isCompleted && restoredTask.dueDate != null) {
@@ -612,7 +645,7 @@ class TaskRepository {
     if (taskIds.isEmpty) return;
 
     final taskDocs = await Future.wait(
-      taskIds.map((id) => _tasksCollection.doc(id).get()),
+      taskIds.map((id) => _read(_tasksCollection.doc(id))),
     );
     for (var i = 0; i < taskIds.length; i++) {
       final doc = taskDocs[i];
@@ -679,12 +712,12 @@ class TaskRepository {
       for (final entry in chunk) {
         batch.update(_tasksCollection.doc(entry.key), entry.value);
       }
-      await batch.commit();
+      await _write(batch.commit());
     }
 
     final restoredTaskIds = updatesList.map((e) => e.key).toList();
     final restoredDocs = await Future.wait(
-      restoredTaskIds.map((id) => _tasksCollection.doc(id).get()),
+      restoredTaskIds.map((id) => _read(_tasksCollection.doc(id))),
     );
     for (final doc in restoredDocs) {
       if (doc.exists && doc.data() != null) {
@@ -704,7 +737,7 @@ class TaskRepository {
     required String uid,
     required String taskId,
   }) async {
-    final taskDoc = await _tasksCollection.doc(taskId).get();
+    final taskDoc = await _read(_tasksCollection.doc(taskId));
     if (!taskDoc.exists) {
       throw ArgumentError('Task not found: $taskId');
     }
@@ -712,7 +745,7 @@ class TaskRepository {
       throw ArgumentError('Task does not belong to user: $taskId');
     }
 
-    await _tasksCollection.doc(taskId).delete();
+    await _write(_tasksCollection.doc(taskId).delete());
     await _safeCancel(taskId);
   }
 
@@ -736,7 +769,7 @@ class TaskRepository {
       for (final doc in chunk) {
         batch.delete(doc.reference);
       }
-      await batch.commit();
+      await _write(batch.commit());
     }
   }
 
@@ -783,7 +816,7 @@ class TaskRepository {
       for (final doc in chunk) {
         batch.delete(doc.reference);
       }
-      await batch.commit();
+      await _write(batch.commit());
     }
 
     return expiredDocs.length;
@@ -795,13 +828,13 @@ class TaskRepository {
   /// Throws [ArgumentError] if the task or target list doesn't exist, or if the
   /// target list belongs to a different user.
   Future<void> moveTaskToList(String taskId, String newListId) async {
-    final taskDoc = await _tasksCollection.doc(taskId).get();
+    final taskDoc = await _read(_tasksCollection.doc(taskId));
     if (!taskDoc.exists) {
       throw ArgumentError('Task not found: $taskId');
     }
     final uid = taskDoc.data()?['uid'];
 
-    final listDoc = await _firestore.collection('lists').doc(newListId).get();
+    final listDoc = await _read(_firestore.collection('lists').doc(newListId));
     if (!listDoc.exists) {
       throw ArgumentError('List not found: $newListId');
     }
@@ -809,7 +842,7 @@ class TaskRepository {
       throw ArgumentError('List does not belong to user: $newListId');
     }
 
-    await _tasksCollection.doc(taskId).update({'listId': newListId});
+    await _write(_tasksCollection.doc(taskId).update({'listId': newListId}));
   }
 
   /// Moves multiple tasks to [newListId], updating only their [listId] field.
@@ -821,7 +854,7 @@ class TaskRepository {
     if (taskIds.isEmpty) return;
 
     final taskDocs = await Future.wait(
-      taskIds.map((id) => _tasksCollection.doc(id).get()),
+      taskIds.map((id) => _read(_tasksCollection.doc(id))),
     );
     for (var i = 0; i < taskIds.length; i++) {
       if (!taskDocs[i].exists) {
@@ -829,7 +862,7 @@ class TaskRepository {
       }
     }
 
-    final listDoc = await _firestore.collection('lists').doc(newListId).get();
+    final listDoc = await _read(_firestore.collection('lists').doc(newListId));
     if (!listDoc.exists) {
       throw ArgumentError('List not found: $newListId');
     }
@@ -851,7 +884,7 @@ class TaskRepository {
       for (final taskId in chunk) {
         batch.update(_tasksCollection.doc(taskId), {'listId': newListId});
       }
-      await batch.commit();
+      await _write(batch.commit());
     }
   }
 
@@ -866,7 +899,7 @@ class TaskRepository {
   }
 
   Future<List<Map<String, dynamic>>> _getSubtasksForTask(String taskId) async {
-    final doc = await _tasksCollection.doc(taskId).get();
+    final doc = await _read(_tasksCollection.doc(taskId));
     if (!doc.exists) {
       throw ArgumentError('Task not found: $taskId');
     }
@@ -904,15 +937,17 @@ class TaskRepository {
     }
     await _queueSubtaskEdit(taskId, () async {
       await _getSubtasksForTask(taskId);
-      await _tasksCollection.doc(taskId).update({
-        'subtasks': FieldValue.arrayUnion([
-          <String, dynamic>{
-            'id': const Uuid().v4(),
-            'title': trimmed,
-            'completed': false,
-          },
-        ]),
-      });
+      await _write(
+        _tasksCollection.doc(taskId).update({
+          'subtasks': FieldValue.arrayUnion([
+            <String, dynamic>{
+              'id': const Uuid().v4(),
+              'title': trimmed,
+              'completed': false,
+            },
+          ]),
+        }),
+      );
     });
   }
 
@@ -929,7 +964,7 @@ class TaskRepository {
         throw ArgumentError('Subtask not found: $subtaskId');
       }
       subtasks[index]['completed'] = completed;
-      await _tasksCollection.doc(taskId).update({'subtasks': subtasks});
+      await _write(_tasksCollection.doc(taskId).update({'subtasks': subtasks}));
     });
   }
 
@@ -938,7 +973,7 @@ class TaskRepository {
     await _queueSubtaskEdit(taskId, () async {
       final subtasks = await _getSubtasksForTask(taskId);
       final updated = subtasks.where((s) => s['id'] != subtaskId).toList();
-      await _tasksCollection.doc(taskId).update({'subtasks': updated});
+      await _write(_tasksCollection.doc(taskId).update({'subtasks': updated}));
     });
   }
 
@@ -975,7 +1010,9 @@ class TaskRepository {
 
       final subtaskMap = {for (final s in subtasks) s['id'] as String: s};
       final reordered = orderedSubtaskIds.map((id) => subtaskMap[id]!).toList();
-      await _tasksCollection.doc(taskId).update({'subtasks': reordered});
+      await _write(
+        _tasksCollection.doc(taskId).update({'subtasks': reordered}),
+      );
     });
   }
 }

@@ -2162,6 +2162,28 @@ service cloud.firestore {
       });
     });
 
+    test('createTask writes every field in one document', () async {
+      final task = await repository.createTask(
+        uid: 'user-123',
+        listId: 'inbox-456',
+        title: 'Full task',
+        dueDate: DateTime(2026, 6, 5),
+        priority: 'high',
+        tagIds: const ['tag-1'],
+        earlyReminderMinutes: 15,
+        repeatRule: 'weekly',
+      );
+
+      final data =
+          (await fakeFirestore.collection('tasks').doc(task.taskId).get())
+              .data()!;
+      expect(data['priority'], 'high');
+      expect(data['tagIds'], ['tag-1']);
+      expect(data['earlyReminderMinutes'], 15);
+      expect(data['repeatRule'], 'weekly');
+      expect(task.priority, 'high');
+    });
+
     group('Repeating task completion', () {
       Future<String> seedRepeating({
         required DateTime dueDate,

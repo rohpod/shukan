@@ -1,12 +1,17 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../core/firebase/settled_write.dart';
 import 'tag.dart';
 
 class TagRepository {
   final FirebaseFirestore _firestore;
+  final void Function(Object error)? _onLateWriteFailure;
 
-  TagRepository(this._firestore);
+  TagRepository(this._firestore, [this._onLateWriteFailure]);
+
+  Future<void> _write(Future<void> write) =>
+      settleWrite(write, onLateFailure: _onLateWriteFailure);
 
   CollectionReference<Map<String, dynamic>> get _tagsCollection =>
       _firestore.collection('tags');
@@ -38,7 +43,7 @@ class TagRepository {
       'createdAt': FieldValue.serverTimestamp(),
     };
 
-    await docRef.set(data);
+    await _write(docRef.set(data));
     return docRef.id;
   }
 
@@ -70,7 +75,7 @@ class TagRepository {
       }
     }
 
-    await _tagsCollection.doc(tagId).update({'name': trimmedName});
+    await _write(_tagsCollection.doc(tagId).update({'name': trimmedName}));
   }
 
   /// Deletes a tag and batch-removes its reference from all matching tasks
@@ -105,11 +110,11 @@ class TagRepository {
           'tagIds': FieldValue.arrayRemove([tagId]),
         });
       }
-      await batch.commit();
+      await _write(batch.commit());
     }
 
     // 2. Delete the tag document itself.
-    await _tagsCollection.doc(tagId).delete();
+    await _write(_tagsCollection.doc(tagId).delete());
 
     // 3. Clean up persisted SharedPreferences tag filters if provided.
     if (preferences != null) {

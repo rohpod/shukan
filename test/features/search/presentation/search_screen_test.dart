@@ -1004,6 +1004,10 @@ class _DelayedTaskRepository extends TaskRepository {
     String url = '',
     DateTime? dueDate,
     String? dueTime,
+    String priority = 'none',
+    List<String> tagIds = const [],
+    int earlyReminderMinutes = 0,
+    String repeatRule = 'none',
   }) async {
     await _gate.future;
     return _inner.createTask(
