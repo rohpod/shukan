@@ -1,5 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
+
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,15 +13,37 @@ import 'package:timezone/timezone.dart' as tz;
 
 import 'core/notifications/notification_service.dart';
 import 'core/notifications/web_reminder_scheduler.dart';
+import 'core/report_error.dart';
+import 'core/startup/startup_host.dart';
 import 'core/sync/sync_banner.dart';
 import 'features/auth/presentation/auth_gate.dart';
 import 'features/tasks/presentation/reminder_navigation_handler.dart';
 import 'features/tasks/providers/task_sort_providers.dart';
 import 'firebase_options.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    reportError(details.exception, details.stack, source: 'flutter');
+  };
+  PlatformDispatcher.instance.onError = (error, stack) {
+    reportError(error, stack, source: 'platform');
+    return true;
+  };
+
+  runApp(const StartupHost(start: bootstrap));
+}
+
+var _firestoreConfigured = false;
+
+/// Initialises everything the app needs and returns the app widget.
+///
+/// Safe to call again after a failure: it skips work that already succeeded,
+/// since Firebase can only be initialised once and Firestore settings can't
+/// change after first use.
+Future<Widget> bootstrap() async {
   // Initialize timezone database and set device local timezone
   tz_data.initializeTimeZones();
   try {
@@ -30,12 +55,19 @@ void main() async {
     );
   }
 
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  if (Firebase.apps.isEmpty) {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  }
 
-  FirebaseFirestore.instance.settings = const Settings(
-    persistenceEnabled: true,
-    webPersistentTabManager: WebPersistentMultipleTabManager(),
-  );
+  if (!_firestoreConfigured) {
+    FirebaseFirestore.instance.settings = const Settings(
+      persistenceEnabled: true,
+      webPersistentTabManager: WebPersistentMultipleTabManager(),
+    );
+    _firestoreConfigured = true;
+  }
 
   final sharedPreferences = await SharedPreferences.getInstance();
 
@@ -47,17 +79,15 @@ void main() async {
     debugPrint('Failed to initialize notifications service worker: $e');
   }
 
-  runApp(
-    ProviderScope(
-      overrides: [
-        sharedPreferencesProvider.overrideWithValue(sharedPreferences),
-        flutterLocalNotificationsPluginProvider.overrideWithValue(
-          notificationPlugin,
-        ),
-        notificationServiceProvider.overrideWithValue(notificationService),
-      ],
-      child: const ShukanApp(),
-    ),
+  return ProviderScope(
+    overrides: [
+      sharedPreferencesProvider.overrideWithValue(sharedPreferences),
+      flutterLocalNotificationsPluginProvider.overrideWithValue(
+        notificationPlugin,
+      ),
+      notificationServiceProvider.overrideWithValue(notificationService),
+    ],
+    child: const ShukanApp(),
   );
 }
 
