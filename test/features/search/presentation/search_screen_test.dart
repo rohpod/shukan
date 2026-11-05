@@ -1008,6 +1008,7 @@ class _DelayedTaskRepository extends TaskRepository {
     List<String> tagIds = const [],
     int earlyReminderMinutes = 0,
     String repeatRule = 'none',
+    Map<String, dynamic>? repeatCustomConfig,
   }) async {
     await _gate.future;
     return _inner.createTask(

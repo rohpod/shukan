@@ -85,7 +85,9 @@ class TaskRepository {
     List<String> tagIds = const [],
     int earlyReminderMinutes = 0,
     String repeatRule = 'none',
+    Map<String, dynamic>? repeatCustomConfig,
   }) async {
+    final customConfig = repeatRule == 'custom' ? repeatCustomConfig : null;
     final listDoc = await _read(_firestore.collection('lists').doc(listId));
     if (!listDoc.exists) {
       throw ArgumentError('List not found: $listId');
@@ -108,7 +110,7 @@ class TaskRepository {
       'dueTime': dueTime?.trim(),
       'earlyReminderMinutes': earlyReminderMinutes,
       'repeatRule': repeatRule,
-      'repeatCustomConfig': null,
+      'repeatCustomConfig': customConfig,
       'order': 0,
       'subtasks': <Map<String, dynamic>>[],
       'createdAt': FieldValue.serverTimestamp(),
@@ -131,7 +133,7 @@ class TaskRepository {
       dueTime: dueTime?.trim(),
       earlyReminderMinutes: earlyReminderMinutes,
       repeatRule: repeatRule,
-      repeatCustomConfig: null,
+      repeatCustomConfig: customConfig,
       order: 0.0,
       subtasks: const [],
       createdAt: DateTime.now(),
@@ -183,6 +185,7 @@ class TaskRepository {
     Object? dueTime = _sentinel,
     int? earlyReminderMinutes,
     String? repeatRule,
+    Map<String, dynamic>? repeatCustomConfig,
     double? order,
     bool clearDueDate = false,
     bool clearDueTime = false,
@@ -196,7 +199,12 @@ class TaskRepository {
     if (earlyReminderMinutes != null) {
       updates['earlyReminderMinutes'] = earlyReminderMinutes;
     }
-    if (repeatRule != null) updates['repeatRule'] = repeatRule;
+    if (repeatRule != null) {
+      updates['repeatRule'] = repeatRule;
+      updates['repeatCustomConfig'] = repeatRule == 'custom'
+          ? repeatCustomConfig
+          : null;
+    }
     if (order != null) updates['order'] = order;
 
     if (clearDueDate) {
@@ -316,9 +324,7 @@ class TaskRepository {
     if (!doc.exists || doc.data() == null) return;
     final task = Task.fromFirestore(doc);
 
-    if (isCompleted &&
-        task.repeatRule != 'none' &&
-        task.repeatRule != 'custom') {
+    if (isCompleted && taskRepeats(task)) {
       final nextDueDate = nextOccurrenceAfter(task, _clock());
       final anchorDay = resolveRepeatAnchorDay(task);
       final resetSubtasks = task.subtasks

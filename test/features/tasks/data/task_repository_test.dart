@@ -2188,6 +2188,7 @@ service cloud.firestore {
       Future<String> seedRepeating({
         required DateTime dueDate,
         String rule = 'daily',
+        Map<String, dynamic>? customConfig,
         List<Map<String, dynamic>> subtasks = const [],
       }) async {
         final ref = fakeFirestore.collection('tasks').doc();
@@ -2199,6 +2200,7 @@ service cloud.firestore {
           'dueDate': Timestamp.fromDate(dueDate),
           'dueTime': null,
           'repeatRule': rule,
+          'repeatCustomConfig': customConfig,
           'subtasks': subtasks,
           'completedAt': null,
           'deletedAt': null,
@@ -2222,6 +2224,109 @@ service cloud.firestore {
         final data = await read(id);
         expect((data['dueDate'] as Timestamp).toDate(), DateTime(2026, 6, 10));
         expect(data['completedAt'], isNull);
+      });
+
+      test(
+        'a custom task with a valid config advances to its next date',
+        () async {
+          final repo = TaskRepository(
+            fakeFirestore,
+            null,
+            () => DateTime(2026, 6, 1),
+          );
+          final id = await seedRepeating(
+            dueDate: DateTime(2026, 6, 10),
+            rule: 'custom',
+            customConfig: {'unit': 'day', 'interval': 3},
+          );
+
+          await repo.toggleTaskCompleted(id, isCompleted: true);
+
+          final data = await read(id);
+          expect(
+            (data['dueDate'] as Timestamp).toDate(),
+            DateTime(2026, 6, 13),
+          );
+          expect(data['completedAt'], isNull);
+        },
+      );
+
+      test('a custom task with an invalid config completes normally', () async {
+        final repo = TaskRepository(
+          fakeFirestore,
+          null,
+          () => DateTime(2026, 6, 1),
+        );
+        final id = await seedRepeating(
+          dueDate: DateTime(2026, 6, 10),
+          rule: 'custom',
+          customConfig: {'unit': 'week', 'interval': 1},
+        );
+
+        await repo.toggleTaskCompleted(id, isCompleted: true);
+
+        final data = await read(id);
+        expect((data['dueDate'] as Timestamp).toDate(), DateTime(2026, 6, 10));
+        expect(data['completedAt'], isNotNull);
+      });
+
+      test(
+        'createTask stores the custom config only for custom rules',
+        () async {
+          final config = {'unit': 'day', 'interval': 2};
+          final custom = await repository.createTask(
+            uid: 'user-123',
+            listId: 'inbox-456',
+            title: 'c',
+            dueDate: DateTime(2026, 6, 10),
+            repeatRule: 'custom',
+            repeatCustomConfig: config,
+          );
+          final daily = await repository.createTask(
+            uid: 'user-123',
+            listId: 'inbox-456',
+            title: 'd',
+            dueDate: DateTime(2026, 6, 10),
+            repeatRule: 'daily',
+            repeatCustomConfig: config,
+          );
+
+          expect(custom.repeatCustomConfig, config);
+          expect((await read(custom.taskId))['repeatCustomConfig'], config);
+          expect(daily.repeatCustomConfig, isNull);
+          expect((await read(daily.taskId))['repeatCustomConfig'], isNull);
+        },
+      );
+
+      test('updateTask clears the custom config when switching away', () async {
+        final id = await seedRepeating(
+          dueDate: DateTime(2026, 6, 10),
+          rule: 'custom',
+          customConfig: {'unit': 'day', 'interval': 2},
+        );
+
+        await repository.updateTask(id, repeatRule: 'daily');
+
+        final data = await read(id);
+        expect(data['repeatRule'], 'daily');
+        expect(data['repeatCustomConfig'], isNull);
+      });
+
+      test('updateTask writes the config with a custom rule', () async {
+        final id = await seedRepeating(dueDate: DateTime(2026, 6, 10));
+        final config = {
+          'unit': 'week',
+          'interval': 2,
+          'weekdays': [1, 3],
+        };
+
+        await repository.updateTask(
+          id,
+          repeatRule: 'custom',
+          repeatCustomConfig: config,
+        );
+
+        expect((await read(id))['repeatCustomConfig'], config);
       });
 
       test('a double tap advances only once', () async {

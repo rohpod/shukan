@@ -42,6 +42,18 @@ service cloud.firestore {
       return !(key in keys) || d[key] == null || d[key] is timestamp;
     }
 
+    function validCustomRepeat(c) {
+      return c is map
+        && c.keys().hasOnly(['unit', 'interval', 'weekdays'])
+        && c.get('interval', null) is int
+        && c.interval >= 1 && c.interval <= 365
+        && ((c.get('unit', null) == 'day' && !('weekdays' in c.keys()))
+          || (c.get('unit', null) == 'week'
+              && c.get('weekdays', null) is list
+              && c.weekdays.size() >= 1 && c.weekdays.size() <= 7
+              && c.weekdays.hasOnly([1, 2, 3, 4, 5, 6, 7])));
+    }
+
     function validTaskFields(d, keys) {
       return keys.hasOnly([
           'taskId', 'uid', 'listId', 'title', 'notes', 'url', 'priority', 'tagIds',
@@ -63,7 +75,7 @@ service cloud.firestore {
         && (!('repeatRule' in keys)
             || d.repeatRule in ['none', 'daily', 'weekly', 'monthly', 'custom'])
         && (!('repeatCustomConfig' in keys) || d.repeatCustomConfig == null
-            || d.repeatCustomConfig is map)
+            || validCustomRepeat(d.repeatCustomConfig))
         && (!('repeatAnchorDay' in keys) || d.repeatAnchorDay == null
             || d.repeatAnchorDay is int)
         && (!('order' in keys) || d.order is number)

@@ -1,5 +1,7 @@
 import '../../../core/notifications/notification_date_utils.dart';
 import '../data/task.dart';
+import 'calendar_utils.dart';
+import 'custom_repeat.dart';
 
 /// Computes the next occurrence for a repeating task based on [baseDate] and [repeatRule].
 ///
@@ -10,13 +12,19 @@ import '../data/task.dart';
 ///   if [baseDate.day] exceeds the target month's length (e.g., Jan 31 -> Feb 28/29)
 ///   Pass [anchorDay] to clamp from the originally intended day instead of
 ///   [baseDate.day], so Jan 31 -> Feb 28 -> Mar 31 rather than drifting to Mar 28.
-/// - other ('none', 'custom', or unhandled): returns [baseDate] unchanged as a defensive default.
+/// - 'custom': follows [customConfig] (see [CustomRepeat]); an invalid or
+///   missing config returns [baseDate] unchanged
+/// - other ('none' or unhandled): returns [baseDate] unchanged as a defensive default.
 DateTime computeNextDueDate(
   DateTime baseDate,
   String repeatRule, {
   int? anchorDay,
+  Map<String, dynamic>? customConfig,
 }) {
   switch (repeatRule) {
+    case 'custom':
+      final custom = CustomRepeat.fromMap(customConfig);
+      return custom == null ? baseDate : _nextCustom(baseDate, custom);
     case 'daily':
       return DateTime(
         baseDate.year,
@@ -58,6 +66,50 @@ DateTime computeNextDueDate(
   }
 }
 
+DateTime _nextCustom(DateTime base, CustomRepeat custom) {
+  if (!custom.isWeekly) return addCalendarDays(base, custom.interval);
+
+  // Weeks run Monday to Sunday. Take the next selected day later in this
+  // week, otherwise jump `interval` weeks from this week's Monday. The base
+  // weekday needn't be selected, since the user can pick any due date.
+  final days = custom.weekdays;
+  for (final day in days) {
+    if (day > base.weekday) {
+      return addCalendarDays(base, day - base.weekday);
+    }
+  }
+  final mondayOffset = custom.interval * 7 - (base.weekday - 1);
+  return addCalendarDays(base, mondayOffset + days.first - 1);
+}
+
+/// Whether completing [task] should advance it to a next occurrence.
+///
+/// A 'custom' task with a missing or invalid config doesn't repeat.
+bool taskRepeats(Task task) {
+  if (task.repeatRule == 'none') return false;
+  if (task.repeatRule == 'custom') {
+    return CustomRepeat.fromMap(task.repeatCustomConfig) != null;
+  }
+  return true;
+}
+
+/// A short description of how [task] repeats, e.g. `Daily` or
+/// `Every 2 weeks on Mon, Wed`. Empty when it doesn't repeat.
+String repeatSummary(Task task) {
+  switch (task.repeatRule) {
+    case 'daily':
+      return 'Daily';
+    case 'weekly':
+      return 'Weekly';
+    case 'monthly':
+      return 'Monthly';
+    case 'custom':
+      return CustomRepeat.fromMap(task.repeatCustomConfig)?.summary ?? '';
+    default:
+      return '';
+  }
+}
+
 /// The day of the month a monthly [task] is meant to fall on.
 ///
 /// [Task.repeatAnchorDay] only counts while the due date is still that day
@@ -86,6 +138,7 @@ DateTime nextOccurrenceAfter(Task task, DateTime now) {
       next,
       task.repeatRule,
       anchorDay: anchorDay,
+      customConfig: task.repeatCustomConfig,
     );
     if (!following.isAfter(next)) return next;
     next = following;

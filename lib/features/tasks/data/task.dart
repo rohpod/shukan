@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 
 @immutable
@@ -237,6 +238,10 @@ class Task {
           dueTime == other.dueTime &&
           earlyReminderMinutes == other.earlyReminderMinutes &&
           repeatRule == other.repeatRule &&
+          const DeepCollectionEquality().equals(
+            repeatCustomConfig,
+            other.repeatCustomConfig,
+          ) &&
           repeatAnchorDay == other.repeatAnchorDay &&
           _subtasksEquals(subtasks, other.subtasks) &&
           order == other.order &&

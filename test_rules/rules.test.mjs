@@ -189,6 +189,54 @@ describe('tasks', () => {
   });
 });
 
+describe('custom repeat config', () => {
+  let n = 0;
+  const create = (config) => {
+    const id = `c${n++}`;
+    return setDoc(doc(alice(), `tasks/${id}`), newTask(id, { repeatRule: 'custom', repeatCustomConfig: config }));
+  };
+
+  test('valid day and week configs are accepted, and null stays allowed', async () => {
+    await assertSucceeds(create({ unit: 'day', interval: 3 }));
+    await assertSucceeds(create({ unit: 'week', interval: 2, weekdays: [1, 3] }));
+    await assertSucceeds(create(null));
+  });
+
+  test('invalid shapes are rejected', async () => {
+    await assertFails(create({}));
+    await assertFails(create({ unit: 'month', interval: 1 }));
+    await assertFails(create({ unit: 'day', interval: 0 }));
+    await assertFails(create({ unit: 'day', interval: 366 }));
+    await assertFails(create({ unit: 'day', interval: 1.5 }));
+    await assertFails(create({ unit: 'day', interval: '2' }));
+    await assertFails(create({ unit: 'day', interval: 2, weekdays: [1] }));
+    await assertFails(create({ unit: 'week', interval: 1 }));
+    await assertFails(create({ unit: 'week', interval: 1, weekdays: [] }));
+    await assertFails(create({ unit: 'week', interval: 1, weekdays: [0] }));
+    await assertFails(create({ unit: 'week', interval: 1, weekdays: [8] }));
+    await assertFails(create({ unit: 'week', interval: 1, weekdays: [1], extra: true }));
+  });
+
+  test('updates validate the config, but an unchanged legacy doc stays editable', async () => {
+    const db = alice();
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'tasks/legacy'), {
+        taskId: 'legacy', uid: 'alice', listId: 'inbox', title: 'Old',
+        repeatRule: 'custom', repeatCustomConfig: { anything: 'goes' }, deletedAt: null,
+      });
+    });
+    await assertSucceeds(updateDoc(doc(db, 'tasks/legacy'), { completedAt: new Date() }));
+    await assertFails(updateDoc(doc(db, 'tasks/t1'), { repeatCustomConfig: { unit: 'day' } }));
+    await assertSucceeds(
+      updateDoc(doc(db, 'tasks/t1'), {
+        repeatRule: 'custom',
+        repeatCustomConfig: { unit: 'week', interval: 1, weekdays: [7] },
+      }),
+    );
+    await assertSucceeds(updateDoc(doc(db, 'tasks/t1'), { repeatRule: 'none', repeatCustomConfig: null }));
+  });
+});
+
 describe('tags and users', () => {
   test('tags are owner-only and validated', async () => {
     const db = alice();

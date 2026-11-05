@@ -1,3 +1,4 @@
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -11,6 +12,7 @@ import '../../lists/providers/list_providers.dart';
 import '../../tags/presentation/widgets/tag_chips_section.dart';
 import '../../tags/providers/tag_providers.dart';
 import '../data/task.dart';
+import '../domain/custom_repeat.dart';
 import '../domain/task_constants.dart';
 import '../domain/task_priority_filter.dart';
 import '../domain/task_sort_options.dart';
@@ -18,6 +20,7 @@ import '../providers/task_providers.dart';
 import '../providers/task_selection_providers.dart';
 import '../providers/task_sort_providers.dart';
 import '../providers/task_tag_filter_providers.dart';
+import 'widgets/custom_repeat_fields.dart';
 import 'widgets/empty_state_view.dart';
 import 'widgets/task_priority_filter_selector.dart';
 import 'widgets/task_priority_marker.dart';
@@ -1241,6 +1244,8 @@ class _TaskDialogState extends ConsumerState<TaskDialog> {
   String? _dueTime;
   late int _earlyReminderMinutes;
   late String _repeatRule;
+  late CustomRepeat _customRepeat;
+  bool _customWeekdaysEdited = false;
   late List<String> _tagIds;
 
   bool _isSaving = false;
@@ -1271,6 +1276,16 @@ class _TaskDialogState extends ConsumerState<TaskDialog> {
       _repeatRule = 'none';
     }
 
+    final savedCustom = CustomRepeat.fromMap(widget.task?.repeatCustomConfig);
+    _customWeekdaysEdited = savedCustom != null;
+    _customRepeat =
+        savedCustom ??
+        CustomRepeat(
+          unit: CustomRepeat.unitWeek,
+          interval: 1,
+          weekdays: [(_dueDate ?? DateTime.now()).weekday],
+        );
+
     _tagIds = widget.task != null
         ? List<String>.from(widget.task!.tagIds)
         : <String>[];
@@ -1284,6 +1299,20 @@ class _TaskDialogState extends ConsumerState<TaskDialog> {
     _tagInputController.dispose();
     super.dispose();
   }
+
+  /// Until the user picks weekdays themselves, a weekly custom repeat follows
+  /// the due date's weekday.
+  void _syncDefaultWeekday() {
+    if (_customWeekdaysEdited || !_customRepeat.isWeekly) return;
+    _customRepeat = CustomRepeat(
+      unit: _customRepeat.unit,
+      interval: _customRepeat.interval,
+      weekdays: [(_dueDate ?? DateTime.now()).weekday],
+    );
+  }
+
+  Map<String, dynamic>? get _customConfig =>
+      _repeatRule == 'custom' ? _customRepeat.toMap() : null;
 
   Future<void> _addTag(String name) async {
     final cleaned = stripTagPrefix(name);
@@ -1327,6 +1356,7 @@ class _TaskDialogState extends ConsumerState<TaskDialog> {
               dueTime: _dueTime,
               earlyReminderMinutes: _earlyReminderMinutes,
               repeatRule: _repeatRule,
+              repeatCustomConfig: _customConfig,
               clearDueDate: _dueDate == null,
               clearDueTime: _dueTime == null,
             );
@@ -1345,6 +1375,7 @@ class _TaskDialogState extends ConsumerState<TaskDialog> {
               tagIds: _tagIds,
               earlyReminderMinutes: _earlyReminderMinutes,
               repeatRule: _repeatRule,
+              repeatCustomConfig: _customConfig,
             );
       }
       if (mounted) {
@@ -1453,6 +1484,7 @@ class _TaskDialogState extends ConsumerState<TaskDialog> {
                   if (picked != null) {
                     setState(() {
                       _dueDate = picked;
+                      _syncDefaultWeekday();
                     });
                   }
                 },
@@ -1587,6 +1619,33 @@ class _TaskDialogState extends ConsumerState<TaskDialog> {
                   }
                 },
               ),
+              if (_repeatRule == 'custom') ...[
+                const SizedBox(height: 12),
+                CustomRepeatFields(
+                  value: _customRepeat,
+                  onChanged: (value) => setState(() {
+                    if (!const ListEquality<int>().equals(
+                      value.weekdays,
+                      _customRepeat.weekdays,
+                    )) {
+                      _customWeekdaysEdited = true;
+                    }
+                    final switchedToWeeks =
+                        value.isWeekly && !_customRepeat.isWeekly;
+                    _customRepeat = value;
+                    if (switchedToWeeks && value.weekdays.isEmpty) {
+                      _customWeekdaysEdited = false;
+                      _syncDefaultWeekday();
+                    }
+                  }),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _customRepeat.summary,
+                  key: const Key('customRepeatSummary'),
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
               const SizedBox(height: 16),
               const Text('Tags', style: TextStyle(fontWeight: FontWeight.bold)),
               const SizedBox(height: 4),

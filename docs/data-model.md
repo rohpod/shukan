@@ -78,7 +78,7 @@ Not yet implemented — schema is defined here so #3/#11 can build against it di
   dueTime: string | null,     // "HH:mm"
   earlyReminderMinutes: number,
   repeatRule: string,         // "none" | "daily" | "weekly" | "monthly" | "custom"
-  repeatCustomConfig: map | null,   // stub — shape defined when custom repeat is built
+  repeatCustomConfig: map | null,   // only when repeatRule == 'custom': {unit: 'day'|'week', interval: 1..365, weekdays: [1..7]} (weekdays only for 'week', 1 = Monday)
   repeatAnchorDay: number | null,   // intended day of month for monthly repeats; absent until first advance
 
   order: number,
