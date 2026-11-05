@@ -1560,6 +1560,50 @@ void main() {
         },
       );
 
+      test(
+        'restore never reads a deleted list directly, which rules can deny',
+        () async {
+          final guarded = FakeFirebaseFirestore(
+            securityRules: '''
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /tasks/{id} { allow read, write: if true; }
+    match /users/{id} { allow read, write: if true; }
+    match /lists/{id} { allow list: if true; }
+  }
+}
+''',
+          );
+          for (final id in ['task-a', 'task-b']) {
+            await guarded.collection('tasks').doc(id).set({
+              'taskId': id,
+              'uid': uid,
+              'listId': 'deleted-list-id',
+              'title': 'Orphan',
+              'deletedAt': Timestamp.now(),
+            });
+          }
+          final guardedRepository = TaskRepository(guarded);
+
+          await guardedRepository.restoreTask(
+            uid: uid,
+            taskId: 'task-a',
+            defaultListId: 'inbox-456',
+          );
+          await guardedRepository.restoreTasks(
+            uid: uid,
+            taskIds: ['task-b'],
+            defaultListId: 'inbox-456',
+          );
+
+          for (final id in ['task-a', 'task-b']) {
+            final doc = await guarded.collection('tasks').doc(id).get();
+            expect(doc.data()!['deletedAt'], isNull);
+            expect(doc.data()!['listId'], equals('inbox-456'));
+          }
+        },
+      );
+
       test('restoreTask resolves defaultListId from users collection if parameter omitted', () async {
         await fakeFirestore.collection('users').doc(uid).set({
           'uid': uid,

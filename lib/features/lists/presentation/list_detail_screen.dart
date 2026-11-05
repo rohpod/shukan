@@ -31,6 +31,7 @@ class ListDetailScreen extends ConsumerWidget {
         final firestore = ref.read(firestoreProvider);
         final snapshot = await firestore
             .collection('tasks')
+            .where('uid', isEqualTo: list.uid)
             .where('listId', isEqualTo: list.listId)
             .where('deletedAt', isNull: true)
             .get();
