@@ -6,6 +6,9 @@ import 'package:shukan/features/tasks/data/task.dart';
 import 'package:timezone/data/latest_all.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 
+class MockWebPlugin extends Mock
+    implements WebFlutterLocalNotificationsPlugin {}
+
 class MockFlutterLocalNotificationsPlugin extends Mock
     implements FlutterLocalNotificationsPlugin {}
 
@@ -398,6 +401,54 @@ void main() {
             ),
           );
           verifyNever(() => mockPlugin.cancel(id: any(named: 'id')));
+        },
+      );
+
+      test('a browser with no Notification API reports unsupported', () async {
+        final webPlugin = MockWebPlugin();
+        when(() => webPlugin.permissionStatus)
+            .thenThrow(StateError('Notification is not defined'));
+        when(
+          () => mockPlugin
+              .resolvePlatformSpecificImplementation<
+                WebFlutterLocalNotificationsPlugin
+              >(),
+        ).thenReturn(webPlugin);
+        final webService = NotificationService(mockPlugin, isWeb: true);
+
+        expect(webService.webNotificationsGranted, isFalse);
+        expect(
+          await webService.requestWebPermissionIfNeeded(),
+          WebPermissionResult.unsupported,
+        );
+      });
+
+      test(
+        'launchTaskId returns the payload of the launching notification',
+        () async {
+          when(() => mockPlugin.getNotificationAppLaunchDetails()).thenAnswer(
+            (_) async => const NotificationAppLaunchDetails(
+              true,
+              notificationResponse: NotificationResponse(
+                notificationResponseType:
+                    NotificationResponseType.selectedNotification,
+                payload: 'task-1',
+              ),
+            ),
+          );
+
+          expect(await service.launchTaskId(), 'task-1');
+        },
+      );
+
+      test(
+        'launchTaskId is null when a notification did not open the app',
+        () async {
+          when(
+            () => mockPlugin.getNotificationAppLaunchDetails(),
+          ).thenAnswer((_) async => const NotificationAppLaunchDetails(false));
+
+          expect(await service.launchTaskId(), isNull);
         },
       );
 

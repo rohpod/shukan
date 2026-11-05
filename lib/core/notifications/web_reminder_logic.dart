@@ -40,47 +40,56 @@ List<WebReminder> dueWebReminders(
   Set<String> firedKeys, {
   Duration grace = const Duration(minutes: 2),
 }) {
-  final reminders = <WebReminder>[];
+  return [
+    for (final task in tasks)
+      for (final reminder in _remindersFor(task))
+        if (_isDue(reminder.fireTime, now, grace) &&
+            !firedKeys.contains(reminder.key))
+          reminder,
+  ];
+}
 
-  for (final task in tasks) {
-    if (task.isCompleted || task.isDeleted || task.dueDate == null) {
-      continue;
-    }
+/// Returns reminders that came due after [since] but are now too old to fire.
+///
+/// These are the ones dropped by [dueWebReminders] because no tab was running
+/// when they came due.
+List<WebReminder> missedWebReminders(
+  List<Task> tasks,
+  DateTime since,
+  DateTime now,
+  Set<String> firedKeys, {
+  Duration grace = const Duration(minutes: 2),
+}) {
+  return [
+    for (final task in tasks)
+      for (final reminder in _remindersFor(task))
+        if (reminder.fireTime.isAfter(since) &&
+            now.difference(reminder.fireTime) > grace &&
+            !firedKeys.contains(reminder.key))
+          reminder,
+  ];
+}
 
-    final dueMoment = resolveTaskDueDateTimeLocal(
-      dueDate: task.dueDate,
-      dueTime: task.dueTime,
-    );
-    if (dueMoment == null) continue;
+/// The early and due reminders [task] has, whatever their fire times.
+Iterable<WebReminder> _remindersFor(Task task) sync* {
+  if (task.isCompleted || task.isDeleted) return;
 
-    // 1. Early reminder (if configured)
-    if (task.earlyReminderMinutes > 0) {
-      final earlyFireTime = dueMoment.subtract(
-        Duration(minutes: task.earlyReminderMinutes),
-      );
-      final earlyReminder = WebReminder(
-        task: task,
-        kind: WebReminderKind.early,
-        fireTime: earlyFireTime,
-      );
-      if (_isDue(earlyFireTime, now, grace) &&
-          !firedKeys.contains(earlyReminder.key)) {
-        reminders.add(earlyReminder);
-      }
-    }
+  final dueMoment = resolveTaskDueDateTimeLocal(
+    dueDate: task.dueDate,
+    dueTime: task.dueTime,
+  );
+  if (dueMoment == null) return;
 
-    // 2. Due reminder
-    final dueReminder = WebReminder(
+  if (task.earlyReminderMinutes > 0) {
+    yield WebReminder(
       task: task,
-      kind: WebReminderKind.due,
-      fireTime: dueMoment,
+      kind: WebReminderKind.early,
+      fireTime: dueMoment.subtract(
+        Duration(minutes: task.earlyReminderMinutes),
+      ),
     );
-    if (_isDue(dueMoment, now, grace) && !firedKeys.contains(dueReminder.key)) {
-      reminders.add(dueReminder);
-    }
   }
-
-  return reminders;
+  yield WebReminder(task: task, kind: WebReminderKind.due, fireTime: dueMoment);
 }
 
 bool _isDue(DateTime fireTime, DateTime now, Duration grace) {

@@ -47,7 +47,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with SearchLogicMixin {
       if (permResult == WebPermissionResult.granted) {
         playChimeFn();
         final testTask = Task(
-          taskId: 'test-notification',
+          taskId: testNotificationTaskId,
           uid: ref.read(currentUidProvider) ?? 'test-uid',
           listId: 'test-list',
           title: 'Test notification',
