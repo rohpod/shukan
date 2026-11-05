@@ -7,7 +7,6 @@ import '../../../core/notifications/web_reminder_scheduler.dart';
 import '../../lists/data/list.dart';
 import '../../lists/presentation/list_detail_screen.dart';
 import '../../tasks/domain/quick_add_parser.dart';
-import '../../tasks/providers/smart_view_providers.dart';
 import '../../tasks/providers/task_providers.dart';
 import '../providers/search_providers.dart';
 
@@ -77,7 +76,7 @@ mixin SearchLogicMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     if (isCreatingTask) return;
 
     if (!hasParsedAdd) {
-      final now = ref.read(currentDateProvider);
+      final now = ref.read(reminderClockProvider)();
       final parseResult = parseQuickAdd(trimmedQuery, now: now);
 
       if (parseResult.dueDate != null || parseResult.dueTime != null) {

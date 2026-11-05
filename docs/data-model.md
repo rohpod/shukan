@@ -79,6 +79,7 @@ Not yet implemented — schema is defined here so #3/#11 can build against it di
   earlyReminderMinutes: number,
   repeatRule: string,         // "none" | "daily" | "weekly" | "monthly" | "custom"
   repeatCustomConfig: map | null,   // stub — shape defined when custom repeat is built
+  repeatAnchorDay: number | null,   // intended day of month for monthly repeats; absent until first advance
 
   order: number,
 

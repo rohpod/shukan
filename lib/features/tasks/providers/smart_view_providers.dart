@@ -7,30 +7,26 @@ import '../data/task.dart';
 import '../domain/smart_view_models.dart';
 import 'task_providers.dart';
 
-/// Stream that emits the current local time and automatically emits again
-/// as soon as the clock crosses local midnight.
+/// Stream that emits the current local time, then again whenever the calendar
+/// date changes.
+///
+/// Checks every minute instead of waiting on one timer until midnight, because
+/// that timer can run late after the device sleeps.
 final currentDateStreamProvider = StreamProvider<DateTime>((ref) {
   final controller = StreamController<DateTime>();
-  controller.add(DateTime.now());
+  var lastDate = DateTime.now();
+  controller.add(lastDate);
 
-  Timer? timer;
-  void scheduleNextMidnight() {
+  final timer = Timer.periodic(const Duration(minutes: 1), (_) {
     final now = DateTime.now();
-    final nextMidnight = DateTime(now.year, now.month, now.day + 1);
-    final durationUntilMidnight =
-        nextMidnight.difference(now) + const Duration(seconds: 1);
-    timer = Timer(durationUntilMidnight, () {
-      if (!controller.isClosed) {
-        controller.add(DateTime.now());
-        scheduleNextMidnight();
-      }
-    });
-  }
-
-  scheduleNextMidnight();
+    if (!SmartViewDateUtils.isSameCalendarDay(now, lastDate)) {
+      lastDate = now;
+      controller.add(now);
+    }
+  });
 
   ref.onDispose(() {
-    timer?.cancel();
+    timer.cancel();
     controller.close();
   });
 

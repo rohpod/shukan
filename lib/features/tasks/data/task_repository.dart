@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
@@ -9,8 +11,20 @@ import 'task.dart';
 class TaskRepository {
   final FirebaseFirestore _firestore;
   final NotificationService? _notificationService;
+  final DateTime Function() _clock;
 
-  TaskRepository(this._firestore, [this._notificationService]);
+  /// Tasks with a completion toggle in progress, so a double tap can't advance
+  /// a repeating task twice.
+  final Set<String> _completionsInFlight = {};
+
+  /// Tail of the pending subtask edits for each task.
+  final Map<String, Future<void>> _subtaskEdits = {};
+
+  TaskRepository(
+    this._firestore, [
+    this._notificationService,
+    DateTime Function()? clock,
+  ]) : _clock = clock ?? DateTime.now;
 
   Future<void> _safeSchedule(Task task) async {
     if (_notificationService == null) return;
@@ -259,6 +273,18 @@ class TaskRepository {
     String taskId, {
     required bool isCompleted,
   }) async {
+    if (!_completionsInFlight.add(taskId)) return;
+    try {
+      await _applyCompletion(taskId, isCompleted: isCompleted);
+    } finally {
+      _completionsInFlight.remove(taskId);
+    }
+  }
+
+  Future<void> _applyCompletion(
+    String taskId, {
+    required bool isCompleted,
+  }) async {
     final doc = await _tasksCollection.doc(taskId).get();
     if (!doc.exists || doc.data() == null) return;
     final task = Task.fromFirestore(doc);
@@ -266,17 +292,23 @@ class TaskRepository {
     if (isCompleted &&
         task.repeatRule != 'none' &&
         task.repeatRule != 'custom') {
-      final baseDate = task.dueDate ?? DateTime.now();
-      final nextDueDate = computeNextDueDate(baseDate, task.repeatRule);
+      final nextDueDate = nextOccurrenceAfter(task, _clock());
+      final anchorDay = resolveRepeatAnchorDay(task);
+      final resetSubtasks = task.subtasks
+          .map((subtask) => {...subtask, 'completed': false})
+          .toList();
 
       await _tasksCollection.doc(taskId).update({
         'dueDate': Timestamp.fromDate(nextDueDate),
         'completedAt': null,
+        'subtasks': resetSubtasks,
+        if (task.repeatRule == 'monthly') 'repeatAnchorDay': anchorDay,
       });
 
       final advancedTask = task.copyWith(
         dueDate: nextDueDate,
         completedAt: null,
+        subtasks: resetSubtasks,
       );
       await _safeSchedule(advancedTask);
       return;
@@ -845,20 +877,42 @@ class TaskRepository {
         <Map<String, dynamic>>[];
   }
 
+  /// Runs subtask [edit]s for [taskId] one at a time.
+  ///
+  /// Toggle, remove and reorder rewrite the whole array, so two overlapping
+  /// edits would otherwise lose one of the changes.
+  Future<void> _queueSubtaskEdit(String taskId, Future<void> Function() edit) {
+    final previous = _subtaskEdits[taskId] ?? Future<void>.value();
+    final result = previous.then((_) => edit());
+    final settled = result.then<void>((_) {}, onError: (_) {});
+    _subtaskEdits[taskId] = settled;
+    unawaited(
+      settled.whenComplete(() {
+        if (identical(_subtaskEdits[taskId], settled)) {
+          _subtaskEdits.remove(taskId);
+        }
+      }),
+    );
+    return result;
+  }
+
   /// Adds a subtask to [taskId] with a generated UUID.
   Future<void> addSubtask(String taskId, String title) async {
     final trimmed = title.trim();
     if (trimmed.isEmpty) {
       throw ArgumentError('Subtask title cannot be empty');
     }
-    final subtasks = await _getSubtasksForTask(taskId);
-    final newSubtask = <String, dynamic>{
-      'id': const Uuid().v4(),
-      'title': trimmed,
-      'completed': false,
-    };
-    await _tasksCollection.doc(taskId).update({
-      'subtasks': [...subtasks, newSubtask],
+    await _queueSubtaskEdit(taskId, () async {
+      await _getSubtasksForTask(taskId);
+      await _tasksCollection.doc(taskId).update({
+        'subtasks': FieldValue.arrayUnion([
+          <String, dynamic>{
+            'id': const Uuid().v4(),
+            'title': trimmed,
+            'completed': false,
+          },
+        ]),
+      });
     });
   }
 
@@ -868,20 +922,24 @@ class TaskRepository {
     String subtaskId, {
     required bool completed,
   }) async {
-    final subtasks = await _getSubtasksForTask(taskId);
-    final index = subtasks.indexWhere((s) => s['id'] == subtaskId);
-    if (index == -1) {
-      throw ArgumentError('Subtask not found: $subtaskId');
-    }
-    subtasks[index]['completed'] = completed;
-    await _tasksCollection.doc(taskId).update({'subtasks': subtasks});
+    await _queueSubtaskEdit(taskId, () async {
+      final subtasks = await _getSubtasksForTask(taskId);
+      final index = subtasks.indexWhere((s) => s['id'] == subtaskId);
+      if (index == -1) {
+        throw ArgumentError('Subtask not found: $subtaskId');
+      }
+      subtasks[index]['completed'] = completed;
+      await _tasksCollection.doc(taskId).update({'subtasks': subtasks});
+    });
   }
 
   /// Removes subtask [subtaskId] from [taskId].
   Future<void> removeSubtask(String taskId, String subtaskId) async {
-    final subtasks = await _getSubtasksForTask(taskId);
-    final updated = subtasks.where((s) => s['id'] != subtaskId).toList();
-    await _tasksCollection.doc(taskId).update({'subtasks': updated});
+    await _queueSubtaskEdit(taskId, () async {
+      final subtasks = await _getSubtasksForTask(taskId);
+      final updated = subtasks.where((s) => s['id'] != subtaskId).toList();
+      await _tasksCollection.doc(taskId).update({'subtasks': updated});
+    });
   }
 
   /// Reorders subtasks of [taskId] to match [orderedSubtaskIds].
@@ -892,30 +950,32 @@ class TaskRepository {
     String taskId,
     List<String> orderedSubtaskIds,
   ) async {
-    final subtasks = await _getSubtasksForTask(taskId);
-    final existingIds = subtasks.map((s) => s['id'] as String).toList();
+    await _queueSubtaskEdit(taskId, () async {
+      final subtasks = await _getSubtasksForTask(taskId);
+      final existingIds = subtasks.map((s) => s['id'] as String).toList();
 
-    if (orderedSubtaskIds.length != existingIds.length) {
-      throw ArgumentError(
-        'Ordered subtask IDs count (${orderedSubtaskIds.length}) does not match existing subtask count (${existingIds.length})',
-      );
-    }
+      if (orderedSubtaskIds.length != existingIds.length) {
+        throw ArgumentError(
+          'Ordered subtask IDs count (${orderedSubtaskIds.length}) does not match existing subtask count (${existingIds.length})',
+        );
+      }
 
-    final orderedSet = orderedSubtaskIds.toSet();
-    if (orderedSet.length != orderedSubtaskIds.length) {
-      throw ArgumentError('Ordered subtask IDs contains duplicate IDs');
-    }
+      final orderedSet = orderedSubtaskIds.toSet();
+      if (orderedSet.length != orderedSubtaskIds.length) {
+        throw ArgumentError('Ordered subtask IDs contains duplicate IDs');
+      }
 
-    final existingSet = existingIds.toSet();
-    if (!orderedSet.containsAll(existingSet) ||
-        !existingSet.containsAll(orderedSet)) {
-      throw ArgumentError(
-        'Ordered subtask IDs do not match existing subtask IDs',
-      );
-    }
+      final existingSet = existingIds.toSet();
+      if (!orderedSet.containsAll(existingSet) ||
+          !existingSet.containsAll(orderedSet)) {
+        throw ArgumentError(
+          'Ordered subtask IDs do not match existing subtask IDs',
+        );
+      }
 
-    final subtaskMap = {for (final s in subtasks) s['id'] as String: s};
-    final reordered = orderedSubtaskIds.map((id) => subtaskMap[id]!).toList();
-    await _tasksCollection.doc(taskId).update({'subtasks': reordered});
+      final subtaskMap = {for (final s in subtasks) s['id'] as String: s};
+      final reordered = orderedSubtaskIds.map((id) => subtaskMap[id]!).toList();
+      await _tasksCollection.doc(taskId).update({'subtasks': reordered});
+    });
   }
 }

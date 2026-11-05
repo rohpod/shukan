@@ -70,6 +70,31 @@ DateTime? resolveTaskDueDateTimeLocal({
   return DateTime(localDate.year, localDate.month, localDate.day, hour, minute);
 }
 
+/// Whether a task due at [dueDate] and [dueTime] is overdue at [now].
+///
+/// A task with a time is overdue once that moment passes. A date-only task
+/// stays on time for the whole of its due day, even though its reminder fires
+/// at 9:00 AM.
+bool isTaskOverdue({
+  required DateTime? dueDate,
+  String? dueTime,
+  required DateTime now,
+}) {
+  if (dueDate == null) return false;
+  if (dueTime == null || dueTime.trim().isEmpty) {
+    final local = dueDate.toLocal();
+    return DateTime(
+      local.year,
+      local.month,
+      local.day,
+    ).isBefore(DateTime(now.year, now.month, now.day));
+  }
+  return resolveTaskDueDateTimeLocal(
+    dueDate: dueDate,
+    dueTime: dueTime,
+  )!.isBefore(now);
+}
+
 /// Pure utility that computes the exact [tz.TZDateTime] at which the main task notification should fire.
 ///
 /// The fire time is computed exactly AT [dueDate] + [dueTime] (or 9:00 AM local time for date-only tasks),

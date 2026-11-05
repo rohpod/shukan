@@ -2162,6 +2162,125 @@ service cloud.firestore {
       });
     });
 
+    group('Repeating task completion', () {
+      Future<String> seedRepeating({
+        required DateTime dueDate,
+        String rule = 'daily',
+        List<Map<String, dynamic>> subtasks = const [],
+      }) async {
+        final ref = fakeFirestore.collection('tasks').doc();
+        await ref.set({
+          'taskId': ref.id,
+          'uid': 'user-123',
+          'listId': 'inbox-456',
+          'title': 'Repeat',
+          'dueDate': Timestamp.fromDate(dueDate),
+          'dueTime': null,
+          'repeatRule': rule,
+          'subtasks': subtasks,
+          'completedAt': null,
+          'deletedAt': null,
+        });
+        return ref.id;
+      }
+
+      Future<Map<String, dynamic>> read(String id) async =>
+          (await fakeFirestore.collection('tasks').doc(id).get()).data()!;
+
+      test('an overdue task lands on a date that is not overdue', () async {
+        final repo = TaskRepository(
+          fakeFirestore,
+          null,
+          () => DateTime(2026, 6, 10, 15),
+        );
+        final id = await seedRepeating(dueDate: DateTime(2026, 6, 5));
+
+        await repo.toggleTaskCompleted(id, isCompleted: true);
+
+        final data = await read(id);
+        expect((data['dueDate'] as Timestamp).toDate(), DateTime(2026, 6, 10));
+        expect(data['completedAt'], isNull);
+      });
+
+      test('a double tap advances only once', () async {
+        final repo = TaskRepository(
+          fakeFirestore,
+          null,
+          () => DateTime(2026, 6, 1),
+        );
+        final id = await seedRepeating(dueDate: DateTime(2026, 6, 5));
+
+        await Future.wait([
+          repo.toggleTaskCompleted(id, isCompleted: true),
+          repo.toggleTaskCompleted(id, isCompleted: true),
+        ]);
+
+        expect(
+          ((await read(id))['dueDate'] as Timestamp).toDate(),
+          DateTime(2026, 6, 6),
+        );
+      });
+
+      test('subtasks reset for the next occurrence', () async {
+        final repo = TaskRepository(
+          fakeFirestore,
+          null,
+          () => DateTime(2026, 6, 1),
+        );
+        final id = await seedRepeating(
+          dueDate: DateTime(2026, 6, 5),
+          subtasks: [
+            {'id': 's1', 'title': 'Step', 'completed': true},
+          ],
+        );
+
+        await repo.toggleTaskCompleted(id, isCompleted: true);
+
+        expect((await read(id))['subtasks'], [
+          {'id': 's1', 'title': 'Step', 'completed': false},
+        ]);
+      });
+
+      test('a monthly task records its anchor day', () async {
+        final repo = TaskRepository(
+          fakeFirestore,
+          null,
+          () => DateTime(2026, 1, 31),
+        );
+        final id = await seedRepeating(
+          dueDate: DateTime(2026, 1, 31),
+          rule: 'monthly',
+        );
+
+        await repo.toggleTaskCompleted(id, isCompleted: true);
+        await repo.toggleTaskCompleted(id, isCompleted: true);
+
+        final data = await read(id);
+        expect((data['dueDate'] as Timestamp).toDate(), DateTime(2026, 3, 31));
+        expect(data['repeatAnchorDay'], 31);
+      });
+
+      test('overlapping subtask edits all apply', () async {
+        final id = await seedRepeating(dueDate: DateTime(2026, 6, 5));
+
+        await Future.wait([
+          repository.addSubtask(id, 'One'),
+          repository.addSubtask(id, 'Two'),
+          repository.addSubtask(id, 'Three'),
+        ]);
+        final added = (await read(id))['subtasks'] as List;
+        expect(added.map((s) => s['title']), ['One', 'Two', 'Three']);
+
+        await Future.wait([
+          repository.toggleSubtask(id, added[0]['id'], completed: true),
+          repository.toggleSubtask(id, added[1]['id'], completed: true),
+          repository.removeSubtask(id, added[2]['id']),
+        ]);
+        final edited = (await read(id))['subtasks'] as List;
+        expect(edited.map((s) => s['completed']), [true, true]);
+      });
+    });
+
     group('Notification Lifecycle Hooks', () {
       late MockNotificationService mockNotificationService;
       late TaskRepository repoWithNotifications;
@@ -2171,6 +2290,7 @@ service cloud.firestore {
         repoWithNotifications = TaskRepository(
           fakeFirestore,
           mockNotificationService,
+          () => DateTime(2026, 1, 1),
         );
 
         when(() => mockNotificationService.scheduleForTask(any()))

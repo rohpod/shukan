@@ -1461,6 +1461,7 @@ class _TaskDialogState extends ConsumerState<TaskDialog> {
                               setState(() {
                                 _dueDate = null;
                                 _dueTime = null;
+                                _repeatRule = 'none';
                               });
                             },
                           )
@@ -1562,6 +1563,12 @@ class _TaskDialogState extends ConsumerState<TaskDialog> {
                 key: const Key('editTaskRepeatRuleInput'),
                 initialValue: _repeatRule,
                 decoration: const InputDecoration(labelText: 'Repeat Rule'),
+                validator: (val) {
+                  if (val != 'none' && _dueDate == null) {
+                    return 'Set a due date to repeat this task.';
+                  }
+                  return null;
+                },
                 items: kTaskRepeatRules.map((rule) {
                   return DropdownMenuItem<String>(
                     value: rule,

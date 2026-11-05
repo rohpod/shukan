@@ -1,3 +1,5 @@
+import 'calendar_utils.dart';
+
 class QuickAddParseResult {
   final String title;
   final String strippedTitle;
@@ -156,9 +158,9 @@ QuickAddParseResult parseQuickAdd(String input, {DateTime? now}) {
     if (word == 'today') {
       parsedDate = today;
     } else if (word == 'tomorrow' || word == 'tmrw') {
-      parsedDate = today.add(const Duration(days: 1));
+      parsedDate = addCalendarDays(today, 1);
     } else if (word == 'yesterday') {
-      parsedDate = today.subtract(const Duration(days: 1));
+      parsedDate = addCalendarDays(today, -1);
     }
     dateSpan = _SpanMatch(relMatch.start, relMatch.end, relMatch.group(0)!);
   }
@@ -170,9 +172,9 @@ QuickAddParseResult parseQuickAdd(String input, {DateTime? now}) {
       final amount = int.tryParse(offMatch.group(1)!) ?? 0;
       final unit = offMatch.group(2)!.toLowerCase();
       if (unit.startsWith('day')) {
-        parsedDate = today.add(Duration(days: amount));
+        parsedDate = addCalendarDays(today, amount);
       } else if (unit.startsWith('week')) {
-        parsedDate = today.add(Duration(days: amount * 7));
+        parsedDate = addCalendarDays(today, amount * 7);
       }
       dateSpan = _SpanMatch(offMatch.start, offMatch.end, offMatch.group(0)!);
     }
@@ -187,33 +189,21 @@ QuickAddParseResult parseQuickAdd(String input, {DateTime? now}) {
 
       final targetWeekday = _weekdayToInt(dayStr);
       if (targetWeekday != null) {
-        int daysToAdd;
+        final isFullName = dayStr.contains('day');
+        final hasPrefix = wkMatch.group(0)!.length != dayStr.length;
+        if (!isFullName && !hasPrefix && !_endsDatePhrase(wkMatch, timeSpan)) {
+          // Bare "sun" or "sat" mid-sentence is far more often a plain word.
+          continue;
+        }
+
+        final int daysToAdd;
         if (prefix == 'next') {
-          // Following week's target weekday:
-          // Start of this week (Monday) = today - (today.weekday - 1)
-          // Next week Monday = Start of this week + 7 days
-          // Target day = Next week Monday + (targetWeekday - 1)
-          final startOfThisWeek = today.subtract(
-            Duration(days: today.weekday - 1),
-          );
-          final nextWeekTarget = startOfThisWeek.add(
-            Duration(days: 7 + (targetWeekday - 1)),
-          );
-          daysToAdd = nextWeekTarget.difference(today).inDays;
+          // Target weekday in the following Monday-to-Sunday week.
+          daysToAdd = 7 + targetWeekday - today.weekday;
         } else if (prefix == 'this') {
-          final startOfThisWeek = today.subtract(
-            Duration(days: today.weekday - 1),
-          );
-          final thisWeekTarget = startOfThisWeek.add(
-            Duration(days: targetWeekday - 1),
-          );
-          // If this week's target is in the past, move forward by 7 days
-          if (thisWeekTarget.isBefore(today)) {
-            daysToAdd = (targetWeekday - today.weekday + 7) % 7;
-            if (daysToAdd == 0) daysToAdd = 7;
-          } else {
-            daysToAdd = thisWeekTarget.difference(today).inDays;
-          }
+          // This week's target, or next week's if it has already passed.
+          final diff = targetWeekday - today.weekday;
+          daysToAdd = diff < 0 ? diff + 7 : diff;
         } else {
           // Plain weekday (e.g. "friday"): upcoming occurrence
           var diff = (targetWeekday - today.weekday) % 7;
@@ -221,16 +211,25 @@ QuickAddParseResult parseQuickAdd(String input, {DateTime? now}) {
           daysToAdd = diff;
         }
 
-        parsedDate = today.add(Duration(days: daysToAdd));
+        parsedDate = addCalendarDays(today, daysToAdd);
         dateSpan = _SpanMatch(wkMatch.start, wkMatch.end, wkMatch.group(0)!);
         break;
       }
     }
   }
 
-  // If time was specified but no date was specified, default date to today
+  // A time with no date means its next occurrence: today, or tomorrow if that
+  // time has already passed.
   if (parsedTime != null && parsedDate == null) {
-    parsedDate = today;
+    final parts = parsedTime.split(':');
+    final timeToday = DateTime(
+      today.year,
+      today.month,
+      today.day,
+      int.parse(parts[0]),
+      int.parse(parts[1]),
+    );
+    parsedDate = timeToday.isAfter(clock) ? today : addCalendarDays(today, 1);
   }
 
   // If nothing was parsed, return unmodified title
@@ -320,6 +319,15 @@ QuickAddParseResult parseQuickAdd(String input, {DateTime? now}) {
     dueTime: parsedTime,
     matchedPhrase: matchedPhrase,
   );
+}
+
+/// Whether [match] sits where a date phrase would: at the end of [Match.input],
+/// or directly before the parsed time.
+bool _endsDatePhrase(RegExpMatch match, _SpanMatch? timeSpan) {
+  final rest = match.input.substring(match.end).trim();
+  if (rest.isEmpty) return true;
+  if (timeSpan == null || timeSpan.start < match.end) return false;
+  return match.input.substring(match.end, timeSpan.start).trim().isEmpty;
 }
 
 int? _weekdayToInt(String str) {

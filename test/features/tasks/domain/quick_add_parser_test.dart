@@ -128,7 +128,7 @@ void main() {
       test('parses "9am"', () {
         final res = parseQuickAdd('Morning jog 9am', now: fixedNow);
         expect(res.title, 'Morning jog 9am');
-        expect(res.dueDate, DateTime(2026, 10, 14));
+        expect(res.dueDate, DateTime(2026, 10, 15));
         expect(res.dueTime, '09:00');
       });
 
@@ -345,6 +345,86 @@ void main() {
         expect(res.strippedTitle, 'Buy groceries at the market');
         expect(res.dueDate, isNull);
         expect(res.dueTime, isNull);
+      });
+    });
+
+    group('Time with no date', () {
+      test('stays today while the time is still ahead', () {
+        final res = parseQuickAdd('Call mom at 5pm', now: fixedNow);
+        expect(res.dueDate, DateTime(2026, 10, 14));
+      });
+
+      test('rolls to tomorrow once the time has passed', () {
+        final res = parseQuickAdd('Call mom at 9am', now: fixedNow);
+        expect(res.dueDate, DateTime(2026, 10, 15));
+        expect(res.dueTime, '09:00');
+      });
+    });
+
+    group('Weekday abbreviations', () {
+      for (final phrase in [
+        'buy sun screen',
+        'sat exam prep',
+        'fix mon itor',
+      ]) {
+        test('"$phrase" is not treated as a date', () {
+          final res = parseQuickAdd(phrase, now: fixedNow);
+          expect(res.dueDate, isNull);
+          expect(res.strippedTitle, phrase);
+        });
+      }
+
+      test('a prefixed abbreviation is a date', () {
+        final res = parseQuickAdd('dentist on mon for checkup', now: fixedNow);
+        expect(res.dueDate, DateTime(2026, 10, 19));
+      });
+
+      test('an abbreviation directly before a time is a date', () {
+        final res = parseQuickAdd('dentist fri 5pm', now: fixedNow);
+        expect(res.dueDate, DateTime(2026, 10, 16));
+        expect(res.dueTime, '17:00');
+      });
+
+      test('a full weekday name mid-sentence is a date', () {
+        final res = parseQuickAdd('prep sunday roast', now: fixedNow);
+        expect(res.dueDate, DateTime(2026, 10, 18));
+      });
+    });
+
+    // These only exercise the bug when run with TZ=America/New_York (see CI),
+    // where 2026-11-01 is 25 hours long.
+    group('Daylight saving changes', () {
+      test('"tomorrow" on the 25-hour day is the next date', () {
+        final res = parseQuickAdd(
+          'pay rent tomorrow',
+          now: DateTime(2026, 11, 1, 10),
+        );
+        expect(res.dueDate, DateTime(2026, 11, 2));
+      });
+
+      test('"in 2 days" across the change keeps midnight', () {
+        final res = parseQuickAdd(
+          'pay rent in 2 days',
+          now: DateTime(2026, 10, 31, 10),
+        );
+        expect(res.dueDate, DateTime(2026, 11, 2));
+      });
+
+      test('"next monday" across the change is a Monday', () {
+        final res = parseQuickAdd(
+          'pay rent next monday',
+          now: DateTime(2026, 10, 30, 10),
+        );
+        expect(res.dueDate, DateTime(2026, 11, 2));
+        expect(res.dueDate!.weekday, DateTime.monday);
+      });
+
+      test('a plain weekday across the change is that weekday', () {
+        final res = parseQuickAdd(
+          'pay rent saturday',
+          now: DateTime(2026, 11, 1, 10),
+        );
+        expect(res.dueDate, DateTime(2026, 11, 7));
       });
     });
   });

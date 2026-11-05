@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/notifications/notification_date_utils.dart';
 import '../../../core/ui/feedback_snackbar.dart';
 import '../../auth/providers/auth_providers.dart';
 import '../../lists/data/list.dart';
@@ -78,7 +79,7 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
     final effectiveListId = effectiveList?.listId;
     final destinationListName = effectiveList?.name;
 
-    final currentDate = ref.watch(currentDateProvider);
+    final now = ref.watch(currentMinuteProvider).value ?? DateTime.now();
 
     return Scaffold(
       appBar: AppBar(
@@ -149,11 +150,12 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
                     final task = tasks[index];
                     final listName = listNames[task.listId] ?? 'Inbox';
                     final isOverdue =
-                        SmartViewDateUtils.isOverdue(
-                          task.dueDate,
-                          currentDate,
-                        ) &&
-                        !task.isCompleted;
+                        !task.isCompleted &&
+                        isTaskOverdue(
+                          dueDate: task.dueDate,
+                          dueTime: task.dueTime,
+                          now: now,
+                        );
                     final dueDateColor = isOverdue
                         ? Colors.red.shade700
                         : Colors.blueGrey;

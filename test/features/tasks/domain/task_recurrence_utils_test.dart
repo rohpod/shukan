@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shukan/features/tasks/data/task.dart';
 import 'package:shukan/features/tasks/domain/task_recurrence_utils.dart';
 
 void main() {
@@ -143,6 +144,104 @@ void main() {
         final next = computeNextDueDate(base, 'yearly');
         expect(next, equals(base));
       });
+    });
+  });
+
+  group('nextOccurrenceAfter', () {
+    Task repeating(
+      String rule,
+      DateTime dueDate, {
+      String? dueTime,
+      int? anchor,
+    }) => Task(
+      taskId: 't',
+      uid: 'u',
+      listId: 'l',
+      title: 'Repeat',
+      repeatRule: rule,
+      dueDate: dueDate,
+      dueTime: dueTime,
+      repeatAnchorDay: anchor,
+    );
+
+    test('an on-time task advances one period', () {
+      final task = repeating('daily', DateTime(2026, 6, 10));
+      expect(
+        nextOccurrenceAfter(task, DateTime(2026, 6, 10, 15)),
+        DateTime(2026, 6, 11),
+      );
+    });
+
+    test('a task completed early still advances one period', () {
+      final task = repeating('weekly', DateTime(2026, 6, 20));
+      expect(
+        nextOccurrenceAfter(task, DateTime(2026, 6, 10)),
+        DateTime(2026, 6, 27),
+      );
+    });
+
+    test('an overdue date-only task catches up to today', () {
+      final task = repeating('daily', DateTime(2026, 6, 5));
+      expect(
+        nextOccurrenceAfter(task, DateTime(2026, 6, 10, 15)),
+        DateTime(2026, 6, 10),
+      );
+    });
+
+    test('an overdue timed task skips a time that already passed today', () {
+      final task = repeating('daily', DateTime(2026, 6, 5), dueTime: '09:00');
+      expect(
+        nextOccurrenceAfter(task, DateTime(2026, 6, 10, 15)),
+        DateTime(2026, 6, 11),
+      );
+    });
+
+    test('an overdue weekly task keeps its weekday', () {
+      final task = repeating('weekly', DateTime(2026, 5, 4));
+      final next = nextOccurrenceAfter(task, DateTime(2026, 6, 10));
+      expect(next, DateTime(2026, 6, 15));
+      expect(next.weekday, DateTime.monday);
+    });
+
+    test('monthly repeats return to the anchor day after a short month', () {
+      var task = repeating('monthly', DateTime(2026, 1, 31));
+      final seen = <String>[];
+      var now = DateTime(2026, 1, 31);
+      for (var i = 0; i < 4; i++) {
+        final anchor = resolveRepeatAnchorDay(task);
+        final next = nextOccurrenceAfter(task, now);
+        seen.add('${next.month}/${next.day}');
+        task = repeating('monthly', next, anchor: anchor);
+        now = next;
+      }
+      expect(seen, ['2/28', '3/31', '4/30', '5/31']);
+    });
+
+    test('moving the due date replaces the anchor', () {
+      final task = repeating('monthly', DateTime(2026, 3, 15), anchor: 31);
+      expect(resolveRepeatAnchorDay(task), 15);
+    });
+
+    test('a task with no due date repeats from today', () {
+      const task = Task(
+        taskId: 't',
+        uid: 'u',
+        listId: 'l',
+        title: 'Repeat',
+        repeatRule: 'daily',
+      );
+      expect(
+        nextOccurrenceAfter(task, DateTime(2026, 6, 10, 15)),
+        DateTime(2026, 6, 11),
+      );
+    });
+
+    test('an unknown rule returns the due date instead of looping', () {
+      final task = repeating('none', DateTime(2026, 6, 5));
+      expect(
+        nextOccurrenceAfter(task, DateTime(2026, 6, 10)),
+        DateTime(2026, 6, 5),
+      );
     });
   });
 }

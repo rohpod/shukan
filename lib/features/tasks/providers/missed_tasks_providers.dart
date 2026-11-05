@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/notifications/notification_date_utils.dart';
@@ -25,48 +27,32 @@ final missedTasksBannerDismissedProvider =
       MissedTasksBannerDismissedNotifier.new,
     );
 
+/// Emits the current time once a minute, so time-based state such as the
+/// overdue count updates while the app stays open.
+final currentMinuteProvider = StreamProvider<DateTime>((ref) {
+  final controller = StreamController<DateTime>();
+  controller.add(DateTime.now());
+  final timer = Timer.periodic(const Duration(minutes: 1), (_) {
+    controller.add(DateTime.now());
+  });
+  ref.onDispose(() {
+    timer.cancel();
+    controller.close();
+  });
+  return controller.stream;
+});
+
 /// Derives the count of overdue tasks from [allTasksForCurrentUserProvider].
 final overdueTaskCountProvider = Provider<int>((ref) {
   final tasksAsync = ref.watch(allTasksForCurrentUserProvider);
+  final now = ref.watch(currentMinuteProvider).value ?? DateTime.now();
   final tasks = tasksAsync.value ?? const <Task>[];
   return tasks.where((task) {
     if (task.isCompleted || task.isDeleted) return false;
-    try {
-      final dueDateTime = resolveTaskDueDateTime(
-        dueDate: task.dueDate,
-        dueTime: task.dueTime,
-      );
-      return dueDateTime != null && dueDateTime.isBefore(DateTime.now());
-    } catch (_) {
-      // Fallback for tests/environments where timezone database is not initialized
-      if (task.dueDate == null) return false;
-      int hour = 9;
-      int minute = 0;
-      if (task.dueTime != null && task.dueTime!.trim().isNotEmpty) {
-        final parts = task.dueTime!.trim().split(':');
-        if (parts.length == 2) {
-          final h = int.tryParse(parts[0]);
-          final m = int.tryParse(parts[1]);
-          if (h != null &&
-              m != null &&
-              h >= 0 &&
-              h <= 23 &&
-              m >= 0 &&
-              m <= 59) {
-            hour = h;
-            minute = m;
-          }
-        }
-      }
-      final localDate = task.dueDate!.toLocal();
-      final dt = DateTime(
-        localDate.year,
-        localDate.month,
-        localDate.day,
-        hour,
-        minute,
-      );
-      return dt.isBefore(DateTime.now());
-    }
+    return isTaskOverdue(
+      dueDate: task.dueDate,
+      dueTime: task.dueTime,
+      now: now,
+    );
   }).length;
 });
