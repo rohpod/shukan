@@ -117,8 +117,9 @@ docs: add Firebase setup instructions to README
   - How to test it manually (steps).
   - Screenshots/screen recording if it touches UI.
   - Any known limitations or follow-up work (link an issue if applicable).
-- **Before opening**: run `flutter analyze` and `dart format .` locally — don't make the
-  reviewer flag formatting issues.
+- **Before opening**: run `flutter analyze`, `flutter test` and `dart format .` locally —
+  don't make the reviewer flag formatting issues. If you changed `firestore.rules`, add an
+  emulator test too (see `docs/firebase-setup.md`).
 - **Review**: at least one of the other two contributors approves before merge. Reviewer
   should actually run the branch locally if the change touches core logic (not just UI).
 - **Size**: keep PRs scoped to one feature slice. If a PR is touching more than ~400 lines
