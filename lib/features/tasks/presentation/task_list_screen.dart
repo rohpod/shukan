@@ -1449,6 +1449,7 @@ class _TaskDialogState extends ConsumerState<TaskDialog> {
                 decoration: const InputDecoration(labelText: 'URL (optional)'),
                 validator: (val) {
                   if (val == null || val.trim().isEmpty) return null;
+                  if (val.trim() == widget.task?.url.trim()) return null;
                   return parseWebUrl(val) == null
                       ? 'Enter a valid web link (http or https).'
                       : null;
