@@ -1,28 +1,12 @@
 # shukan (習慣)
 
-A cross-platform habit-tracking app, built with Flutter — where the discipline
+A cross-platform habit-tracking app, built with Flutter, where the discipline
 philosophies of anime characters shape how you build and stick to your habits.
-
-Currently in **foundation phase**: building a robust reminders application first, before
-layering habit-tracking and anime-philosophy theming on top.
 
 ## Status
 
-🚧 Phase 1 (reminders) is code-complete and has passed its manual browser checks, but
-isn't live yet. Implemented:
-authentication and password reset, tasks and lists (CRUD, soft delete with a 30-day
-Recently Deleted), tags, search, smart views, subtasks, repeating tasks (daily, weekly,
-monthly and custom schedules), due-date reminders, offline-safe saves, account settings,
-and JSON/Markdown export. Habit tracking (Phase 2) comes next — see [Roadmap](#roadmap).
+🚧 Habit tracking (Phase 2) — see [Roadmap](#roadmap).
 
-Still to do before Phase 1 is finished:
-
-- Deploy hosting, and review the report-only Content Security Policy on a live run.
-- Merge `dev` into `main`.
-
-**Reminders are tab-only.** They fire through the browser while a shukan tab is open,
-including catching up on ones missed while it was closed. Nothing is delivered when every
-tab is closed; that needs push notifications (see Backlog).
 
 ## Tech stack
 
