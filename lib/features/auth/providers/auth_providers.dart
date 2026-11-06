@@ -27,3 +27,10 @@ final currentUserProvider = Provider<User?>((ref) {
   final authState = ref.watch(authStateChangesProvider);
   return authState.value;
 });
+
+/// Repairs a missing profile or default list for the signed-in user.
+final userBootstrapProvider = FutureProvider<void>((ref) async {
+  final user = ref.watch(currentUserProvider);
+  if (user == null) return;
+  await ref.read(authRepositoryProvider).ensureUserBootstrapped(user);
+});

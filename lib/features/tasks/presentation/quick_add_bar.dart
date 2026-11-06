@@ -1,0 +1,280 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../core/ui/friendly_error.dart';
+import '../../../core/notifications/web_reminder_scheduler.dart';
+import '../data/task.dart';
+import '../domain/quick_add_parser.dart';
+import '../providers/task_providers.dart';
+import 'widgets/quick_add_preview_chip.dart';
+
+class QuickAddBar extends ConsumerStatefulWidget {
+  final String uid;
+  final String? listId;
+  final String? hintText;
+  final void Function(Task task)? onTaskCreated;
+
+  const QuickAddBar({
+    super.key,
+    required this.uid,
+    required this.listId,
+    this.hintText,
+    this.onTaskCreated,
+  });
+
+  @override
+  ConsumerState<QuickAddBar> createState() => _QuickAddBarState();
+}
+
+class _QuickAddBarState extends ConsumerState<QuickAddBar> {
+  late final TextEditingController _controller;
+  late final FocusNode _focusNode;
+
+  String? _rawInput;
+  String? _parsedTitle;
+  DateTime? _parsedDueDate;
+  String? _parsedDueTime;
+
+  bool _hasParsed = false;
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController();
+    _focusNode = FocusNode();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _reset() {
+    _controller.clear();
+    _rawInput = null;
+    _parsedTitle = null;
+    _parsedDueDate = null;
+    _parsedDueTime = null;
+    _hasParsed = false;
+  }
+
+  Future<void> _handleSubmit() async {
+    final currentText = _controller.text.trim();
+
+    if (widget.listId == null || _isSaving) return;
+
+    // If nothing typed and no parsed state, do nothing
+    if (currentText.isEmpty &&
+        _parsedDueDate == null &&
+        _parsedDueTime == null) {
+      return;
+    }
+
+    // Phase 1: First submit runs the natural-language parser
+    if (!_hasParsed) {
+      _rawInput = currentText;
+      final now = ref.read(reminderClockProvider)();
+      final parseResult = parseQuickAdd(currentText, now: now);
+
+      if (parseResult.dueDate != null || parseResult.dueTime != null) {
+        setState(() {
+          _hasParsed = true;
+          _parsedDueDate = parseResult.dueDate;
+          _parsedDueTime = parseResult.dueTime;
+          _parsedTitle = parseResult.strippedTitle;
+        });
+        final newText = parseResult.strippedTitle;
+        _controller.value = TextEditingValue(
+          text: newText,
+          selection: TextSelection.collapsed(offset: newText.length),
+        );
+        return;
+      } else {
+        // No date phrase recognized: create task immediately in this same press
+        await _createTask(title: currentText, dueDate: null, dueTime: null);
+        return;
+      }
+    }
+
+    // Phase 2: Second submit confirms and creates the task
+    final titleToCreate = _controller.text.trim().isNotEmpty
+        ? _controller.text.trim()
+        : (_parsedTitle?.isNotEmpty == true
+              ? _parsedTitle!
+              : (_rawInput ?? ''));
+
+    if (titleToCreate.isEmpty) return;
+
+    await _createTask(
+      title: titleToCreate,
+      dueDate: _parsedDueDate,
+      dueTime: _parsedDueTime,
+    );
+  }
+
+  Future<void> _createTask({
+    required String title,
+    DateTime? dueDate,
+    String? dueTime,
+  }) async {
+    if (title.isEmpty) return;
+
+    if (dueDate != null) {
+      requestWebPermissionOnSave(ref: ref, context: context, mounted: mounted);
+    }
+
+    setState(() => _isSaving = true);
+    try {
+      final createdTask = await ref
+          .read(taskRepositoryProvider)
+          .createTask(
+            uid: widget.uid,
+            listId: widget.listId!,
+            title: title,
+            dueDate: dueDate,
+            dueTime: dueTime,
+          );
+      if (mounted) {
+        setState(() {
+          _reset();
+          _isSaving = false;
+        });
+        widget.onTaskCreated?.call(createdTask);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isSaving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to add task: ${friendlyError(e)}')),
+        );
+      }
+    }
+  }
+
+  void _onDismissChip() {
+    setState(() {
+      _parsedDueDate = null;
+      _parsedDueTime = null;
+      _hasParsed = true;
+    });
+    if (_rawInput != null) {
+      _controller.value = TextEditingValue(
+        text: _rawInput!,
+        selection: TextSelection.collapsed(offset: _rawInput!.length),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final hasDateOrTime = _parsedDueDate != null || _parsedDueTime != null;
+
+    final isEnabled = widget.listId != null;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 6,
+            offset: const Offset(0, -2),
+          ),
+        ],
+        border: Border(
+          top: BorderSide(
+            color: theme.dividerColor.withValues(alpha: 0.4),
+            width: 1,
+          ),
+        ),
+      ),
+      padding: EdgeInsets.fromLTRB(
+        12,
+        8,
+        8,
+        MediaQuery.of(context).padding.bottom + 8,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (hasDateOrTime)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6, left: 4),
+              child: QuickAddPreviewChip(
+                dueDate: _parsedDueDate,
+                dueTime: _parsedDueTime,
+                onDismiss: _onDismissChip,
+              ),
+            ),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  key: const Key('quickAddTextInput'),
+                  controller: _controller,
+                  focusNode: _focusNode,
+                  inputFormatters: [LengthLimitingTextInputFormatter(500)],
+                  enabled: isEnabled && !_isSaving,
+                  textInputAction: TextInputAction.done,
+                  decoration: InputDecoration(
+                    hintText: !isEnabled
+                        ? 'Loading...'
+                        : (widget.hintText ?? 'Add a task'),
+                    hintStyle: TextStyle(
+                      fontSize: 13,
+                      color: theme.hintColor.withValues(alpha: 0.6),
+                    ),
+                    isDense: true,
+                    contentPadding: const EdgeInsets.only(
+                      left: 14,
+                      right: 10,
+                      top: 8,
+                      bottom: 8,
+                    ),
+                    border: InputBorder.none,
+                  ),
+                  onChanged: (val) {
+                    final hasDateOrTime =
+                        _parsedDueDate != null || _parsedDueTime != null;
+                    if (!hasDateOrTime && _hasParsed) {
+                      setState(() {
+                        _hasParsed = false;
+                      });
+                    }
+                  },
+                  onSubmitted: isEnabled ? (_) => _handleSubmit() : null,
+                ),
+              ),
+              IconButton(
+                key: const Key('quickAddSubmitButton'),
+                icon: _isSaving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Icon(
+                        _hasParsed
+                            ? Icons.check_circle_outline
+                            : Icons.arrow_upward,
+                        size: 20,
+                        color: isEnabled
+                            ? theme.colorScheme.primary
+                            : theme.disabledColor,
+                      ),
+                tooltip: _hasParsed ? 'Confirm task' : 'Add task',
+                onPressed: (!isEnabled || _isSaving) ? null : _handleSubmit,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}

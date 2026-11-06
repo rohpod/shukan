@@ -3,10 +3,10 @@
     "short_name": "shukan",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
-    "orientation": "portrait-primary",
+    "background_color": "#FEF7FF",
+    "theme_color": "#673AB7",
+    "description": "Plan your day with lists, tags, due dates, repeating tasks and reminders.",
+    "orientation": "any",
     "prefer_related_applications": false,
     "icons": [
         {

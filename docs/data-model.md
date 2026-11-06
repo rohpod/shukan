@@ -39,7 +39,8 @@ tags/{tagId}
   uid: string,
   name: string,
   createdAt: timestamp,
-  isDefault: boolean
+  isDefault: boolean,
+  icon: string | null        // key into kListIcons; null falls back to inbox (default) or folder (custom)
 }
 ```
 ---
@@ -54,8 +55,6 @@ tags/{tagId}
   createdAt: timestamp
 }
 ```
-
-Not yet implemented — schema is defined here so #3/#11 can build against it directly.
 
 ---
 
@@ -73,13 +72,14 @@ Not yet implemented — schema is defined here so #3/#11 can build against it di
 
   priority: string,           // "none" | "low" | "medium" | "high"
   tagIds: array<string>,      // references tags/{tagId}
-  dueDate: timestamp | null,
+  dueDate: timestamp | null,  // local midnight of the due day
   dueTime: string | null,     // "HH:mm"
   earlyReminderMinutes: number,
-  repeatRule: string,         // "none" | "daily" | "weekly" | "monthly" | "custom"
-  repeatCustomConfig: map | null,   // stub — shape defined when custom repeat is built
+  repeatRule: string,         // "none" | "daily" | "weekly" | "monthly" | "custom"; a repeat needs a dueDate
+  repeatCustomConfig: map | null,   // only when repeatRule == 'custom': {unit: 'day'|'week', interval: 1..365, weekdays: [1..7]} (weekdays only for 'week', 1 = Monday)
+  repeatAnchorDay: number | null,   // intended day of month for monthly repeats; absent until first advance
 
-  order: number,
+  order: number,              // manual sort position; new tasks use epoch millis so they sort last
 
   subtasks: array<{
     id: string,
@@ -104,9 +104,14 @@ security).
 truth, not the draft below.** It's kept in version control and deployed via
 `firebase deploy --only firestore:rules` (see `docs/firebase-setup.md`). The draft
 below is preserved for historical context (this is what was originally planned
-before Auth/List CRUD were built) — it has since been superseded, specifically:
-`lists/{listId}` now splits `update` and `delete` permissions, with `delete` requiring
-`resource.data.isDefault == false` so the default Inbox list can't be removed.
+before Auth/List CRUD were built). The current rules go further:
+
+- `uid`, document IDs and `createdAt` can't change, and neither can a list's `isDefault`.
+- A task must point at a list its owner owns.
+- Field types and sizes are validated on the keys being changed, so older documents stay
+  editable.
+- A default list can only be created together with the user document that names it, and
+  only deleted together with that user document, during account deletion.
 
 <details>
 <summary>Original draft rules (superseded — see firestore.rules for current state)</summary>
@@ -138,14 +143,12 @@ service cloud.firestore {
 
 ## Indexes
 
-Composite indexes required by current queries are tracked in
-`firestore.indexes.json` at the repo root (also the source of truth — deploy via
-`firebase deploy --only firestore:indexes`). Currently:
+Composite indexes required by current queries are defined in
+`firestore.indexes.json` at the repo root, which is the source of truth. Deploy them
+with `firebase deploy --only firestore:indexes`.
 
-- `tasks`: `uid` + `listId` + `deletedAt` + `createdAt` (ascending) — supports
-  streaming a list's active tasks ordered by creation time.
-- `lists`: `uid` + `createdAt` (ascending) — supports streaming a user's lists
-  ordered by creation time.
+> **Note on Index Build Lag**: In production Firebase, newly deployed composite indexes
+> take several minutes to build before queries using them will succeed.
 
 If you add a new compound query, Firestore will tell you the exact index it
 needs the first time you run it (error message includes a console link). Add
@@ -153,3 +156,29 @@ the resulting index definition to `firestore.indexes.json` rather than only
 creating it via the console, so it's captured for the whole team.
 
 ---
+
+## Soft Deletion & Retention Policy
+
+### Soft deletion mechanics
+- When a task is soft-deleted, `deletedAt` is populated with `Timestamp.now()`.
+- Active task queries filter with `.where('deletedAt', isNull: true)`.
+- Recently deleted queries filter by `uid` in Firestore and evaluate `deletedAt != null` with `.distinct` in-memory. This guarantees immediate local cache visibility on web/mobile clients upon deletion without suffering composite index propagation lag.
+- Task creation must always write `deletedAt: null` explicitly so queries can accurately match `isNull: true`.
+
+### Retention & Purge Policy
+- **Policy**: Tasks in Recently Deleted are retained for 30 days before being purged.
+- **Manual Purge**: Users can manually invoke "Empty Recently Deleted", which permanently hard-deletes all soft-deleted tasks belonging to the user using chunked Firestore `WriteBatch` operations (capped at 500 operations per batch).
+- **Automated Purge**: `TaskRepository.purgeExpiredDeletedTasks` permanently purges tasks whose `deletedAt` timestamp is older than 30 days. It runs from the home screen at most once every 24 hours per user, and whenever the Recently Deleted view is opened. Scheduled Cloud Functions can supplement this for background offline purges.
+
+### Restoration Rules
+- Restoring a task sets `deletedAt: null`. If already active, the operation gracefully no-ops.
+- If the original parent list still exists, the task returns to that list.
+- If the original parent list was deleted (or `listId` is empty), the task is safely reassigned to the user's `defaultListId` (Inbox).
+
+### Account Deletion
+- Deleting an account re-authenticates first, then permanently hard-deletes everything the user owns: tasks (including soft-deleted ones), tags, lists and `users/{uid}`, followed by the Firebase Auth user.
+- The default list and `users/{uid}` go last, in one batch, because the rules only allow that delete together.
+
+### Future Habit Tracking Architectural Note
+- Completing a repeating task only moves `dueDate` forward and leaves `completedAt` null, so no record of past completions is kept. Habit history needs its own storage.
+- Permanent hard-deletion physically removes the task document from Firestore (`doc(taskId).delete()`). Future habit tracking implementations (Phases 2 & 3) referencing `taskId` should ensure streak/log integrity when tasks are purged.

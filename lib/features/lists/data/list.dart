@@ -8,6 +8,7 @@ class ListModel {
   final String name;
   final DateTime? createdAt;
   final bool isDefault;
+  final String? icon;
 
   const ListModel({
     required this.listId,
@@ -15,6 +16,7 @@ class ListModel {
     required this.name,
     this.createdAt,
     this.isDefault = false,
+    this.icon,
   });
 
   static DateTime? _parseDateTime(dynamic value) {
@@ -33,11 +35,13 @@ class ListModel {
       name: data['name'] as String? ?? '',
       createdAt: _parseDateTime(data['createdAt']),
       isDefault: data['isDefault'] as bool? ?? false,
+      icon: data['icon'] as String?,
     );
   }
 
   factory ListModel.fromFirestore(
-      DocumentSnapshot<Map<String, dynamic>> snapshot) {
+    DocumentSnapshot<Map<String, dynamic>> snapshot,
+  ) {
     return ListModel.fromMap(snapshot.data() ?? {}, snapshot.id);
   }
 
@@ -48,6 +52,7 @@ class ListModel {
       'name': name,
       if (createdAt != null) 'createdAt': Timestamp.fromDate(createdAt!),
       'isDefault': isDefault,
+      if (icon != null) 'icon': icon,
     };
   }
 
@@ -59,6 +64,7 @@ class ListModel {
     String? name,
     DateTime? createdAt,
     bool? isDefault,
+    String? icon,
   }) {
     return ListModel(
       listId: listId ?? this.listId,
@@ -66,6 +72,7 @@ class ListModel {
       name: name ?? this.name,
       createdAt: createdAt ?? this.createdAt,
       isDefault: isDefault ?? this.isDefault,
+      icon: icon ?? this.icon,
     );
   }
 
@@ -78,7 +85,8 @@ class ListModel {
           uid == other.uid &&
           name == other.name &&
           createdAt == other.createdAt &&
-          isDefault == other.isDefault;
+          isDefault == other.isDefault &&
+          icon == other.icon;
 
   @override
   int get hashCode =>
@@ -86,10 +94,11 @@ class ListModel {
       uid.hashCode ^
       name.hashCode ^
       createdAt.hashCode ^
-      isDefault.hashCode;
+      isDefault.hashCode ^
+      icon.hashCode;
 
   @override
   String toString() {
-    return 'ListModel(listId: $listId, uid: $uid, name: $name, isDefault: $isDefault)';
+    return 'ListModel(listId: $listId, uid: $uid, name: $name, isDefault: $isDefault, icon: $icon)';
   }
 }

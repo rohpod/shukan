@@ -1,0 +1,431 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:shukan/features/tasks/domain/quick_add_parser.dart';
+
+void main() {
+  group('parseQuickAdd unit tests', () {
+    // Fixed clock: Wednesday, Oct 14, 2026 at 10:00 AM
+    final fixedNow = DateTime(2026, 10, 14, 10, 0);
+
+    test('empty or whitespace input returns empty title and nulls', () {
+      final res1 = parseQuickAdd('', now: fixedNow);
+      expect(res1.title, '');
+      expect(res1.dueDate, isNull);
+      expect(res1.dueTime, isNull);
+      expect(res1.matchedPhrase, isNull);
+
+      final res2 = parseQuickAdd('   ', now: fixedNow);
+      expect(res2.title, '');
+      expect(res2.dueDate, isNull);
+      expect(res2.dueTime, isNull);
+    });
+
+    test('no date/time phrase returns input unchanged with nulls', () {
+      final res = parseQuickAdd('Buy groceries at the market', now: fixedNow);
+      expect(res.title, 'Buy groceries at the market');
+      expect(res.dueDate, isNull);
+      expect(res.dueTime, isNull);
+      expect(res.matchedPhrase, isNull);
+    });
+
+    test('does not parse standalone numbers without time indicators', () {
+      final res = parseQuickAdd('Read chapter 5 and 10 pages', now: fixedNow);
+      expect(res.title, 'Read chapter 5 and 10 pages');
+      expect(res.dueDate, isNull);
+      expect(res.dueTime, isNull);
+    });
+
+    group('Relative days', () {
+      test('parses "today"', () {
+        final res = parseQuickAdd('Doctor appointment today', now: fixedNow);
+        expect(res.title, 'Doctor appointment today');
+        expect(res.dueDate, DateTime(2026, 10, 14));
+        expect(res.dueTime, isNull);
+        expect(res.matchedPhrase?.toLowerCase(), contains('today'));
+      });
+
+      test('parses "tomorrow"', () {
+        final res = parseQuickAdd('Submit essay tomorrow', now: fixedNow);
+        expect(res.title, 'Submit essay tomorrow');
+        expect(res.dueDate, DateTime(2026, 10, 15));
+        expect(res.dueTime, isNull);
+      });
+
+      test('parses "tmrw" abbreviation', () {
+        final res = parseQuickAdd('Call mom tmrw', now: fixedNow);
+        expect(res.title, 'Call mom tmrw');
+        expect(res.dueDate, DateTime(2026, 10, 15));
+        expect(res.dueTime, isNull);
+      });
+
+      test('parses "yesterday" for completeness', () {
+        final res = parseQuickAdd('File taxes yesterday', now: fixedNow);
+        expect(res.title, 'File taxes yesterday');
+        expect(res.dueDate, DateTime(2026, 10, 13));
+        expect(res.dueTime, isNull);
+      });
+    });
+
+    group('Weekdays', () {
+      test('parses plain weekday upcoming: Wednesday to Friday is +2 days', () {
+        final res = parseQuickAdd('Team sync friday', now: fixedNow);
+        expect(res.title, 'Team sync friday');
+        expect(res.dueDate, DateTime(2026, 10, 16)); // Friday
+      });
+
+      test('parses plain weekday upcoming: Wednesday to Monday is +5 days', () {
+        final res = parseQuickAdd('Review PR mon', now: fixedNow);
+        expect(res.title, 'Review PR mon');
+        expect(res.dueDate, DateTime(2026, 10, 19)); // Monday
+      });
+
+      test('parses "this friday"', () {
+        final res = parseQuickAdd('Gym workout this friday', now: fixedNow);
+        expect(res.title, 'Gym workout this friday');
+        expect(res.dueDate, DateTime(2026, 10, 16));
+      });
+
+      test('parses "next monday" (following week)', () {
+        final res = parseQuickAdd('Sprint planning next monday', now: fixedNow);
+        expect(res.title, 'Sprint planning next monday');
+        expect(res.dueDate, DateTime(2026, 10, 19));
+      });
+
+      test('parses "next friday" (following week)', () {
+        final res = parseQuickAdd('Release v2 next friday', now: fixedNow);
+        expect(res.title, 'Release v2 next friday');
+        expect(res.dueDate, DateTime(2026, 10, 23));
+      });
+    });
+
+    group('Relative offsets', () {
+      test('parses "in N days"', () {
+        final res = parseQuickAdd('Finish report in 3 days', now: fixedNow);
+        expect(res.title, 'Finish report in 3 days');
+        expect(res.dueDate, DateTime(2026, 10, 17));
+      });
+
+      test('parses "in 1 day"', () {
+        final res = parseQuickAdd('Pack luggage in 1 day', now: fixedNow);
+        expect(res.title, 'Pack luggage in 1 day');
+        expect(res.dueDate, DateTime(2026, 10, 15));
+      });
+
+      test('parses "in N weeks"', () {
+        final res = parseQuickAdd('Dental checkup in 2 weeks', now: fixedNow);
+        expect(res.title, 'Dental checkup in 2 weeks');
+        expect(res.dueDate, DateTime(2026, 10, 28));
+      });
+    });
+
+    group('Times', () {
+      test('parses "5pm" (defaults date to today)', () {
+        final res = parseQuickAdd('Water plants 5pm', now: fixedNow);
+        expect(res.title, 'Water plants 5pm');
+        expect(res.dueDate, DateTime(2026, 10, 14));
+        expect(res.dueTime, '17:00');
+      });
+
+      test('parses "9am"', () {
+        final res = parseQuickAdd('Morning jog 9am', now: fixedNow);
+        expect(res.title, 'Morning jog 9am');
+        expect(res.dueDate, DateTime(2026, 10, 15));
+        expect(res.dueTime, '09:00');
+      });
+
+      test('parses "5:30pm"', () {
+        final res = parseQuickAdd('Pick up dry cleaning 5:30pm', now: fixedNow);
+        expect(res.title, 'Pick up dry cleaning 5:30pm');
+        expect(res.dueTime, '17:30');
+      });
+
+      test('parses "12pm" (noon) and "12am" (midnight)', () {
+        final resNoon = parseQuickAdd('Lunch meeting 12pm', now: fixedNow);
+        expect(resNoon.dueTime, '12:00');
+
+        final resMidnight = parseQuickAdd('Build cut 12am', now: fixedNow);
+        expect(resMidnight.dueTime, '00:00');
+      });
+
+      test('parses "noon" and "midnight" words', () {
+        final resNoon = parseQuickAdd('Team lunch at noon', now: fixedNow);
+        expect(resNoon.title, 'Team lunch at noon');
+        expect(resNoon.dueTime, '12:00');
+
+        final resMid = parseQuickAdd('Deploy at midnight', now: fixedNow);
+        expect(resMid.title, 'Deploy at midnight');
+        expect(resMid.dueTime, '00:00');
+      });
+
+      test('parses 24-hour time "17:00"', () {
+        final res = parseQuickAdd('Evening review 17:00', now: fixedNow);
+        expect(res.title, 'Evening review 17:00');
+        expect(res.dueTime, '17:00');
+      });
+
+      test('parses time preceded by "at "', () {
+        final res = parseQuickAdd('Standup at 10:15am', now: fixedNow);
+        expect(res.title, 'Standup at 10:15am');
+        expect(res.dueTime, '10:15');
+      });
+    });
+
+    group('Combinations & Prepositions', () {
+      test('parses "tomorrow 5pm"', () {
+        final res = parseQuickAdd(
+          'Submit assignment tomorrow 5pm',
+          now: fixedNow,
+        );
+        expect(res.title, 'Submit assignment tomorrow 5pm');
+        expect(res.dueDate, DateTime(2026, 10, 15));
+        expect(res.dueTime, '17:00');
+        expect(res.matchedPhrase?.toLowerCase(), contains('tomorrow 5pm'));
+      });
+
+      test('parses "5pm tomorrow" (time before date)', () {
+        final res = parseQuickAdd(
+          'Submit assignment 5pm tomorrow',
+          now: fixedNow,
+        );
+        expect(res.title, 'Submit assignment 5pm tomorrow');
+        expect(res.dueDate, DateTime(2026, 10, 15));
+        expect(res.dueTime, '17:00');
+      });
+
+      test('parses "next monday at 9am"', () {
+        final res = parseQuickAdd(
+          'Sprint planning next monday at 9am',
+          now: fixedNow,
+        );
+        expect(res.title, 'Sprint planning next monday at 9am');
+        expect(res.dueDate, DateTime(2026, 10, 19));
+        expect(res.dueTime, '09:00');
+      });
+
+      test('parses leading "by" or "on" prepositions', () {
+        final resBy = parseQuickAdd('Finish slides by tomorrow', now: fixedNow);
+        expect(resBy.title, 'Finish slides by tomorrow');
+        expect(resBy.dueDate, DateTime(2026, 10, 15));
+
+        final resOn = parseQuickAdd(
+          'Team sync on friday at 3pm',
+          now: fixedNow,
+        );
+        expect(resOn.title, 'Team sync on friday at 3pm');
+        expect(resOn.dueDate, DateTime(2026, 10, 16));
+        expect(resOn.dueTime, '15:00');
+      });
+
+      test(
+        'trims outer whitespace from title without collapsing internal spaces',
+        () {
+          final res = parseQuickAdd(
+            '  Task   tomorrow 5pm   details  ',
+            now: fixedNow,
+          );
+          expect(res.title, 'Task   tomorrow 5pm   details');
+          expect(res.dueDate, DateTime(2026, 10, 15));
+          expect(res.dueTime, '17:00');
+        },
+      );
+
+      test('entire input is date phrase preserves title', () {
+        final res = parseQuickAdd('tomorrow 5pm', now: fixedNow);
+        expect(res.title, 'tomorrow 5pm');
+        expect(res.dueDate, DateTime(2026, 10, 15));
+        expect(res.dueTime, '17:00');
+      });
+    });
+
+    group('strippedTitle tests', () {
+      test('date only: removes date phrase and preserves title', () {
+        final res = parseQuickAdd('Submit essay tomorrow', now: fixedNow);
+        expect(res.title, 'Submit essay tomorrow');
+        expect(res.strippedTitle, 'Submit essay');
+        expect(res.dueDate, DateTime(2026, 10, 15));
+      });
+
+      test('time only: removes time phrase and preserves title', () {
+        final res = parseQuickAdd('Water plants 5pm', now: fixedNow);
+        expect(res.title, 'Water plants 5pm');
+        expect(res.strippedTitle, 'Water plants');
+        expect(res.dueTime, '17:00');
+      });
+
+      test('date + time: removes both phrases', () {
+        final res1 = parseQuickAdd('run tomorrow at 5am', now: fixedNow);
+        expect(res1.title, 'run tomorrow at 5am');
+        expect(res1.strippedTitle, 'run');
+
+        final res2 = parseQuickAdd('run at 5am tomorrow', now: fixedNow);
+        expect(res2.title, 'run at 5am tomorrow');
+        expect(res2.strippedTitle, 'run');
+
+        final res3 = parseQuickAdd('buy milk tomorrow morning', now: fixedNow);
+        expect(res3.title, 'buy milk tomorrow morning');
+        expect(res3.strippedTitle, 'buy milk');
+      });
+
+      test(
+        'non-contiguous spans: removes both date and time across the string',
+        () {
+          final res = parseQuickAdd('tomorrow buy milk at 5pm', now: fixedNow);
+          expect(res.title, 'tomorrow buy milk at 5pm');
+          expect(res.strippedTitle, 'buy milk');
+          expect(res.dueDate, DateTime(2026, 10, 15));
+          expect(res.dueTime, '17:00');
+        },
+      );
+
+      test(
+        'preposition before the phrase is removed when immediately preceding',
+        () {
+          final resBy = parseQuickAdd(
+            'Finish slides by tomorrow',
+            now: fixedNow,
+          );
+          expect(resBy.title, 'Finish slides by tomorrow');
+          expect(resBy.strippedTitle, 'Finish slides');
+
+          final resBefore = parseQuickAdd(
+            'Submit essay before friday',
+            now: fixedNow,
+          );
+          expect(resBefore.title, 'Submit essay before friday');
+          expect(resBefore.strippedTitle, 'Submit essay');
+
+          final resFor = parseQuickAdd('Pack bags for tomorrow', now: fixedNow);
+          expect(resFor.title, 'Pack bags for tomorrow');
+          expect(resFor.strippedTitle, 'Pack bags');
+        },
+      );
+
+      test('phrase in the middle: removes phrase without removing prepositions in real title', () {
+        final resMiddle = parseQuickAdd(
+          'Doctor appointment tomorrow with Dr Smith',
+          now: fixedNow,
+        );
+        expect(resMiddle.title, 'Doctor appointment tomorrow with Dr Smith');
+        expect(resMiddle.strippedTitle, 'Doctor appointment with Dr Smith');
+
+        final resPrepInTitle = parseQuickAdd(
+          'Apply for passport tomorrow',
+          now: fixedNow,
+        );
+        expect(resPrepInTitle.title, 'Apply for passport tomorrow');
+        expect(resPrepInTitle.strippedTitle, 'Apply for passport');
+
+        final resCoffee = parseQuickAdd(
+          'Meet for coffee tomorrow at 5pm',
+          now: fixedNow,
+        );
+        expect(resCoffee.title, 'Meet for coffee tomorrow at 5pm');
+        expect(resCoffee.strippedTitle, 'Meet for coffee');
+      });
+
+      test(
+        'whole input is a date phrase: keeps original input as strippedTitle',
+        () {
+          final res1 = parseQuickAdd('tomorrow 5am', now: fixedNow);
+          expect(res1.title, 'tomorrow 5am');
+          expect(res1.strippedTitle, 'tomorrow 5am');
+
+          final res2 = parseQuickAdd('at 5pm', now: fixedNow);
+          expect(res2.title, 'at 5pm');
+          expect(res2.strippedTitle, 'at 5pm');
+
+          final res3 = parseQuickAdd('tomorrow', now: fixedNow);
+          expect(res3.title, 'tomorrow');
+          expect(res3.strippedTitle, 'tomorrow');
+        },
+      );
+
+      test('nothing matched: strippedTitle is the trimmed input', () {
+        final res = parseQuickAdd('Buy groceries at the market', now: fixedNow);
+        expect(res.title, 'Buy groceries at the market');
+        expect(res.strippedTitle, 'Buy groceries at the market');
+        expect(res.dueDate, isNull);
+        expect(res.dueTime, isNull);
+      });
+    });
+
+    group('Time with no date', () {
+      test('stays today while the time is still ahead', () {
+        final res = parseQuickAdd('Call mom at 5pm', now: fixedNow);
+        expect(res.dueDate, DateTime(2026, 10, 14));
+      });
+
+      test('rolls to tomorrow once the time has passed', () {
+        final res = parseQuickAdd('Call mom at 9am', now: fixedNow);
+        expect(res.dueDate, DateTime(2026, 10, 15));
+        expect(res.dueTime, '09:00');
+      });
+    });
+
+    group('Weekday abbreviations', () {
+      for (final phrase in [
+        'buy sun screen',
+        'sat exam prep',
+        'fix mon itor',
+      ]) {
+        test('"$phrase" is not treated as a date', () {
+          final res = parseQuickAdd(phrase, now: fixedNow);
+          expect(res.dueDate, isNull);
+          expect(res.strippedTitle, phrase);
+        });
+      }
+
+      test('a prefixed abbreviation is a date', () {
+        final res = parseQuickAdd('dentist on mon for checkup', now: fixedNow);
+        expect(res.dueDate, DateTime(2026, 10, 19));
+      });
+
+      test('an abbreviation directly before a time is a date', () {
+        final res = parseQuickAdd('dentist fri 5pm', now: fixedNow);
+        expect(res.dueDate, DateTime(2026, 10, 16));
+        expect(res.dueTime, '17:00');
+      });
+
+      test('a full weekday name mid-sentence is a date', () {
+        final res = parseQuickAdd('prep sunday roast', now: fixedNow);
+        expect(res.dueDate, DateTime(2026, 10, 18));
+      });
+    });
+
+    // These only exercise the bug when run with TZ=America/New_York (see CI),
+    // where 2026-11-01 is 25 hours long.
+    group('Daylight saving changes', () {
+      test('"tomorrow" on the 25-hour day is the next date', () {
+        final res = parseQuickAdd(
+          'pay rent tomorrow',
+          now: DateTime(2026, 11, 1, 10),
+        );
+        expect(res.dueDate, DateTime(2026, 11, 2));
+      });
+
+      test('"in 2 days" across the change keeps midnight', () {
+        final res = parseQuickAdd(
+          'pay rent in 2 days',
+          now: DateTime(2026, 10, 31, 10),
+        );
+        expect(res.dueDate, DateTime(2026, 11, 2));
+      });
+
+      test('"next monday" across the change is a Monday', () {
+        final res = parseQuickAdd(
+          'pay rent next monday',
+          now: DateTime(2026, 10, 30, 10),
+        );
+        expect(res.dueDate, DateTime(2026, 11, 2));
+        expect(res.dueDate!.weekday, DateTime.monday);
+      });
+
+      test('a plain weekday across the change is that weekday', () {
+        final res = parseQuickAdd(
+          'pay rent saturday',
+          now: DateTime(2026, 11, 1, 10),
+        );
+        expect(res.dueDate, DateTime(2026, 11, 7));
+      });
+    });
+  });
+}

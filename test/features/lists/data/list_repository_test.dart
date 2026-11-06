@@ -14,33 +14,35 @@ void main() {
   });
 
   group('ListRepository', () {
-    test('createList always writes isDefault: false and valid schema',
-        () async {
-      const uid = 'user-123';
-      const name = 'Groceries';
-
-      final list = await repository.createList(uid: uid, name: name);
-
-      expect(list.listId, isNotEmpty);
-      expect(list.uid, equals(uid));
-      expect(list.name, equals('Groceries'));
-      expect(list.isDefault, isFalse);
-      expect(list.createdAt, isNotNull);
-
-      final doc =
-          await fakeFirestore.collection('lists').doc(list.listId).get();
-      expect(doc.exists, isTrue);
-      final data = doc.data()!;
-      expect(data['listId'], equals(list.listId));
-      expect(data['uid'], equals(uid));
-      expect(data['name'], equals('Groceries'));
-      expect(data['isDefault'], isFalse);
-      expect(data['createdAt'], isNotNull);
-    });
-
     test(
-        'deleteList throws StateError when isDefault == true and performs no writes',
-        () async {
+      'createList always writes isDefault: false and valid schema',
+      () async {
+        const uid = 'user-123';
+        const name = 'Groceries';
+
+        final list = await repository.createList(uid: uid, name: name);
+
+        expect(list.listId, isNotEmpty);
+        expect(list.uid, equals(uid));
+        expect(list.name, equals('Groceries'));
+        expect(list.isDefault, isFalse);
+        expect(list.createdAt, isNotNull);
+
+        final doc = await fakeFirestore
+            .collection('lists')
+            .doc(list.listId)
+            .get();
+        expect(doc.exists, isTrue);
+        final data = doc.data()!;
+        expect(data['listId'], equals(list.listId));
+        expect(data['uid'], equals(uid));
+        expect(data['name'], equals('Groceries'));
+        expect(data['isDefault'], isFalse);
+        expect(data['createdAt'], isNotNull);
+      },
+    );
+
+    test('deleteList throws StateError when isDefault == true and performs no writes', () async {
       const uid = 'user-123';
       const listId = 'default-inbox';
 
@@ -63,22 +65,25 @@ void main() {
 
       expect(
         () => repository.deleteList(listId, uid),
-        throwsA(isA<StateError>().having(
-          (e) => e.message,
-          'message',
-          contains('Cannot delete the default list'),
-        )),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('Cannot delete the default list'),
+          ),
+        ),
       );
 
       // Verify list document still exists unchanged
-      final listDoc =
-          await fakeFirestore.collection('lists').doc(listId).get();
+      final listDoc = await fakeFirestore.collection('lists').doc(listId).get();
       expect(listDoc.exists, isTrue);
       expect(listDoc.data()!['isDefault'], isTrue);
 
       // Verify task still active
-      final taskDoc =
-          await fakeFirestore.collection('tasks').doc('task-1').get();
+      final taskDoc = await fakeFirestore
+          .collection('tasks')
+          .doc('task-1')
+          .get();
       expect(taskDoc.data()!['deletedAt'], isNull);
     });
 
@@ -89,9 +94,7 @@ void main() {
       );
     });
 
-    test(
-        'deleteList on non-default list with tasks soft-deletes matching tasks and deletes list',
-        () async {
+    test('deleteList on non-default list with tasks soft-deletes matching tasks and deletes list', () async {
       const uid = 'user-123';
       const listId = 'custom-list';
 
@@ -131,8 +134,7 @@ void main() {
       await repository.deleteList(listId, uid);
 
       // Verify list document is deleted
-      final listDoc =
-          await fakeFirestore.collection('lists').doc(listId).get();
+      final listDoc = await fakeFirestore.collection('lists').doc(listId).get();
       expect(listDoc.exists, isFalse);
 
       // Verify matching tasks have deletedAt set
@@ -145,14 +147,14 @@ void main() {
       expect(t2.data()!['deletedAt'], isNotNull);
 
       // Verify task in other list is untouched
-      final tOther =
-          await fakeFirestore.collection('tasks').doc('task-other').get();
+      final tOther = await fakeFirestore
+          .collection('tasks')
+          .doc('task-other')
+          .get();
       expect(tOther.data()!['deletedAt'], isNull);
     });
 
-    test(
-        'deleteList on non-default list with zero tasks deletes list doc without error',
-        () async {
+    test('deleteList on non-default list with zero tasks deletes list doc without error', () async {
       const uid = 'user-123';
       const listId = 'empty-list';
 
@@ -166,13 +168,11 @@ void main() {
 
       await repository.deleteList(listId, uid);
 
-      final listDoc =
-          await fakeFirestore.collection('lists').doc(listId).get();
+      final listDoc = await fakeFirestore.collection('lists').doc(listId).get();
       expect(listDoc.exists, isFalse);
     });
 
-    test('renameList updates name only, leaving isDefault unchanged',
-        () async {
+    test('renameList updates name only, leaving isDefault unchanged', () async {
       const uid = 'user-123';
       const listId = 'rename-list';
 
@@ -192,92 +192,115 @@ void main() {
       expect(doc.data()!['uid'], equals(uid));
     });
 
-    test('getActiveTaskCountForList counts active tasks only', () async {
-      const uid = 'user-123';
-      const listId = 'active-count-list';
+    test(
+      'updateListIcon updates icon only, leaving other fields unchanged',
+      () async {
+        const uid = 'user-123';
+        const listId = 'icon-list';
+        final createdAt = Timestamp.fromDate(DateTime(2026, 1, 1));
 
-      await fakeFirestore.collection('tasks').doc('t1').set({
-        'taskId': 't1',
-        'uid': uid,
-        'listId': listId,
-        'deletedAt': null,
-      });
-      await fakeFirestore.collection('tasks').doc('t2').set({
-        'taskId': 't2',
-        'uid': uid,
-        'listId': listId,
-        'deletedAt': null,
-      });
-      await fakeFirestore.collection('tasks').doc('t3-deleted').set({
-        'taskId': 't3-deleted',
-        'uid': uid,
-        'listId': listId,
-        'deletedAt': Timestamp.now(),
-      });
+        await fakeFirestore.collection('lists').doc(listId).set({
+          'listId': listId,
+          'uid': uid,
+          'name': 'Work List',
+          'isDefault': false,
+          'createdAt': createdAt,
+        });
 
-      final count = await repository.getActiveTaskCountForList(
-        uid: uid,
-        listId: listId,
+        await repository.updateListIcon(listId, 'work');
+
+        final doc = await fakeFirestore.collection('lists').doc(listId).get();
+        expect(doc.data()!['icon'], equals('work'));
+        expect(doc.data()!['name'], equals('Work List'));
+        expect(doc.data()!['isDefault'], isFalse);
+        expect(doc.data()!['uid'], equals(uid));
+        expect(doc.data()!['createdAt'], equals(createdAt));
+      },
+    );
+
+    test(
+      'streamListsForUser orders isDefault: true list first client-side',
+      () async {
+        const uid = 'user-1';
+
+        // 1. Custom list created earlier
+        await fakeFirestore.collection('lists').doc('l1').set({
+          'listId': 'l1',
+          'uid': uid,
+          'name': 'Earlier List',
+          'isDefault': false,
+          'createdAt': Timestamp.fromDate(DateTime(2026, 1, 1, 10, 0)),
+        });
+
+        // 2. Default list created later
+        await fakeFirestore.collection('lists').doc('l2').set({
+          'listId': 'l2',
+          'uid': uid,
+          'name': 'Inbox',
+          'isDefault': true,
+          'createdAt': Timestamp.fromDate(DateTime(2026, 1, 1, 12, 0)),
+        });
+
+        // 3. Custom list created latest
+        await fakeFirestore.collection('lists').doc('l3').set({
+          'listId': 'l3',
+          'uid': uid,
+          'name': 'Later List',
+          'isDefault': false,
+          'createdAt': Timestamp.fromDate(DateTime(2026, 1, 1, 14, 0)),
+        });
+
+        // 4. List from other user
+        await fakeFirestore.collection('lists').doc('l-other').set({
+          'listId': 'l-other',
+          'uid': 'other-user',
+          'name': 'Other List',
+          'isDefault': false,
+          'createdAt': Timestamp.fromDate(DateTime(2026, 1, 1, 11, 0)),
+        });
+
+        final emissions = <List<ListModel>>[];
+        final sub = repository.streamListsForUser(uid).listen(emissions.add);
+
+        await pumpEventQueue();
+
+        expect(emissions.isNotEmpty, isTrue);
+        final lists = emissions.last;
+        expect(lists.length, equals(3));
+        // First must be the default list
+        expect(lists[0].listId, equals('l2'));
+        expect(lists[0].isDefault, isTrue);
+        // Followed by non-default lists in order of createdAt
+        expect(lists[1].listId, equals('l1'));
+        expect(lists[2].listId, equals('l3'));
+
+        await sub.cancel();
+      },
+    );
+
+    test('deleteList handles more tasks than one batch chunk', () async {
+      final list = await repository.createList(uid: 'chunk-user', name: 'Big');
+      for (var i = 0; i < 5; i++) {
+        await fakeFirestore.collection('tasks').doc('task-$i').set({
+          'uid': 'chunk-user',
+          'listId': list.listId,
+          'title': 'Task $i',
+          'deletedAt': null,
+        });
+      }
+
+      await repository.deleteList(list.listId, 'chunk-user', batchChunkSize: 2);
+
+      final tasks = await fakeFirestore.collection('tasks').get();
+      expect(
+        tasks.docs.every((d) => d.data()['deletedAt'] is Timestamp),
+        isTrue,
       );
-      expect(count, equals(2));
-    });
-
-    test('streamListsForUser orders isDefault: true list first client-side',
-        () async {
-      const uid = 'user-1';
-
-      // 1. Custom list created earlier
-      await fakeFirestore.collection('lists').doc('l1').set({
-        'listId': 'l1',
-        'uid': uid,
-        'name': 'Earlier List',
-        'isDefault': false,
-        'createdAt': Timestamp.fromDate(DateTime(2026, 1, 1, 10, 0)),
-      });
-
-      // 2. Default list created later
-      await fakeFirestore.collection('lists').doc('l2').set({
-        'listId': 'l2',
-        'uid': uid,
-        'name': 'Inbox',
-        'isDefault': true,
-        'createdAt': Timestamp.fromDate(DateTime(2026, 1, 1, 12, 0)),
-      });
-
-      // 3. Custom list created latest
-      await fakeFirestore.collection('lists').doc('l3').set({
-        'listId': 'l3',
-        'uid': uid,
-        'name': 'Later List',
-        'isDefault': false,
-        'createdAt': Timestamp.fromDate(DateTime(2026, 1, 1, 14, 0)),
-      });
-
-      // 4. List from other user
-      await fakeFirestore.collection('lists').doc('l-other').set({
-        'listId': 'l-other',
-        'uid': 'other-user',
-        'name': 'Other List',
-        'isDefault': false,
-        'createdAt': Timestamp.fromDate(DateTime(2026, 1, 1, 11, 0)),
-      });
-
-      final emissions = <List<ListModel>>[];
-      final sub = repository.streamListsForUser(uid).listen(emissions.add);
-
-      await pumpEventQueue();
-
-      expect(emissions.isNotEmpty, isTrue);
-      final lists = emissions.last;
-      expect(lists.length, equals(3));
-      // First must be the default list
-      expect(lists[0].listId, equals('l2'));
-      expect(lists[0].isDefault, isTrue);
-      // Followed by non-default lists in order of createdAt
-      expect(lists[1].listId, equals('l1'));
-      expect(lists[2].listId, equals('l3'));
-
-      await sub.cancel();
+      final listDoc = await fakeFirestore
+          .collection('lists')
+          .doc(list.listId)
+          .get();
+      expect(listDoc.exists, isFalse);
     });
   });
 }

@@ -1,10 +1,25 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:shukan/core/notifications/notification_service.dart';
 import 'package:shukan/features/tasks/data/task.dart';
 import 'package:shukan/features/tasks/data/task_repository.dart';
 
+class MockNotificationService extends Mock implements NotificationService {}
+
 void main() {
+  setUpAll(() {
+    registerFallbackValue(
+      const Task(
+        taskId: 'dummy',
+        uid: 'dummy',
+        listId: 'dummy',
+        title: 'dummy',
+      ),
+    );
+  });
+
   late FakeFirebaseFirestore fakeFirestore;
   late TaskRepository repository;
 
@@ -28,73 +43,106 @@ void main() {
 
   group('TaskRepository', () {
     test(
-        'createTask writes full schema with correct defaults and uid/listId set',
-        () async {
+      'createTask writes full schema with correct defaults and uid/listId set',
+      () async {
+        const uid = 'user-123';
+        const listId = 'inbox-456';
+        const title = 'Complete quarterly taxes';
+        const notes = 'Check deductions and receipts';
+        const url = 'https://irs.gov';
+
+        final clock = DateTime(2026, 6, 1, 12);
+        final task = await TaskRepository(fakeFirestore, null, () => clock)
+            .createTask(
+              uid: uid,
+              listId: listId,
+              title: title,
+              notes: notes,
+              url: url,
+            );
+        final expectedOrder = clock.millisecondsSinceEpoch.toDouble();
+
+        // Verify in-memory task entity
+        expect(task.taskId, isNotEmpty);
+        expect(task.uid, equals(uid));
+        expect(task.listId, equals(listId));
+        expect(task.title, equals(title));
+        expect(task.notes, equals(notes));
+        expect(task.url, equals(url));
+        expect(task.priority, equals('none'));
+        expect(task.tagIds, isEmpty);
+        expect(task.dueDate, isNull);
+        expect(task.dueTime, isNull);
+        expect(task.earlyReminderMinutes, equals(0));
+        expect(task.repeatRule, equals('none'));
+        expect(task.repeatCustomConfig, isNull);
+        expect(task.order, equals(expectedOrder));
+        expect(task.subtasks, isEmpty);
+        expect(task.createdAt, isNotNull);
+        expect(task.completedAt, isNull);
+        expect(task.deletedAt, isNull);
+        expect(task.isCompleted, isFalse);
+        expect(task.isDeleted, isFalse);
+
+        // Verify persisted Firestore document
+        final docSnapshot = await fakeFirestore
+            .collection('tasks')
+            .doc(task.taskId)
+            .get();
+        expect(docSnapshot.exists, isTrue);
+
+        final data = docSnapshot.data()!;
+        expect(data['taskId'], equals(task.taskId));
+        expect(data['uid'], equals(uid));
+        expect(data['listId'], equals(listId));
+        expect(data['title'], equals(title));
+        expect(data['notes'], equals(notes));
+        expect(data['url'], equals(url));
+        expect(data['priority'], equals('none'));
+        expect(data['tagIds'], equals(<String>[]));
+        expect(data['dueDate'], isNull);
+        expect(data['dueTime'], isNull);
+        expect(data['earlyReminderMinutes'], equals(0));
+        expect(data['repeatRule'], equals('none'));
+        expect(data['repeatCustomConfig'], isNull);
+        expect(data['order'], equals(expectedOrder));
+        expect(data['subtasks'], equals(<Map<String, dynamic>>[]));
+        expect(data['createdAt'], isNotNull);
+        expect(data['completedAt'], isNull);
+        expect(data['deletedAt'], isNull);
+      },
+    );
+
+    test('createTask with dueDate and dueTime persists them correctly in entity and Firestore', () async {
       const uid = 'user-123';
       const listId = 'inbox-456';
-      const title = 'Complete quarterly taxes';
-      const notes = 'Check deductions and receipts';
-      const url = 'https://irs.gov';
+      final dueDate = DateTime(2026, 10, 15);
+      const dueTime = '17:00';
 
       final task = await repository.createTask(
         uid: uid,
         listId: listId,
-        title: title,
-        notes: notes,
-        url: url,
+        title: 'Submit assignment',
+        dueDate: dueDate,
+        dueTime: dueTime,
       );
 
-      // Verify in-memory task entity
-      expect(task.taskId, isNotEmpty);
-      expect(task.uid, equals(uid));
-      expect(task.listId, equals(listId));
-      expect(task.title, equals(title));
-      expect(task.notes, equals(notes));
-      expect(task.url, equals(url));
-      expect(task.priority, equals('none'));
-      expect(task.tagIds, isEmpty);
-      expect(task.dueDate, isNull);
-      expect(task.dueTime, isNull);
-      expect(task.earlyReminderMinutes, equals(0));
-      expect(task.repeatRule, equals('none'));
-      expect(task.repeatCustomConfig, isNull);
-      expect(task.order, equals(0));
-      expect(task.subtasks, isEmpty);
-      expect(task.createdAt, isNotNull);
-      expect(task.completedAt, isNull);
-      expect(task.deletedAt, isNull);
-      expect(task.isCompleted, isFalse);
-      expect(task.isDeleted, isFalse);
+      expect(task.title, equals('Submit assignment'));
+      expect(task.dueDate, equals(dueDate));
+      expect(task.dueTime, equals('17:00'));
 
-      // Verify persisted Firestore document
-      final docSnapshot =
-          await fakeFirestore.collection('tasks').doc(task.taskId).get();
+      final docSnapshot = await fakeFirestore
+          .collection('tasks')
+          .doc(task.taskId)
+          .get();
       expect(docSnapshot.exists, isTrue);
 
       final data = docSnapshot.data()!;
-      expect(data['taskId'], equals(task.taskId));
-      expect(data['uid'], equals(uid));
-      expect(data['listId'], equals(listId));
-      expect(data['title'], equals(title));
-      expect(data['notes'], equals(notes));
-      expect(data['url'], equals(url));
-      expect(data['priority'], equals('none'));
-      expect(data['tagIds'], equals(<String>[]));
-      expect(data['dueDate'], isNull);
-      expect(data['dueTime'], isNull);
-      expect(data['earlyReminderMinutes'], equals(0));
-      expect(data['repeatRule'], equals('none'));
-      expect(data['repeatCustomConfig'], isNull);
-      expect(data['order'], equals(0));
-      expect(data['subtasks'], equals(<Map<String, dynamic>>[]));
-      expect(data['createdAt'], isNotNull);
-      expect(data['completedAt'], isNull);
-      expect(data['deletedAt'], isNull);
+      expect(data['dueDate'], equals(Timestamp.fromDate(dueDate)));
+      expect(data['dueTime'], equals('17:00'));
     });
 
-    test(
-        'streamTasksForList excludes soft-deleted tasks and filters by uid+listId correctly',
-        () async {
+    test('streamTasksForList excludes soft-deleted tasks and filters by uid+listId correctly', () async {
       const uid = 'user-1';
       const listId = 'list-1';
 
@@ -187,8 +235,9 @@ void main() {
       });
 
       final emissions = <List<Task>>[];
-      final subscription =
-          repository.streamTasksForList(uid, listId).listen(emissions.add);
+      final subscription = repository
+          .streamTasksForList(uid, listId)
+          .listen(emissions.add);
 
       await pumpEventQueue();
 
@@ -201,9 +250,117 @@ void main() {
       await subscription.cancel();
     });
 
-    test(
-        'updateTask only changes the specified fields, leaves placeholder fields untouched',
-        () async {
+    test('streamAllTasksForUser returns all non-deleted tasks for uid across lists ordered by createdAt DESC', () async {
+      const uid = 'user-stream-all';
+
+      // 1. Task in list-A (earlier)
+      await fakeFirestore.collection('tasks').doc('all-t1').set({
+        'taskId': 'all-t1',
+        'uid': uid,
+        'listId': 'list-A',
+        'title': 'Task in List A',
+        'notes': '',
+        'url': '',
+        'priority': 'none',
+        'tagIds': [],
+        'dueDate': null,
+        'dueTime': null,
+        'earlyReminderMinutes': 0,
+        'repeatRule': 'none',
+        'repeatCustomConfig': null,
+        'order': 0,
+        'subtasks': [],
+        'createdAt': Timestamp.fromDate(DateTime(2026, 1, 1, 10, 0)),
+        'completedAt': null,
+        'deletedAt': null,
+      });
+
+      // 2. Task in list-B (later)
+      await fakeFirestore.collection('tasks').doc('all-t2').set({
+        'taskId': 'all-t2',
+        'uid': uid,
+        'listId': 'list-B',
+        'title': 'Task in List B',
+        'notes': '',
+        'url': '',
+        'priority': 'none',
+        'tagIds': [],
+        'dueDate': null,
+        'dueTime': null,
+        'earlyReminderMinutes': 0,
+        'repeatRule': 'none',
+        'repeatCustomConfig': null,
+        'order': 0,
+        'subtasks': [],
+        'createdAt': Timestamp.fromDate(DateTime(2026, 1, 1, 12, 0)),
+        'completedAt': null,
+        'deletedAt': null,
+      });
+
+      // 3. Soft-deleted task for same user
+      await fakeFirestore.collection('tasks').doc('all-t3').set({
+        'taskId': 'all-t3',
+        'uid': uid,
+        'listId': 'list-A',
+        'title': 'Deleted Task',
+        'notes': '',
+        'url': '',
+        'priority': 'none',
+        'tagIds': [],
+        'dueDate': null,
+        'dueTime': null,
+        'earlyReminderMinutes': 0,
+        'repeatRule': 'none',
+        'repeatCustomConfig': null,
+        'order': 0,
+        'subtasks': [],
+        'createdAt': Timestamp.fromDate(DateTime(2026, 1, 1, 11, 0)),
+        'completedAt': null,
+        'deletedAt': Timestamp.now(),
+      });
+
+      // 4. Task belonging to another user
+      await fakeFirestore.collection('tasks').doc('all-t4').set({
+        'taskId': 'all-t4',
+        'uid': 'different-user',
+        'listId': 'list-A',
+        'title': 'Other User Task',
+        'notes': '',
+        'url': '',
+        'priority': 'none',
+        'tagIds': [],
+        'dueDate': null,
+        'dueTime': null,
+        'earlyReminderMinutes': 0,
+        'repeatRule': 'none',
+        'repeatCustomConfig': null,
+        'order': 0,
+        'subtasks': [],
+        'createdAt': Timestamp.fromDate(DateTime(2026, 1, 1, 13, 0)),
+        'completedAt': null,
+        'deletedAt': null,
+      });
+
+      final emissions = <List<Task>>[];
+      final subscription = repository
+          .streamAllTasksForUser(uid)
+          .listen(emissions.add);
+
+      await pumpEventQueue();
+
+      expect(emissions.isNotEmpty, isTrue);
+      final tasks = emissions.last;
+      expect(tasks.length, equals(2));
+      // Descending by createdAt: all-t2 (12:00) then all-t1 (10:00)
+      expect(tasks[0].taskId, equals('all-t2'));
+      expect(tasks[0].title, equals('Task in List B'));
+      expect(tasks[1].taskId, equals('all-t1'));
+      expect(tasks[1].title, equals('Task in List A'));
+
+      await subscription.cancel();
+    });
+
+    test('updateTask only changes the specified fields, leaves placeholder fields untouched', () async {
       final initialTask = await repository.createTask(
         uid: 'user-abc',
         listId: 'list-xyz',
@@ -232,7 +389,117 @@ void main() {
       expect(data['dueDate'], isNull);
       expect(data['earlyReminderMinutes'], equals(0));
       expect(data['repeatRule'], equals('none'));
-      expect(data['order'], equals(0));
+      expect(data['order'], equals(initialTask.order));
+    });
+
+    test('updateTask persists each new field individually', () async {
+      final task = await repository.createTask(
+        uid: 'user-abc',
+        listId: 'list-xyz',
+        title: 'Base Task',
+      );
+
+      // 1. Priority
+      await repository.updateTask(task.taskId, priority: 'high');
+      var doc = await fakeFirestore.collection('tasks').doc(task.taskId).get();
+      expect(doc.data()!['priority'], equals('high'));
+
+      // 2. Tag IDs
+      await repository.updateTask(task.taskId, tagIds: ['tag-1', 'tag-2']);
+      doc = await fakeFirestore.collection('tasks').doc(task.taskId).get();
+      expect(doc.data()!['tagIds'], equals(['tag-1', 'tag-2']));
+
+      // 3. Due Date
+      final targetDate = DateTime(2026, 12, 25);
+      await repository.updateTask(task.taskId, dueDate: targetDate);
+      doc = await fakeFirestore.collection('tasks').doc(task.taskId).get();
+      expect(
+        (doc.data()!['dueDate'] as Timestamp).toDate(),
+        equals(targetDate),
+      );
+
+      // 4. Due Time
+      await repository.updateTask(task.taskId, dueTime: '15:45');
+      doc = await fakeFirestore.collection('tasks').doc(task.taskId).get();
+      expect(doc.data()!['dueTime'], equals('15:45'));
+
+      // 5. Early Reminder Minutes
+      await repository.updateTask(task.taskId, earlyReminderMinutes: 30);
+      doc = await fakeFirestore.collection('tasks').doc(task.taskId).get();
+      expect(doc.data()!['earlyReminderMinutes'], equals(30));
+
+      // 6. Repeat Rule
+      await repository.updateTask(task.taskId, repeatRule: 'monthly');
+      doc = await fakeFirestore.collection('tasks').doc(task.taskId).get();
+      expect(doc.data()!['repeatRule'], equals('monthly'));
+    });
+
+    test('updateTask persists all new fields together', () async {
+      final task = await repository.createTask(
+        uid: 'user-abc',
+        listId: 'list-xyz',
+        title: 'Combined Task',
+      );
+
+      final dueDate = DateTime(2026, 11, 20);
+
+      await repository.updateTask(
+        task.taskId,
+        priority: 'medium',
+        tagIds: ['tag-work', 'tag-urgent'],
+        dueDate: dueDate,
+        dueTime: '09:30',
+        earlyReminderMinutes: 15,
+        repeatRule: 'weekly',
+      );
+
+      final doc = await fakeFirestore
+          .collection('tasks')
+          .doc(task.taskId)
+          .get();
+      final data = doc.data()!;
+
+      expect(data['priority'], equals('medium'));
+      expect(data['tagIds'], equals(['tag-work', 'tag-urgent']));
+      expect((data['dueDate'] as Timestamp).toDate(), equals(dueDate));
+      expect(data['dueTime'], equals('09:30'));
+      expect(data['earlyReminderMinutes'], equals(15));
+      expect(data['repeatRule'], equals('weekly'));
+    });
+
+    test('updateTask clears dueDate and dueTime', () async {
+      final task = await repository.createTask(
+        uid: 'user-abc',
+        listId: 'list-xyz',
+        title: 'Timed Task',
+      );
+
+      // Set initial date & time
+      await repository.updateTask(
+        task.taskId,
+        dueDate: DateTime(2026, 10, 10),
+        dueTime: '11:00',
+      );
+      var doc = await fakeFirestore.collection('tasks').doc(task.taskId).get();
+      expect(doc.data()!['dueDate'], isNotNull);
+      expect(doc.data()!['dueTime'], equals('11:00'));
+
+      // Clear only dueTime
+      await repository.updateTask(task.taskId, clearDueTime: true);
+      doc = await fakeFirestore.collection('tasks').doc(task.taskId).get();
+      expect(doc.data()!['dueDate'], isNotNull);
+      expect(doc.data()!['dueTime'], isNull);
+
+      // Restore dueTime
+      await repository.updateTask(task.taskId, dueTime: '12:00');
+      doc = await fakeFirestore.collection('tasks').doc(task.taskId).get();
+      expect(doc.data()!['dueTime'], equals('12:00'));
+
+      // Clearing dueDate automatically clears dueTime if dueTime is not explicitly passed
+      await repository.updateTask(task.taskId, clearDueDate: true);
+      doc = await fakeFirestore.collection('tasks').doc(task.taskId).get();
+      expect(doc.data()!['dueDate'], isNull);
+      expect(doc.data()!['dueTime'], isNull);
     });
 
     test('toggleTaskCompleted sets and clears completedAt', () async {
@@ -244,8 +511,7 @@ void main() {
 
       // Mark completed
       await repository.toggleTaskCompleted(task.taskId, isCompleted: true);
-      var doc =
-          await fakeFirestore.collection('tasks').doc(task.taskId).get();
+      var doc = await fakeFirestore.collection('tasks').doc(task.taskId).get();
       expect(doc.data()!['completedAt'], isNotNull);
 
       // Unmark completed
@@ -254,21 +520,25 @@ void main() {
       expect(doc.data()!['completedAt'], isNull);
     });
 
-    test('softDeleteTask sets deletedAt without removing the document',
-        () async {
-      final task = await repository.createTask(
-        uid: 'user-abc',
-        listId: 'list-xyz',
-        title: 'Task to Delete',
-      );
+    test(
+      'softDeleteTask sets deletedAt without removing the document',
+      () async {
+        final task = await repository.createTask(
+          uid: 'user-abc',
+          listId: 'list-xyz',
+          title: 'Task to Delete',
+        );
 
-      await repository.softDeleteTask(task.taskId);
+        await repository.softDeleteTask(task.taskId);
 
-      final doc =
-          await fakeFirestore.collection('tasks').doc(task.taskId).get();
-      expect(doc.exists, isTrue);
-      expect(doc.data()!['deletedAt'], isNotNull);
-    });
+        final doc = await fakeFirestore
+            .collection('tasks')
+            .doc(task.taskId)
+            .get();
+        expect(doc.exists, isTrue);
+        expect(doc.data()!['deletedAt'], isNotNull);
+      },
+    );
 
     test('createTask throws ArgumentError when target list does not exist and does not write task doc', () async {
       const nonExistentListId = 'ghost-list';
@@ -299,6 +569,2478 @@ void main() {
 
       final tasksSnapshot = await fakeFirestore.collection('tasks').get();
       expect(tasksSnapshot.docs.isEmpty, isTrue);
+    });
+
+    test(
+      'moveTaskToList updates listId correctly and preserves other fields',
+      () async {
+        await fakeFirestore.collection('lists').doc('work-123').set({
+          'listId': 'work-123',
+          'uid': 'user-123',
+          'name': 'Work',
+          'isDefault': false,
+        });
+
+        final task = await repository.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Task to move',
+          notes: 'Some notes',
+        );
+
+        await repository.moveTaskToList(task.taskId, 'work-123');
+
+        final updatedDoc = await fakeFirestore
+            .collection('tasks')
+            .doc(task.taskId)
+            .get();
+        expect(updatedDoc.data()!['listId'], equals('work-123'));
+        expect(updatedDoc.data()!['title'], equals('Task to move'));
+        expect(updatedDoc.data()!['notes'], equals('Some notes'));
+        expect(updatedDoc.data()!['uid'], equals('user-123'));
+      },
+    );
+
+    test('moveTaskToList throws ArgumentError when target list does not exist and does not update listId', () async {
+      final task = await repository.createTask(
+        uid: 'user-123',
+        listId: 'inbox-456',
+        title: 'Task to move',
+      );
+
+      await expectLater(
+        repository.moveTaskToList(task.taskId, 'nonexistent-list'),
+        throwsA(isA<ArgumentError>()),
+      );
+
+      final doc = await fakeFirestore
+          .collection('tasks')
+          .doc(task.taskId)
+          .get();
+      expect(doc.data()!['listId'], equals('inbox-456'));
+    });
+
+    test('moveTaskToList throws ArgumentError when target list belongs to a different uid and does not update listId', () async {
+      // list-xyz belongs to user-abc, but task belongs to user-123
+      final task = await repository.createTask(
+        uid: 'user-123',
+        listId: 'inbox-456',
+        title: 'Task to move',
+      );
+
+      await expectLater(
+        repository.moveTaskToList(task.taskId, 'list-xyz'),
+        throwsA(isA<ArgumentError>()),
+      );
+
+      final doc = await fakeFirestore
+          .collection('tasks')
+          .doc(task.taskId)
+          .get();
+      expect(doc.data()!['listId'], equals('inbox-456'));
+    });
+
+    group('softDeleteTasks', () {
+      test(
+        'sets deletedAt on all given tasks and leaves other tasks untouched',
+        () async {
+          final t1 = await repository.createTask(
+            uid: 'user-123',
+            listId: 'inbox-456',
+            title: 'Task 1',
+            notes: 'Notes 1',
+          );
+          final t2 = await repository.createTask(
+            uid: 'user-123',
+            listId: 'inbox-456',
+            title: 'Task 2',
+            notes: 'Notes 2',
+          );
+          final t3 = await repository.createTask(
+            uid: 'user-123',
+            listId: 'inbox-456',
+            title: 'Untouched Task',
+          );
+
+          await repository.softDeleteTasks([t1.taskId, t2.taskId]);
+
+          final doc1 = await fakeFirestore
+              .collection('tasks')
+              .doc(t1.taskId)
+              .get();
+          final doc2 = await fakeFirestore
+              .collection('tasks')
+              .doc(t2.taskId)
+              .get();
+          final doc3 = await fakeFirestore
+              .collection('tasks')
+              .doc(t3.taskId)
+              .get();
+
+          expect(doc1.data()!['deletedAt'], isNotNull);
+          expect(doc1.data()!['title'], equals('Task 1'));
+          expect(doc1.data()!['notes'], equals('Notes 1'));
+
+          expect(doc2.data()!['deletedAt'], isNotNull);
+          expect(doc2.data()!['title'], equals('Task 2'));
+          expect(doc2.data()!['notes'], equals('Notes 2'));
+
+          expect(doc3.data()!['deletedAt'], isNull);
+        },
+      );
+
+      test('empty list is a no-op', () async {
+        final t = await repository.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Active Task',
+        );
+
+        await repository.softDeleteTasks([]);
+
+        final doc = await fakeFirestore.collection('tasks').doc(t.taskId).get();
+        expect(doc.data()!['deletedAt'], isNull);
+      });
+
+      test('handles >500 tasks in chunks', () async {
+        final taskIds = <String>[];
+        for (var chunkStart = 0; chunkStart < 505; chunkStart += 500) {
+          final batch = fakeFirestore.batch();
+          final chunkEnd = (chunkStart + 500 < 505) ? chunkStart + 500 : 505;
+          for (var i = chunkStart; i < chunkEnd; i++) {
+            final id = 'task-bulk-$i';
+            taskIds.add(id);
+            batch.set(fakeFirestore.collection('tasks').doc(id), {
+              'taskId': id,
+              'uid': 'user-123',
+              'listId': 'inbox-456',
+              'title': 'Task $i',
+              'deletedAt': null,
+            });
+          }
+          await batch.commit();
+        }
+
+        await repository.softDeleteTasks(taskIds);
+
+        final snapshot = await fakeFirestore.collection('tasks').get();
+        expect(snapshot.docs.length, equals(505));
+        for (final doc in snapshot.docs) {
+          expect(doc.data()['deletedAt'], isNotNull);
+        }
+      });
+    });
+
+    group('moveTasksToList', () {
+      test('updates only listId and preserves other fields', () async {
+        await fakeFirestore.collection('lists').doc('work-123').set({
+          'listId': 'work-123',
+          'uid': 'user-123',
+          'name': 'Work',
+          'isDefault': false,
+        });
+
+        final t1 = await repository.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Task 1',
+          notes: 'Notes 1',
+        );
+        final t2 = await repository.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Task 2',
+          notes: 'Notes 2',
+        );
+
+        await repository.moveTasksToList([t1.taskId, t2.taskId], 'work-123');
+
+        final doc1 = await fakeFirestore
+            .collection('tasks')
+            .doc(t1.taskId)
+            .get();
+        final doc2 = await fakeFirestore
+            .collection('tasks')
+            .doc(t2.taskId)
+            .get();
+
+        expect(doc1.data()!['listId'], equals('work-123'));
+        expect(doc1.data()!['title'], equals('Task 1'));
+        expect(doc1.data()!['notes'], equals('Notes 1'));
+
+        expect(doc2.data()!['listId'], equals('work-123'));
+        expect(doc2.data()!['title'], equals('Task 2'));
+        expect(doc2.data()!['notes'], equals('Notes 2'));
+      });
+
+      test('empty list is a no-op', () async {
+        await fakeFirestore.collection('lists').doc('work-123').set({
+          'listId': 'work-123',
+          'uid': 'user-123',
+          'name': 'Work',
+          'isDefault': false,
+        });
+
+        await repository.moveTasksToList([], 'work-123');
+      });
+
+      test('handles >500 tasks in chunks', () async {
+        await fakeFirestore.collection('lists').doc('dest-list').set({
+          'listId': 'dest-list',
+          'uid': 'user-123',
+          'name': 'Destination',
+          'isDefault': false,
+        });
+        final taskIds = <String>[];
+        for (var chunkStart = 0; chunkStart < 505; chunkStart += 500) {
+          final batch = fakeFirestore.batch();
+          final chunkEnd = (chunkStart + 500 < 505) ? chunkStart + 500 : 505;
+          for (var i = chunkStart; i < chunkEnd; i++) {
+            final id = 'task-move-$i';
+            taskIds.add(id);
+            batch.set(fakeFirestore.collection('tasks').doc(id), {
+              'taskId': id,
+              'uid': 'user-123',
+              'listId': 'inbox-456',
+              'title': 'Task $i',
+              'order': (i + 1) * 10.0,
+              'deletedAt': null,
+            });
+          }
+          await batch.commit();
+        }
+
+        await repository.moveTasksToList(taskIds, 'dest-list');
+
+        final snapshot = await fakeFirestore.collection('tasks').get();
+        expect(snapshot.docs.length, equals(505));
+        for (final doc in snapshot.docs) {
+          expect(doc.data()['listId'], equals('dest-list'));
+          expect(doc.data()['order'], isNotNull);
+        }
+      });
+
+      test(
+        'throws ArgumentError and writes nothing when a task is missing',
+        () async {
+          final task = await repository.createTask(
+            uid: 'user-123',
+            listId: 'inbox-456',
+            title: 'Task 1',
+          );
+          await fakeFirestore.collection('lists').doc('dest-list').set({
+            'listId': 'dest-list',
+            'uid': 'user-123',
+            'name': 'Destination',
+            'isDefault': false,
+          });
+
+          await expectLater(
+            repository.moveTasksToList([
+              task.taskId,
+              'missing-task',
+            ], 'dest-list'),
+            throwsA(
+              isA<ArgumentError>().having(
+                (e) => e.message,
+                'message',
+                contains('Task not found: missing-task'),
+              ),
+            ),
+          );
+
+          final doc = await fakeFirestore
+              .collection('tasks')
+              .doc(task.taskId)
+              .get();
+          expect(doc.data()!['listId'], equals('inbox-456'));
+        },
+      );
+
+      test(
+        'throws ArgumentError and writes nothing when list is missing',
+        () async {
+          final task = await repository.createTask(
+            uid: 'user-123',
+            listId: 'inbox-456',
+            title: 'Task 1',
+          );
+
+          await expectLater(
+            repository.moveTasksToList([task.taskId], 'missing-list'),
+            throwsA(
+              isA<ArgumentError>().having(
+                (e) => e.message,
+                'message',
+                contains('List not found: missing-list'),
+              ),
+            ),
+          );
+
+          final doc = await fakeFirestore
+              .collection('tasks')
+              .doc(task.taskId)
+              .get();
+          expect(doc.data()!['listId'], equals('inbox-456'));
+        },
+      );
+
+      test('throws ArgumentError and writes nothing when list belongs to another user', () async {
+        // list-xyz belongs to user-abc
+        final task = await repository.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Task 1',
+        );
+
+        await expectLater(
+          repository.moveTasksToList([task.taskId], 'list-xyz'),
+          throwsA(
+            isA<ArgumentError>().having(
+              (e) => e.message,
+              'message',
+              contains('List does not belong to user: list-xyz'),
+            ),
+          ),
+        );
+
+        final doc = await fakeFirestore
+            .collection('tasks')
+            .doc(task.taskId)
+            .get();
+        expect(doc.data()!['listId'], equals('inbox-456'));
+      });
+    });
+
+    group('restoreTasks', () {
+      test(
+        'clears deletedAt on all given tasks and leaves others untouched',
+        () async {
+          final t1 = await repository.createTask(
+            uid: 'user-123',
+            listId: 'inbox-456',
+            title: 'Task 1',
+          );
+          final t2 = await repository.createTask(
+            uid: 'user-123',
+            listId: 'inbox-456',
+            title: 'Task 2',
+          );
+          final t3 = await repository.createTask(
+            uid: 'user-123',
+            listId: 'inbox-456',
+            title: 'Task 3',
+          );
+
+          await repository.softDeleteTasks([t1.taskId, t2.taskId, t3.taskId]);
+
+          await repository.restoreTasks(
+            uid: 'user-123',
+            taskIds: [t1.taskId, t2.taskId],
+          );
+
+          final doc1 = await fakeFirestore
+              .collection('tasks')
+              .doc(t1.taskId)
+              .get();
+          final doc2 = await fakeFirestore
+              .collection('tasks')
+              .doc(t2.taskId)
+              .get();
+          final doc3 = await fakeFirestore
+              .collection('tasks')
+              .doc(t3.taskId)
+              .get();
+
+          expect(doc1.data()!['deletedAt'], isNull);
+          expect(doc2.data()!['deletedAt'], isNull);
+          expect(doc3.data()!['deletedAt'], isNotNull);
+        },
+      );
+
+      test('empty list is a no-op', () async {
+        final t = await repository.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Deleted Task',
+        );
+        await repository.softDeleteTask(t.taskId);
+
+        await repository.restoreTasks(uid: 'user-123', taskIds: []);
+
+        final doc = await fakeFirestore.collection('tasks').doc(t.taskId).get();
+        expect(doc.data()!['deletedAt'], isNotNull);
+      });
+
+      test('already-active tasks are skipped', () async {
+        final t1 = await repository.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Active Task',
+        );
+        final t2 = await repository.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Deleted Task',
+        );
+        await repository.softDeleteTask(t2.taskId);
+
+        await repository.restoreTasks(
+          uid: 'user-123',
+          taskIds: [t1.taskId, t2.taskId],
+        );
+
+        final doc1 = await fakeFirestore
+            .collection('tasks')
+            .doc(t1.taskId)
+            .get();
+        final doc2 = await fakeFirestore
+            .collection('tasks')
+            .doc(t2.taskId)
+            .get();
+
+        expect(doc1.data()!['deletedAt'], isNull);
+        expect(doc2.data()!['deletedAt'], isNull);
+      });
+
+      test(
+        'reassigns to the fallback list when the original list is gone',
+        () async {
+          await fakeFirestore.collection('lists').doc('temp-list').set({
+            'listId': 'temp-list',
+            'uid': 'user-123',
+            'name': 'Temp',
+            'isDefault': false,
+          });
+
+          final task = await repository.createTask(
+            uid: 'user-123',
+            listId: 'temp-list',
+            title: 'Orphan Task',
+          );
+          await repository.softDeleteTask(task.taskId);
+
+          // Delete the temporary list
+          await fakeFirestore.collection('lists').doc('temp-list').delete();
+
+          await repository.restoreTasks(
+            uid: 'user-123',
+            taskIds: [task.taskId],
+            defaultListId: 'inbox-456',
+          );
+
+          final doc = await fakeFirestore
+              .collection('tasks')
+              .doc(task.taskId)
+              .get();
+          expect(doc.data()!['deletedAt'], isNull);
+          expect(doc.data()!['listId'], equals('inbox-456'));
+        },
+      );
+
+      test(
+        'reassigns to users/{uid}.defaultListId when defaultListId is null',
+        () async {
+          await fakeFirestore.collection('lists').doc('temp-list-2').set({
+            'listId': 'temp-list-2',
+            'uid': 'user-123',
+            'name': 'Temp 2',
+            'isDefault': false,
+          });
+          await fakeFirestore.collection('users').doc('user-123').set({
+            'uid': 'user-123',
+            'defaultListId': 'inbox-456',
+          });
+
+          final task = await repository.createTask(
+            uid: 'user-123',
+            listId: 'temp-list-2',
+            title: 'User Default Task',
+          );
+          await repository.softDeleteTask(task.taskId);
+
+          await fakeFirestore.collection('lists').doc('temp-list-2').delete();
+
+          await repository.restoreTasks(
+            uid: 'user-123',
+            taskIds: [task.taskId],
+          );
+
+          final doc = await fakeFirestore
+              .collection('tasks')
+              .doc(task.taskId)
+              .get();
+          expect(doc.data()!['deletedAt'], isNull);
+          expect(doc.data()!['listId'], equals('inbox-456'));
+        },
+      );
+
+      test(
+        'throws ArgumentError and writes nothing when a task is missing',
+        () async {
+          final task = await repository.createTask(
+            uid: 'user-123',
+            listId: 'inbox-456',
+            title: 'Task 1',
+          );
+          await repository.softDeleteTask(task.taskId);
+
+          await expectLater(
+            repository.restoreTasks(
+              uid: 'user-123',
+              taskIds: [task.taskId, 'missing-task-id'],
+            ),
+            throwsA(
+              isA<ArgumentError>().having(
+                (e) => e.message,
+                'message',
+                contains('Task not found: missing-task-id'),
+              ),
+            ),
+          );
+
+          final doc = await fakeFirestore
+              .collection('tasks')
+              .doc(task.taskId)
+              .get();
+          expect(doc.data()!['deletedAt'], isNotNull);
+        },
+      );
+
+      test('throws ArgumentError and writes nothing when task belongs to another user', () async {
+        // Task belongs to user-abc
+        final task = await repository.createTask(
+          uid: 'user-abc',
+          listId: 'list-xyz',
+          title: 'Other User Task',
+        );
+        await repository.softDeleteTask(task.taskId);
+
+        await expectLater(
+          repository.restoreTasks(uid: 'user-123', taskIds: [task.taskId]),
+          throwsA(
+            isA<ArgumentError>().having(
+              (e) => e.message,
+              'message',
+              contains('Task does not belong to user: ${task.taskId}'),
+            ),
+          ),
+        );
+
+        final doc = await fakeFirestore
+            .collection('tasks')
+            .doc(task.taskId)
+            .get();
+        expect(doc.data()!['deletedAt'], isNotNull);
+      });
+
+      test('handles 505 tasks in chunks', () async {
+        final taskIds = <String>[];
+        for (var chunkStart = 0; chunkStart < 505; chunkStart += 500) {
+          final batch = fakeFirestore.batch();
+          final chunkEnd = (chunkStart + 500 < 505) ? chunkStart + 500 : 505;
+          for (var i = chunkStart; i < chunkEnd; i++) {
+            final id = 'task-restore-bulk-$i';
+            taskIds.add(id);
+            batch.set(fakeFirestore.collection('tasks').doc(id), {
+              'taskId': id,
+              'uid': 'user-123',
+              'listId': 'inbox-456',
+              'title': 'Task $i',
+              'deletedAt': Timestamp.now(),
+            });
+          }
+          await batch.commit();
+        }
+
+        await repository.restoreTasks(uid: 'user-123', taskIds: taskIds);
+
+        final snapshot = await fakeFirestore.collection('tasks').get();
+        expect(snapshot.docs.length, equals(505));
+        for (final doc in snapshot.docs) {
+          expect(doc.data()['deletedAt'], isNull);
+        }
+      });
+    });
+
+    group('Subtasks', () {
+      test('addSubtask appends new subtask with uuid, trimmed title, and false completed', () async {
+        final task = await repository.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Parent Task',
+        );
+
+        await repository.addSubtask(task.taskId, '  First subtask  ');
+
+        final doc = await fakeFirestore
+            .collection('tasks')
+            .doc(task.taskId)
+            .get();
+        final subtasks = (doc.data()!['subtasks'] as List<dynamic>)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+
+        expect(subtasks.length, equals(1));
+        expect(subtasks[0]['id'], isNotEmpty);
+        expect(subtasks[0]['title'], equals('First subtask'));
+        expect(subtasks[0]['completed'], isFalse);
+
+        // Add second subtask
+        await repository.addSubtask(task.taskId, 'Second subtask');
+        final doc2 = await fakeFirestore
+            .collection('tasks')
+            .doc(task.taskId)
+            .get();
+        final subtasks2 = (doc2.data()!['subtasks'] as List<dynamic>)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+
+        expect(subtasks2.length, equals(2));
+        expect(subtasks2[0]['title'], equals('First subtask'));
+        expect(subtasks2[1]['title'], equals('Second subtask'));
+        expect(subtasks2[1]['id'], isNot(equals(subtasks2[0]['id'])));
+      });
+
+      test(
+        'addSubtask throws ArgumentError on empty title or non-existent task',
+        () async {
+          final task = await repository.createTask(
+            uid: 'user-123',
+            listId: 'inbox-456',
+            title: 'Parent Task',
+          );
+
+          await expectLater(
+            repository.addSubtask(task.taskId, '   '),
+            throwsA(isA<ArgumentError>()),
+          );
+
+          await expectLater(
+            repository.addSubtask('non-existent-task', 'Subtask'),
+            throwsA(isA<ArgumentError>()),
+          );
+        },
+      );
+
+      test('toggleSubtask updates target subtask completed flag, leaves others intact', () async {
+        final task = await repository.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Parent Task',
+        );
+
+        await repository.addSubtask(task.taskId, 'Subtask 1');
+        await repository.addSubtask(task.taskId, 'Subtask 2');
+
+        final initialDoc = await fakeFirestore
+            .collection('tasks')
+            .doc(task.taskId)
+            .get();
+        final subtasks = (initialDoc.data()!['subtasks'] as List<dynamic>)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+        final sub1Id = subtasks[0]['id'] as String;
+
+        // Toggle subtask 1 to completed
+        await repository.toggleSubtask(task.taskId, sub1Id, completed: true);
+
+        var doc = await fakeFirestore
+            .collection('tasks')
+            .doc(task.taskId)
+            .get();
+        var currentSubtasks = (doc.data()!['subtasks'] as List<dynamic>)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+
+        expect(currentSubtasks[0]['completed'], isTrue);
+        expect(currentSubtasks[1]['completed'], isFalse);
+
+        // Toggle subtask 1 back to incomplete
+        await repository.toggleSubtask(task.taskId, sub1Id, completed: false);
+        doc = await fakeFirestore.collection('tasks').doc(task.taskId).get();
+        currentSubtasks = (doc.data()!['subtasks'] as List<dynamic>)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+
+        expect(currentSubtasks[0]['completed'], isFalse);
+
+        // Throws if subtaskId not found
+        await expectLater(
+          repository.toggleSubtask(
+            task.taskId,
+            'unknown-subtask-id',
+            completed: true,
+          ),
+          throwsA(isA<ArgumentError>()),
+        );
+      });
+
+      test(
+        'removeSubtask deletes target subtask and preserves order of remaining',
+        () async {
+          final task = await repository.createTask(
+            uid: 'user-123',
+            listId: 'inbox-456',
+            title: 'Parent Task',
+          );
+
+          await repository.addSubtask(task.taskId, 'Subtask 1');
+          await repository.addSubtask(task.taskId, 'Subtask 2');
+          await repository.addSubtask(task.taskId, 'Subtask 3');
+
+          final initialDoc = await fakeFirestore
+              .collection('tasks')
+              .doc(task.taskId)
+              .get();
+          final subtasks = (initialDoc.data()!['subtasks'] as List<dynamic>)
+              .map((e) => Map<String, dynamic>.from(e as Map))
+              .toList();
+          final sub2Id = subtasks[1]['id'] as String;
+
+          await repository.removeSubtask(task.taskId, sub2Id);
+
+          final doc = await fakeFirestore
+              .collection('tasks')
+              .doc(task.taskId)
+              .get();
+          final remaining = (doc.data()!['subtasks'] as List<dynamic>)
+              .map((e) => Map<String, dynamic>.from(e as Map))
+              .toList();
+
+          expect(remaining.length, equals(2));
+          expect(remaining[0]['title'], equals('Subtask 1'));
+          expect(remaining[1]['title'], equals('Subtask 3'));
+        },
+      );
+
+      test('reorderSubtasks reorders correctly and throws ArgumentError on mismatched IDs', () async {
+        final task = await repository.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Parent Task',
+        );
+
+        await repository.addSubtask(task.taskId, 'A');
+        await repository.addSubtask(task.taskId, 'B');
+        await repository.addSubtask(task.taskId, 'C');
+
+        final initialDoc = await fakeFirestore
+            .collection('tasks')
+            .doc(task.taskId)
+            .get();
+        final subtasks = (initialDoc.data()!['subtasks'] as List<dynamic>)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+        final aId = subtasks[0]['id'] as String;
+        final bId = subtasks[1]['id'] as String;
+        final cId = subtasks[2]['id'] as String;
+
+        // Reorder: C, A, B
+        await repository.reorderSubtasks(task.taskId, [cId, aId, bId]);
+
+        var doc = await fakeFirestore
+            .collection('tasks')
+            .doc(task.taskId)
+            .get();
+        var reordered = (doc.data()!['subtasks'] as List<dynamic>)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+
+        expect(reordered[0]['title'], equals('C'));
+        expect(reordered[1]['title'], equals('A'));
+        expect(reordered[2]['title'], equals('B'));
+
+        // Throws on partial list (missing one)
+        await expectLater(
+          repository.reorderSubtasks(task.taskId, [cId, aId]),
+          throwsA(isA<ArgumentError>()),
+        );
+
+        // Throws on duplicates
+        await expectLater(
+          repository.reorderSubtasks(task.taskId, [cId, aId, aId]),
+          throwsA(isA<ArgumentError>()),
+        );
+
+        // Throws on unknown ID
+        await expectLater(
+          repository.reorderSubtasks(task.taskId, [cId, aId, 'ghost-id']),
+          throwsA(isA<ArgumentError>()),
+        );
+      });
+    });
+
+    group('Recently Deleted operations', () {
+      const uid = 'user-123';
+      const otherUid = 'user-other';
+      const listId = 'inbox-456';
+
+      test('streamRecentlyDeletedTasks returns soft-deleted tasks ordered descending by deletedAt', () async {
+        final time1 = DateTime(2026, 1, 1, 10, 0);
+        final time2 = DateTime(2026, 1, 1, 12, 0);
+
+        // Soft-deleted task 1
+        await fakeFirestore.collection('tasks').doc('task-del-1').set({
+          'taskId': 'task-del-1',
+          'uid': uid,
+          'listId': listId,
+          'title': 'Deleted 1',
+          'deletedAt': Timestamp.fromDate(time1),
+        });
+
+        // Soft-deleted task 2 (newer)
+        await fakeFirestore.collection('tasks').doc('task-del-2').set({
+          'taskId': 'task-del-2',
+          'uid': uid,
+          'listId': listId,
+          'title': 'Deleted 2',
+          'deletedAt': Timestamp.fromDate(time2),
+        });
+
+        // Active task (should be excluded)
+        await fakeFirestore.collection('tasks').doc('task-active').set({
+          'taskId': 'task-active',
+          'uid': uid,
+          'listId': listId,
+          'title': 'Active Task',
+          'deletedAt': null,
+        });
+
+        // Other user's deleted task (should be excluded)
+        await fakeFirestore.collection('tasks').doc('task-other-del').set({
+          'taskId': 'task-other-del',
+          'uid': otherUid,
+          'listId': listId,
+          'title': 'Other Deleted',
+          'deletedAt': Timestamp.fromDate(time2),
+        });
+
+        final deleted = await repository.streamRecentlyDeletedTasks(uid).first;
+
+        expect(deleted.length, equals(2));
+        expect(deleted[0].taskId, equals('task-del-2'));
+        expect(deleted[0].title, equals('Deleted 2'));
+        expect(deleted[1].taskId, equals('task-del-1'));
+        expect(deleted[1].title, equals('Deleted 1'));
+      });
+
+      test('streamRecentlyDeletedTasks recovers from malformed documents gracefully and sanitizes invalid fields', () async {
+        // Valid soft-deleted task
+        await fakeFirestore.collection('tasks').doc('valid-del').set({
+          'taskId': 'valid-del',
+          'uid': uid,
+          'listId': listId,
+          'title': 'Valid Deleted Task',
+          'deletedAt': Timestamp.now(),
+        });
+
+        // Non-deleted document (deletedAt is null, must be skipped)
+        await fakeFirestore.collection('tasks').doc('non-deleted-doc').set({
+          'taskId': 'non-deleted-doc',
+          'uid': uid,
+          'deletedAt': null,
+        });
+
+        // Document with abnormal fields (e.g. invalid subtasks type)
+        await fakeFirestore.collection('tasks').doc('malformed-subtasks').set({
+          'taskId': 'malformed-subtasks',
+          'uid': uid,
+          'deletedAt': Timestamp.now(),
+          'subtasks': 'not-a-list', // Invalid type, should be safely sanitized to empty list
+        });
+
+        final deleted = await repository.streamRecentlyDeletedTasks(uid).first;
+
+        // The non-deleted document is skipped, both soft-deleted tasks are returned with sanitized fields
+        expect(deleted.length, equals(2));
+        expect(deleted.any((t) => t.taskId == 'valid-del'), isTrue);
+        final sanitized = deleted.firstWhere(
+          (t) => t.taskId == 'malformed-subtasks',
+        );
+        expect(sanitized.subtasks, isEmpty);
+      });
+
+      test('softDeleteTask sets immediate Timestamp and task appears in streamRecentlyDeletedTasks', () async {
+        final task = await repository.createTask(
+          uid: uid,
+          listId: listId,
+          title: 'Immediate Soft Delete Task',
+        );
+
+        await repository.softDeleteTask(task.taskId);
+
+        final deleted = await repository.streamRecentlyDeletedTasks(uid).first;
+        expect(deleted.any((t) => t.taskId == task.taskId), isTrue);
+        final found = deleted.firstWhere((t) => t.taskId == task.taskId);
+        expect(found.deletedAt, isNotNull);
+      });
+
+      test(
+        'restoreTask clears deletedAt and keeps listId if list exists',
+        () async {
+          await fakeFirestore.collection('tasks').doc('task-res-1').set({
+            'taskId': 'task-res-1',
+            'uid': uid,
+            'listId': listId,
+            'title': 'To Restore',
+            'deletedAt': Timestamp.now(),
+          });
+
+          await repository.restoreTask(uid: uid, taskId: 'task-res-1');
+
+          final doc = await fakeFirestore
+              .collection('tasks')
+              .doc('task-res-1')
+              .get();
+          expect(doc.data()!['deletedAt'], isNull);
+          expect(doc.data()!['listId'], equals(listId));
+        },
+      );
+
+      test(
+        'restoreTask reassigns to defaultListId when original list was deleted',
+        () async {
+          // List 'deleted-list-id' does not exist in fakeFirestore
+          await fakeFirestore.collection('tasks').doc('task-orphan').set({
+            'taskId': 'task-orphan',
+            'uid': uid,
+            'listId': 'deleted-list-id',
+            'title': 'Orphan Task',
+            'deletedAt': Timestamp.now(),
+          });
+
+          await repository.restoreTask(
+            uid: uid,
+            taskId: 'task-orphan',
+            defaultListId: 'inbox-456',
+          );
+
+          final doc = await fakeFirestore
+              .collection('tasks')
+              .doc('task-orphan')
+              .get();
+          expect(doc.data()!['deletedAt'], isNull);
+          expect(doc.data()!['listId'], equals('inbox-456'));
+        },
+      );
+
+      test(
+        'restore never reads a deleted list directly, which rules can deny',
+        () async {
+          final guarded = FakeFirebaseFirestore(
+            securityRules: '''
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /tasks/{id} { allow read, write: if true; }
+    match /users/{id} { allow read, write: if true; }
+    match /lists/{id} { allow list: if true; }
+  }
+}
+''',
+          );
+          for (final id in ['task-a', 'task-b']) {
+            await guarded.collection('tasks').doc(id).set({
+              'taskId': id,
+              'uid': uid,
+              'listId': 'deleted-list-id',
+              'title': 'Orphan',
+              'deletedAt': Timestamp.now(),
+            });
+          }
+          final guardedRepository = TaskRepository(guarded);
+
+          await guardedRepository.restoreTask(
+            uid: uid,
+            taskId: 'task-a',
+            defaultListId: 'inbox-456',
+          );
+          await guardedRepository.restoreTasks(
+            uid: uid,
+            taskIds: ['task-b'],
+            defaultListId: 'inbox-456',
+          );
+
+          for (final id in ['task-a', 'task-b']) {
+            final doc = await guarded.collection('tasks').doc(id).get();
+            expect(doc.data()!['deletedAt'], isNull);
+            expect(doc.data()!['listId'], equals('inbox-456'));
+          }
+        },
+      );
+
+      test('restoreTask resolves defaultListId from users collection if parameter omitted', () async {
+        await fakeFirestore.collection('users').doc(uid).set({
+          'uid': uid,
+          'defaultListId': 'inbox-456',
+        });
+
+        await fakeFirestore.collection('tasks').doc('task-orphan-2').set({
+          'taskId': 'task-orphan-2',
+          'uid': uid,
+          'listId': 'missing-list-id',
+          'title': 'Orphan Task 2',
+          'deletedAt': Timestamp.now(),
+        });
+
+        await repository.restoreTask(uid: uid, taskId: 'task-orphan-2');
+
+        final doc = await fakeFirestore
+            .collection('tasks')
+            .doc('task-orphan-2')
+            .get();
+        expect(doc.data()!['deletedAt'], isNull);
+        expect(doc.data()!['listId'], equals('inbox-456'));
+      });
+
+      test('restoreTask throws ArgumentError if task does not exist or user mismatch', () async {
+        await fakeFirestore.collection('tasks').doc('task-other').set({
+          'taskId': 'task-other',
+          'uid': otherUid,
+          'listId': listId,
+          'title': 'Other Task',
+          'deletedAt': Timestamp.now(),
+        });
+
+        expect(
+          () => repository.restoreTask(uid: uid, taskId: 'non-existent'),
+          throwsA(isA<ArgumentError>()),
+        );
+
+        expect(
+          () => repository.restoreTask(uid: uid, taskId: 'task-other'),
+          throwsA(isA<ArgumentError>()),
+        );
+      });
+
+      test('permanentlyDeleteTask physically removes document and enforces ownership', () async {
+        await fakeFirestore.collection('tasks').doc('task-perm').set({
+          'taskId': 'task-perm',
+          'uid': uid,
+          'listId': listId,
+          'title': 'Permanent Task',
+          'deletedAt': Timestamp.now(),
+        });
+
+        // Non-owner cannot delete
+        expect(
+          () => repository.permanentlyDeleteTask(
+            uid: otherUid,
+            taskId: 'task-perm',
+          ),
+          throwsA(isA<ArgumentError>()),
+        );
+
+        // Owner permanently deletes
+        await repository.permanentlyDeleteTask(uid: uid, taskId: 'task-perm');
+
+        final doc = await fakeFirestore
+            .collection('tasks')
+            .doc('task-perm')
+            .get();
+        expect(doc.exists, isFalse);
+
+        // Deleting non-existent task throws
+        expect(
+          () => repository.permanentlyDeleteTask(uid: uid, taskId: 'task-perm'),
+          throwsA(isA<ArgumentError>()),
+        );
+      });
+
+      test('emptyRecentlyDeleted batch deletes all soft-deleted tasks for uid and preserves active and other user tasks', () async {
+        // 2 soft-deleted tasks for uid
+        await fakeFirestore.collection('tasks').doc('t-del-1').set({
+          'taskId': 't-del-1',
+          'uid': uid,
+          'deletedAt': Timestamp.now(),
+        });
+        await fakeFirestore.collection('tasks').doc('t-del-2').set({
+          'taskId': 't-del-2',
+          'uid': uid,
+          'deletedAt': Timestamp.now(),
+        });
+
+        // 1 active task for uid
+        await fakeFirestore.collection('tasks').doc('t-active').set({
+          'taskId': 't-active',
+          'uid': uid,
+          'deletedAt': null,
+        });
+
+        // 1 soft-deleted task for another user
+        await fakeFirestore.collection('tasks').doc('t-other-del').set({
+          'taskId': 't-other-del',
+          'uid': otherUid,
+          'deletedAt': Timestamp.now(),
+        });
+
+        await repository.emptyRecentlyDeleted(uid);
+
+        // Verify soft-deleted tasks for uid are gone
+        final doc1 = await fakeFirestore
+            .collection('tasks')
+            .doc('t-del-1')
+            .get();
+        final doc2 = await fakeFirestore
+            .collection('tasks')
+            .doc('t-del-2')
+            .get();
+        expect(doc1.exists, isFalse);
+        expect(doc2.exists, isFalse);
+
+        // Verify active task for uid is intact
+        final docActive = await fakeFirestore
+            .collection('tasks')
+            .doc('t-active')
+            .get();
+        expect(docActive.exists, isTrue);
+
+        // Verify other user's deleted task is intact
+        final docOther = await fakeFirestore
+            .collection('tasks')
+            .doc('t-other-del')
+            .get();
+        expect(docOther.exists, isTrue);
+      });
+
+      test('restoreTask no-ops gracefully when task is already active (deletedAt is null)', () async {
+        await fakeFirestore.collection('tasks').doc('t-active-restore').set({
+          'taskId': 't-active-restore',
+          'uid': uid,
+          'listId': listId,
+          'title': 'Active Task',
+          'deletedAt': null,
+        });
+
+        await repository.restoreTask(uid: uid, taskId: 't-active-restore');
+
+        final doc = await fakeFirestore
+            .collection('tasks')
+            .doc('t-active-restore')
+            .get();
+        expect(doc.data()!['deletedAt'], isNull);
+        expect(doc.data()!['title'], equals('Active Task'));
+      });
+
+      test('purgeExpiredDeletedTasks permanently deletes tasks older than retention threshold and preserves others', () async {
+        final now = DateTime.now();
+
+        // 1. Expired task (deleted 35 days ago) for uid -> should be purged
+        await fakeFirestore.collection('tasks').doc('t-expired-1').set({
+          'taskId': 't-expired-1',
+          'uid': uid,
+          'title': 'Expired Task 1',
+          'deletedAt': Timestamp.fromDate(
+            now.subtract(const Duration(days: 35)),
+          ),
+        });
+
+        // 2. Expired task (deleted 40 days ago) for uid with DateTime format -> should be purged
+        await fakeFirestore.collection('tasks').doc('t-expired-2').set({
+          'taskId': 't-expired-2',
+          'uid': uid,
+          'title': 'Expired Task 2',
+          'deletedAt': now.subtract(const Duration(days: 40)),
+        });
+
+        // 3. Recently deleted task (deleted 5 days ago) for uid -> should be retained
+        await fakeFirestore.collection('tasks').doc('t-recent').set({
+          'taskId': 't-recent',
+          'uid': uid,
+          'title': 'Recent Deleted Task',
+          'deletedAt': Timestamp.fromDate(
+            now.subtract(const Duration(days: 5)),
+          ),
+        });
+
+        // 4. Active task (deletedAt: null) for uid -> should be retained
+        await fakeFirestore.collection('tasks').doc('t-active-purge').set({
+          'taskId': 't-active-purge',
+          'uid': uid,
+          'title': 'Active Task',
+          'deletedAt': null,
+        });
+
+        // 5. Expired task for another user -> should be retained
+        await fakeFirestore.collection('tasks').doc('t-other-expired').set({
+          'taskId': 't-other-expired',
+          'uid': otherUid,
+          'title': 'Other Expired Task',
+          'deletedAt': Timestamp.fromDate(
+            now.subtract(const Duration(days: 60)),
+          ),
+        });
+
+        // Run purge
+        final purgedCount = await repository.purgeExpiredDeletedTasks(
+          uid,
+          retention: const Duration(days: 30),
+        );
+
+        expect(purgedCount, equals(2));
+
+        // Verify expired tasks for uid are gone
+        final docExpired1 = await fakeFirestore
+            .collection('tasks')
+            .doc('t-expired-1')
+            .get();
+        final docExpired2 = await fakeFirestore
+            .collection('tasks')
+            .doc('t-expired-2')
+            .get();
+        expect(docExpired1.exists, isFalse);
+        expect(docExpired2.exists, isFalse);
+
+        // Verify recent deleted task is still intact
+        final docRecent = await fakeFirestore
+            .collection('tasks')
+            .doc('t-recent')
+            .get();
+        expect(docRecent.exists, isTrue);
+
+        // Verify active task is still intact
+        final docActive = await fakeFirestore
+            .collection('tasks')
+            .doc('t-active-purge')
+            .get();
+        expect(docActive.exists, isTrue);
+
+        // Verify other user's expired task is still intact
+        final docOtherExpired = await fakeFirestore
+            .collection('tasks')
+            .doc('t-other-expired')
+            .get();
+        expect(docOtherExpired.exists, isTrue);
+
+        // Second run should return 0 since no expired tasks remain
+        final secondPurge = await repository.purgeExpiredDeletedTasks(uid);
+        expect(secondPurge, equals(0));
+      });
+
+      group('streamTasksWithDueDate', () {
+        test('streams tasks with dueDate sorted chronologically and tie-broken by dueTime', () async {
+          // Task A: Oct 15 at 14:00
+          await fakeFirestore.collection('tasks').doc('t-a').set({
+            'taskId': 't-a',
+            'uid': uid,
+            'listId': listId,
+            'title': 'Task A',
+            'dueDate': Timestamp.fromDate(DateTime(2026, 10, 15)),
+            'dueTime': '14:00',
+            'order': 0,
+            'deletedAt': null,
+          });
+
+          // Task B: Oct 15 at 09:00
+          await fakeFirestore.collection('tasks').doc('t-b').set({
+            'taskId': 't-b',
+            'uid': uid,
+            'listId': listId,
+            'title': 'Task B',
+            'dueDate': Timestamp.fromDate(DateTime(2026, 10, 15)),
+            'dueTime': '09:00',
+            'order': 0,
+            'deletedAt': null,
+          });
+
+          // Task C: Oct 15 untimed
+          await fakeFirestore.collection('tasks').doc('t-c').set({
+            'taskId': 't-c',
+            'uid': uid,
+            'listId': listId,
+            'title': 'Task C',
+            'dueDate': Timestamp.fromDate(DateTime(2026, 10, 15)),
+            'dueTime': null,
+            'order': 0,
+            'deletedAt': null,
+          });
+
+          // Task D: Oct 10 earlier date
+          await fakeFirestore.collection('tasks').doc('t-d').set({
+            'taskId': 't-d',
+            'uid': uid,
+            'listId': listId,
+            'title': 'Task D',
+            'dueDate': Timestamp.fromDate(DateTime(2026, 10, 10)),
+            'dueTime': '11:00',
+            'order': 0,
+            'deletedAt': null,
+          });
+
+          // Task E: Oct 20 later date
+          await fakeFirestore.collection('tasks').doc('t-e').set({
+            'taskId': 't-e',
+            'uid': uid,
+            'listId': listId,
+            'title': 'Task E',
+            'dueDate': Timestamp.fromDate(DateTime(2026, 10, 20)),
+            'dueTime': '08:00',
+            'order': 0,
+            'deletedAt': null,
+          });
+
+          // Task F: No due date (excluded)
+          await fakeFirestore.collection('tasks').doc('t-f').set({
+            'taskId': 't-f',
+            'uid': uid,
+            'listId': listId,
+            'title': 'Task F',
+            'dueDate': null,
+            'deletedAt': null,
+          });
+
+          // Task G: Soft-deleted (excluded)
+          await fakeFirestore.collection('tasks').doc('t-g').set({
+            'taskId': 't-g',
+            'uid': uid,
+            'listId': listId,
+            'title': 'Task G',
+            'dueDate': Timestamp.fromDate(DateTime(2026, 10, 15)),
+            'deletedAt': Timestamp.now(),
+          });
+
+          // Task H: Other user (excluded)
+          await fakeFirestore.collection('tasks').doc('t-h').set({
+            'taskId': 't-h',
+            'uid': otherUid,
+            'listId': listId,
+            'title': 'Task H',
+            'dueDate': Timestamp.fromDate(DateTime(2026, 10, 15)),
+            'deletedAt': null,
+          });
+
+          final result = await repository
+              .streamTasksWithDueDate(uid: uid)
+              .first;
+
+          expect(result.length, equals(5));
+          expect(result.map((t) => t.taskId).toList(), [
+            't-d', // Oct 10
+            't-b', // Oct 15 09:00
+            't-a', // Oct 15 14:00
+            't-c', // Oct 15 untimed
+            't-e', // Oct 20
+          ]);
+        });
+
+        test('streamTasksWithDueDate applies startDueDate and endDueDate range query', () async {
+          await fakeFirestore.collection('tasks').doc('t-in-range').set({
+            'taskId': 't-in-range',
+            'uid': uid,
+            'listId': listId,
+            'title': 'In Range',
+            'dueDate': Timestamp.fromDate(DateTime(2026, 10, 15, 12, 0)),
+            'deletedAt': null,
+          });
+
+          await fakeFirestore.collection('tasks').doc('t-out-range').set({
+            'taskId': 't-out-range',
+            'uid': uid,
+            'listId': listId,
+            'title': 'Out of Range',
+            'dueDate': Timestamp.fromDate(DateTime(2026, 10, 18)),
+            'deletedAt': null,
+          });
+
+          final rangeResult = await repository
+              .streamTasksWithDueDate(
+                uid: uid,
+                startDueDate: DateTime(2026, 10, 15, 0, 0),
+                endDueDate: DateTime(2026, 10, 15, 23, 59, 59),
+              )
+              .first;
+
+          expect(rangeResult.length, equals(1));
+          expect(rangeResult.first.taskId, equals('t-in-range'));
+        });
+
+        test('streamTasksWithDueDate filters completedAt when onlyIncomplete is true', () async {
+          await fakeFirestore.collection('tasks').doc('t-incomplete').set({
+            'taskId': 't-incomplete',
+            'uid': uid,
+            'listId': listId,
+            'title': 'Incomplete Task',
+            'dueDate': Timestamp.fromDate(DateTime(2026, 10, 15)),
+            'completedAt': null,
+            'deletedAt': null,
+          });
+
+          await fakeFirestore.collection('tasks').doc('t-completed').set({
+            'taskId': 't-completed',
+            'uid': uid,
+            'listId': listId,
+            'title': 'Completed Task',
+            'dueDate': Timestamp.fromDate(DateTime(2026, 10, 15)),
+            'completedAt': Timestamp.now(),
+            'deletedAt': null,
+          });
+
+          final incompleteResult = await repository
+              .streamTasksWithDueDate(uid: uid, onlyIncomplete: true)
+              .first;
+          expect(incompleteResult.length, equals(1));
+          expect(incompleteResult.first.taskId, equals('t-incomplete'));
+
+          final allResult = await repository
+              .streamTasksWithDueDate(uid: uid, onlyIncomplete: false)
+              .first;
+          expect(allResult.length, equals(2));
+        });
+
+        test(
+          'streamTasksWithDueDate filters by tagIds with OR semantics',
+          () async {
+            await fakeFirestore.collection('tasks').doc('t-tag1').set({
+              'taskId': 't-tag1',
+              'uid': uid,
+              'listId': listId,
+              'title': 'Tag 1 Task',
+              'dueDate': Timestamp.fromDate(DateTime(2026, 10, 15)),
+              'tagIds': ['work'],
+              'deletedAt': null,
+            });
+
+            await fakeFirestore.collection('tasks').doc('t-tag2').set({
+              'taskId': 't-tag2',
+              'uid': uid,
+              'listId': listId,
+              'title': 'Tag 2 Task',
+              'dueDate': Timestamp.fromDate(DateTime(2026, 10, 15)),
+              'tagIds': ['urgent'],
+              'deletedAt': null,
+            });
+
+            await fakeFirestore.collection('tasks').doc('t-notag').set({
+              'taskId': 't-notag',
+              'uid': uid,
+              'listId': listId,
+              'title': 'No Tag Task',
+              'dueDate': Timestamp.fromDate(DateTime(2026, 10, 15)),
+              'tagIds': <String>[],
+              'deletedAt': null,
+            });
+
+            final singleFilter = await repository
+                .streamTasksWithDueDate(uid: uid, tagIds: ['work'])
+                .first;
+            expect(singleFilter.length, equals(1));
+            expect(singleFilter.first.taskId, equals('t-tag1'));
+
+            final orFilter = await repository
+                .streamTasksWithDueDate(uid: uid, tagIds: ['work', 'urgent'])
+                .first;
+            expect(orFilter.length, equals(2));
+            expect(
+              orFilter.map((t) => t.taskId).toSet(),
+              equals({'t-tag1', 't-tag2'}),
+            );
+          },
+        );
+
+        test(
+          'streamAllActiveTasks returns only active tasks for uid',
+          () async {
+            await fakeFirestore.collection('tasks').doc('act-1').set({
+              'taskId': 'act-1',
+              'uid': uid,
+              'title': 'Active 1',
+              'deletedAt': null,
+            });
+            await fakeFirestore.collection('tasks').doc('act-del').set({
+              'taskId': 'act-del',
+              'uid': uid,
+              'title': 'Deleted',
+              'deletedAt': Timestamp.now(),
+            });
+            await fakeFirestore.collection('tasks').doc('act-other').set({
+              'taskId': 'act-other',
+              'uid': 'other-uid',
+              'title': 'Other User',
+              'deletedAt': null,
+            });
+
+            final activeTasks = await repository
+                .streamAllActiveTasks(uid)
+                .first;
+            expect(activeTasks.length, equals(1));
+            expect(activeTasks.first.taskId, equals('act-1'));
+          },
+        );
+
+        test(
+          'streamTasksForTagIds correctly returns tasks without due date',
+          () async {
+            // Task WITH due date
+            await fakeFirestore.collection('tasks').doc('with-due').set({
+              'taskId': 'with-due',
+              'uid': uid,
+              'title': 'Has Due Date',
+              'dueDate': Timestamp.fromDate(DateTime(2026, 10, 20)),
+              'tagIds': ['target-tag'],
+              'deletedAt': null,
+              'createdAt': Timestamp.now(),
+            });
+
+            // Task WITHOUT due date — critical test case!
+            await fakeFirestore.collection('tasks').doc('no-due').set({
+              'taskId': 'no-due',
+              'uid': uid,
+              'title': 'No Due Date',
+              'dueDate': null,
+              'tagIds': ['target-tag'],
+              'deletedAt': null,
+              'createdAt': Timestamp.now(),
+            });
+
+            // Task with different tag
+            await fakeFirestore.collection('tasks').doc('other-tag').set({
+              'taskId': 'other-tag',
+              'uid': uid,
+              'title': 'Different Tag',
+              'dueDate': null,
+              'tagIds': ['other-tag'],
+              'deletedAt': null,
+              'createdAt': Timestamp.now(),
+            });
+
+            final result = await repository
+                .streamTasksForTagIds(uid: uid, tagIds: ['target-tag'])
+                .first;
+
+            expect(result.length, equals(2));
+            final taskIds = result.map((t) => t.taskId).toSet();
+            expect(taskIds, contains('no-due'));
+            expect(taskIds, contains('with-due'));
+            expect(taskIds, isNot(contains('other-tag')));
+          },
+        );
+
+        test(
+          'streamTasksForTagIds returns empty stream when tagIds is empty',
+          () async {
+            final result = await repository
+                .streamTasksForTagIds(uid: uid, tagIds: [])
+                .first;
+            expect(result, isEmpty);
+          },
+        );
+      });
+    });
+
+    test('createTask writes every field in one document', () async {
+      final task = await repository.createTask(
+        uid: 'user-123',
+        listId: 'inbox-456',
+        title: 'Full task',
+        dueDate: DateTime(2026, 6, 5),
+        priority: 'high',
+        tagIds: const ['tag-1'],
+        earlyReminderMinutes: 15,
+        repeatRule: 'weekly',
+      );
+
+      final data =
+          (await fakeFirestore.collection('tasks').doc(task.taskId).get())
+              .data()!;
+      expect(data['priority'], 'high');
+      expect(data['tagIds'], ['tag-1']);
+      expect(data['earlyReminderMinutes'], 15);
+      expect(data['repeatRule'], 'weekly');
+      expect(task.priority, 'high');
+    });
+
+    group('Repeating task completion', () {
+      Future<String> seedRepeating({
+        required DateTime dueDate,
+        String rule = 'daily',
+        Map<String, dynamic>? customConfig,
+        List<Map<String, dynamic>> subtasks = const [],
+      }) async {
+        final ref = fakeFirestore.collection('tasks').doc();
+        await ref.set({
+          'taskId': ref.id,
+          'uid': 'user-123',
+          'listId': 'inbox-456',
+          'title': 'Repeat',
+          'dueDate': Timestamp.fromDate(dueDate),
+          'dueTime': null,
+          'repeatRule': rule,
+          'repeatCustomConfig': customConfig,
+          'subtasks': subtasks,
+          'completedAt': null,
+          'deletedAt': null,
+        });
+        return ref.id;
+      }
+
+      Future<Map<String, dynamic>> read(String id) async =>
+          (await fakeFirestore.collection('tasks').doc(id).get()).data()!;
+
+      test('an overdue task lands on a date that is not overdue', () async {
+        final repo = TaskRepository(
+          fakeFirestore,
+          null,
+          () => DateTime(2026, 6, 10, 15),
+        );
+        final id = await seedRepeating(dueDate: DateTime(2026, 6, 5));
+
+        await repo.toggleTaskCompleted(id, isCompleted: true);
+
+        final data = await read(id);
+        expect((data['dueDate'] as Timestamp).toDate(), DateTime(2026, 6, 10));
+        expect(data['completedAt'], isNull);
+      });
+
+      test(
+        'a custom task with a valid config advances to its next date',
+        () async {
+          final repo = TaskRepository(
+            fakeFirestore,
+            null,
+            () => DateTime(2026, 6, 1),
+          );
+          final id = await seedRepeating(
+            dueDate: DateTime(2026, 6, 10),
+            rule: 'custom',
+            customConfig: {'unit': 'day', 'interval': 3},
+          );
+
+          await repo.toggleTaskCompleted(id, isCompleted: true);
+
+          final data = await read(id);
+          expect(
+            (data['dueDate'] as Timestamp).toDate(),
+            DateTime(2026, 6, 13),
+          );
+          expect(data['completedAt'], isNull);
+        },
+      );
+
+      test('a custom task with an invalid config completes normally', () async {
+        final repo = TaskRepository(
+          fakeFirestore,
+          null,
+          () => DateTime(2026, 6, 1),
+        );
+        final id = await seedRepeating(
+          dueDate: DateTime(2026, 6, 10),
+          rule: 'custom',
+          customConfig: {'unit': 'week', 'interval': 1},
+        );
+
+        await repo.toggleTaskCompleted(id, isCompleted: true);
+
+        final data = await read(id);
+        expect((data['dueDate'] as Timestamp).toDate(), DateTime(2026, 6, 10));
+        expect(data['completedAt'], isNotNull);
+      });
+
+      test(
+        'createTask stores the custom config only for custom rules',
+        () async {
+          final config = {'unit': 'day', 'interval': 2};
+          final custom = await repository.createTask(
+            uid: 'user-123',
+            listId: 'inbox-456',
+            title: 'c',
+            dueDate: DateTime(2026, 6, 10),
+            repeatRule: 'custom',
+            repeatCustomConfig: config,
+          );
+          final daily = await repository.createTask(
+            uid: 'user-123',
+            listId: 'inbox-456',
+            title: 'd',
+            dueDate: DateTime(2026, 6, 10),
+            repeatRule: 'daily',
+            repeatCustomConfig: config,
+          );
+
+          expect(custom.repeatCustomConfig, config);
+          expect((await read(custom.taskId))['repeatCustomConfig'], config);
+          expect(daily.repeatCustomConfig, isNull);
+          expect((await read(daily.taskId))['repeatCustomConfig'], isNull);
+        },
+      );
+
+      test('updateTask clears the custom config when switching away', () async {
+        final id = await seedRepeating(
+          dueDate: DateTime(2026, 6, 10),
+          rule: 'custom',
+          customConfig: {'unit': 'day', 'interval': 2},
+        );
+
+        await repository.updateTask(id, repeatRule: 'daily');
+
+        final data = await read(id);
+        expect(data['repeatRule'], 'daily');
+        expect(data['repeatCustomConfig'], isNull);
+      });
+
+      test('updateTask writes the config with a custom rule', () async {
+        final id = await seedRepeating(dueDate: DateTime(2026, 6, 10));
+        final config = {
+          'unit': 'week',
+          'interval': 2,
+          'weekdays': [1, 3],
+        };
+
+        await repository.updateTask(
+          id,
+          repeatRule: 'custom',
+          repeatCustomConfig: config,
+        );
+
+        expect((await read(id))['repeatCustomConfig'], config);
+      });
+
+      test('a double tap advances only once', () async {
+        final repo = TaskRepository(
+          fakeFirestore,
+          null,
+          () => DateTime(2026, 6, 1),
+        );
+        final id = await seedRepeating(dueDate: DateTime(2026, 6, 5));
+
+        await Future.wait([
+          repo.toggleTaskCompleted(id, isCompleted: true),
+          repo.toggleTaskCompleted(id, isCompleted: true),
+        ]);
+
+        expect(
+          ((await read(id))['dueDate'] as Timestamp).toDate(),
+          DateTime(2026, 6, 6),
+        );
+      });
+
+      test('subtasks reset for the next occurrence', () async {
+        final repo = TaskRepository(
+          fakeFirestore,
+          null,
+          () => DateTime(2026, 6, 1),
+        );
+        final id = await seedRepeating(
+          dueDate: DateTime(2026, 6, 5),
+          subtasks: [
+            {'id': 's1', 'title': 'Step', 'completed': true},
+          ],
+        );
+
+        await repo.toggleTaskCompleted(id, isCompleted: true);
+
+        expect((await read(id))['subtasks'], [
+          {'id': 's1', 'title': 'Step', 'completed': false},
+        ]);
+      });
+
+      test('a monthly task records its anchor day', () async {
+        var now = DateTime(2026, 1, 31);
+        final repo = TaskRepository(fakeFirestore, null, () => now);
+        final id = await seedRepeating(
+          dueDate: DateTime(2026, 1, 31),
+          rule: 'monthly',
+        );
+
+        await repo.toggleTaskCompleted(id, isCompleted: true);
+        now = now.add(const Duration(seconds: 2));
+        await repo.toggleTaskCompleted(id, isCompleted: true);
+
+        final data = await read(id);
+        expect((data['dueDate'] as Timestamp).toDate(), DateTime(2026, 3, 31));
+        expect(data['repeatAnchorDay'], 31);
+      });
+
+      test('a second completion right after the first is ignored', () async {
+        var now = DateTime(2026, 6, 1, 10);
+        final repo = TaskRepository(fakeFirestore, null, () => now);
+        final id = await seedRepeating(dueDate: DateTime(2026, 6, 5));
+
+        await repo.toggleTaskCompleted(id, isCompleted: true);
+        now = now.add(const Duration(milliseconds: 500));
+        await repo.toggleTaskCompleted(id, isCompleted: true);
+
+        expect(
+          ((await read(id))['dueDate'] as Timestamp).toDate(),
+          DateTime(2026, 6, 6),
+        );
+      });
+
+      test('a completion after the cooldown advances again', () async {
+        var now = DateTime(2026, 6, 1, 10);
+        final repo = TaskRepository(fakeFirestore, null, () => now);
+        final id = await seedRepeating(dueDate: DateTime(2026, 6, 5));
+
+        await repo.toggleTaskCompleted(id, isCompleted: true);
+        now = now.add(const Duration(seconds: 2));
+        await repo.toggleTaskCompleted(id, isCompleted: true);
+
+        expect(
+          ((await read(id))['dueDate'] as Timestamp).toDate(),
+          DateTime(2026, 6, 7),
+        );
+      });
+
+      test('the cooldown is per task', () async {
+        final repo = TaskRepository(
+          fakeFirestore,
+          null,
+          () => DateTime(2026, 6, 1, 10),
+        );
+        final first = await seedRepeating(dueDate: DateTime(2026, 6, 5));
+        final second = await seedRepeating(dueDate: DateTime(2026, 6, 5));
+
+        await repo.toggleTaskCompleted(first, isCompleted: true);
+        await repo.toggleTaskCompleted(second, isCompleted: true);
+
+        expect(
+          ((await read(first))['dueDate'] as Timestamp).toDate(),
+          DateTime(2026, 6, 6),
+        );
+        expect(
+          ((await read(second))['dueDate'] as Timestamp).toDate(),
+          DateTime(2026, 6, 6),
+        );
+      });
+
+      test('overlapping subtask edits all apply', () async {
+        final id = await seedRepeating(dueDate: DateTime(2026, 6, 5));
+
+        await Future.wait([
+          repository.addSubtask(id, 'One'),
+          repository.addSubtask(id, 'Two'),
+          repository.addSubtask(id, 'Three'),
+        ]);
+        final added = (await read(id))['subtasks'] as List;
+        expect(added.map((s) => s['title']), ['One', 'Two', 'Three']);
+
+        await Future.wait([
+          repository.toggleSubtask(id, added[0]['id'], completed: true),
+          repository.toggleSubtask(id, added[1]['id'], completed: true),
+          repository.removeSubtask(id, added[2]['id']),
+        ]);
+        final edited = (await read(id))['subtasks'] as List;
+        expect(edited.map((s) => s['completed']), [true, true]);
+      });
+    });
+
+    group('Notification Lifecycle Hooks', () {
+      late MockNotificationService mockNotificationService;
+      late TaskRepository repoWithNotifications;
+
+      setUp(() {
+        mockNotificationService = MockNotificationService();
+        repoWithNotifications = TaskRepository(
+          fakeFirestore,
+          mockNotificationService,
+          () => DateTime(2026, 1, 1),
+        );
+
+        when(() => mockNotificationService.scheduleForTask(any()))
+            .thenAnswer((_) async {});
+        when(() => mockNotificationService.cancelForTask(any()))
+            .thenAnswer((_) async {});
+      });
+
+      test(
+        'createTask with dueDate calls scheduleForTask on the created task',
+        () async {
+          final due = DateTime.now().add(const Duration(days: 1));
+          final task = await repoWithNotifications.createTask(
+            uid: 'user-123',
+            listId: 'inbox-456',
+            title: 'Scheduled Task',
+            dueDate: due,
+            dueTime: '10:00',
+          );
+
+          verify(
+            () => mockNotificationService.scheduleForTask(
+              any(
+                that: isA<Task>().having(
+                  (t) => t.taskId,
+                  'taskId',
+                  task.taskId,
+                ),
+              ),
+            ),
+          ).called(1);
+        },
+      );
+
+      test(
+        'createTask without dueDate does not call scheduleForTask',
+        () async {
+          await repoWithNotifications.createTask(
+            uid: 'user-123',
+            listId: 'inbox-456',
+            title: 'Unscheduled Task',
+          );
+
+          verifyNever(() => mockNotificationService.scheduleForTask(any()));
+        },
+      );
+
+      test('updateTask changing dueDate reschedules notification', () async {
+        final task = await repoWithNotifications.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Initial Task',
+        );
+        reset(mockNotificationService);
+        when(() => mockNotificationService.scheduleForTask(any()))
+            .thenAnswer((_) async {});
+
+        final newDue = DateTime.now().add(const Duration(days: 2));
+        await repoWithNotifications.updateTask(task.taskId, dueDate: newDue);
+
+        verify(
+          () => mockNotificationService.scheduleForTask(
+            any(
+              that: isA<Task>().having((t) => t.taskId, 'taskId', task.taskId),
+            ),
+          ),
+        ).called(1);
+      });
+
+      test(
+        'updateTask NOT touching due fields does not re-fetch or reschedule',
+        () async {
+          final task = await repoWithNotifications.createTask(
+            uid: 'user-123',
+            listId: 'inbox-456',
+            title: 'Initial Task',
+          );
+          reset(mockNotificationService);
+
+          await repoWithNotifications.updateTask(
+            task.taskId,
+            title: 'Updated Title',
+            notes: 'New notes',
+          );
+
+          verifyNever(() => mockNotificationService.scheduleForTask(any()));
+          verifyNever(() => mockNotificationService.cancelForTask(any()));
+        },
+      );
+
+      test('updateTask with clearDueDate cancels notification', () async {
+        final due = DateTime.now().add(const Duration(days: 1));
+        final task = await repoWithNotifications.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Due Task',
+          dueDate: due,
+        );
+        reset(mockNotificationService);
+        when(() => mockNotificationService.cancelForTask(any()))
+            .thenAnswer((_) async {});
+
+        await repoWithNotifications.updateTask(task.taskId, clearDueDate: true);
+
+        verify(() => mockNotificationService.cancelForTask(task.taskId))
+            .called(1);
+      });
+
+      test('toggleTaskCompleted(true) cancels notification', () async {
+        final due = DateTime.now().add(const Duration(days: 1));
+        final task = await repoWithNotifications.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Due Task',
+          dueDate: due,
+        );
+        reset(mockNotificationService);
+        when(() => mockNotificationService.cancelForTask(any()))
+            .thenAnswer((_) async {});
+
+        await repoWithNotifications.toggleTaskCompleted(
+          task.taskId,
+          isCompleted: true,
+        );
+
+        verify(() => mockNotificationService.cancelForTask(task.taskId))
+            .called(1);
+      });
+
+      test(
+        'toggleTaskCompleted(false) on task with dueDate reschedules',
+        () async {
+          final due = DateTime.now().add(const Duration(days: 1));
+          final task = await repoWithNotifications.createTask(
+            uid: 'user-123',
+            listId: 'inbox-456',
+            title: 'Due Task',
+            dueDate: due,
+          );
+          await repoWithNotifications.toggleTaskCompleted(
+            task.taskId,
+            isCompleted: true,
+          );
+          reset(mockNotificationService);
+          when(() => mockNotificationService.scheduleForTask(any()))
+              .thenAnswer((_) async {});
+
+          await repoWithNotifications.toggleTaskCompleted(
+            task.taskId,
+            isCompleted: false,
+          );
+
+          verify(
+            () => mockNotificationService.scheduleForTask(
+              any(
+                that: isA<Task>().having(
+                  (t) => t.taskId,
+                  'taskId',
+                  task.taskId,
+                ),
+              ),
+            ),
+          ).called(1);
+        },
+      );
+
+      test('toggleTaskCompleted(true) on daily-repeat task advances dueDate by 1 day and reschedules', () async {
+        final due = DateTime(2026, 5, 10, 10, 0);
+        final task = await repoWithNotifications.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Daily Task',
+          dueDate: due,
+          dueTime: '10:00',
+        );
+        await repoWithNotifications.updateTask(
+          task.taskId,
+          repeatRule: 'daily',
+        );
+        reset(mockNotificationService);
+        when(() => mockNotificationService.scheduleForTask(any()))
+            .thenAnswer((_) async {});
+        when(() => mockNotificationService.cancelForTask(any()))
+            .thenAnswer((_) async {});
+
+        await repoWithNotifications.toggleTaskCompleted(
+          task.taskId,
+          isCompleted: true,
+        );
+
+        final doc = await fakeFirestore
+            .collection('tasks')
+            .doc(task.taskId)
+            .get();
+        final data = doc.data()!;
+        expect(data['completedAt'], isNull);
+        final updatedDue = (data['dueDate'] as Timestamp).toDate();
+        expect(updatedDue, equals(DateTime(2026, 5, 11, 10, 0)));
+
+        verify(
+          () => mockNotificationService.scheduleForTask(
+            any(
+              that: isA<Task>()
+                  .having((t) => t.taskId, 'taskId', task.taskId)
+                  .having(
+                    (t) => t.dueDate,
+                    'dueDate',
+                    DateTime(2026, 5, 11, 10, 0),
+                  )
+                  .having((t) => t.completedAt, 'completedAt', isNull),
+            ),
+          ),
+        ).called(1);
+        verifyNever(() => mockNotificationService.cancelForTask(task.taskId));
+      });
+
+      test('toggleTaskCompleted(true) on weekly-repeat task advances dueDate by 7 days and reschedules', () async {
+        final due = DateTime(2026, 5, 10, 10, 0);
+        final task = await repoWithNotifications.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Weekly Task',
+          dueDate: due,
+        );
+        await repoWithNotifications.updateTask(
+          task.taskId,
+          repeatRule: 'weekly',
+        );
+        reset(mockNotificationService);
+        when(() => mockNotificationService.scheduleForTask(any()))
+            .thenAnswer((_) async {});
+        when(() => mockNotificationService.cancelForTask(any()))
+            .thenAnswer((_) async {});
+
+        await repoWithNotifications.toggleTaskCompleted(
+          task.taskId,
+          isCompleted: true,
+        );
+
+        final doc = await fakeFirestore
+            .collection('tasks')
+            .doc(task.taskId)
+            .get();
+        final data = doc.data()!;
+        expect(data['completedAt'], isNull);
+        final updatedDue = (data['dueDate'] as Timestamp).toDate();
+        expect(updatedDue, equals(DateTime(2026, 5, 17, 10, 0)));
+
+        verify(
+          () => mockNotificationService.scheduleForTask(
+            any(
+              that: isA<Task>()
+                  .having((t) => t.taskId, 'taskId', task.taskId)
+                  .having(
+                    (t) => t.dueDate,
+                    'dueDate',
+                    DateTime(2026, 5, 17, 10, 0),
+                  )
+                  .having((t) => t.completedAt, 'completedAt', isNull),
+            ),
+          ),
+        ).called(1);
+        verifyNever(() => mockNotificationService.cancelForTask(task.taskId));
+      });
+
+      test('toggleTaskCompleted(true) on monthly-repeat task with clamping clamps to Feb 28', () async {
+        final due = DateTime(2026, 1, 31, 14, 0);
+        final task = await repoWithNotifications.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Monthly Clamped Task',
+          dueDate: due,
+        );
+        await repoWithNotifications.updateTask(
+          task.taskId,
+          repeatRule: 'monthly',
+        );
+        reset(mockNotificationService);
+        when(() => mockNotificationService.scheduleForTask(any()))
+            .thenAnswer((_) async {});
+        when(() => mockNotificationService.cancelForTask(any()))
+            .thenAnswer((_) async {});
+
+        await repoWithNotifications.toggleTaskCompleted(
+          task.taskId,
+          isCompleted: true,
+        );
+
+        final doc = await fakeFirestore
+            .collection('tasks')
+            .doc(task.taskId)
+            .get();
+        final data = doc.data()!;
+        expect(data['completedAt'], isNull);
+        final updatedDue = (data['dueDate'] as Timestamp).toDate();
+        expect(updatedDue, equals(DateTime(2026, 2, 28, 14, 0)));
+
+        verify(
+          () => mockNotificationService.scheduleForTask(
+            any(
+              that: isA<Task>()
+                  .having((t) => t.taskId, 'taskId', task.taskId)
+                  .having(
+                    (t) => t.dueDate,
+                    'dueDate',
+                    DateTime(2026, 2, 28, 14, 0),
+                  ),
+            ),
+          ),
+        ).called(1);
+        verifyNever(() => mockNotificationService.cancelForTask(task.taskId));
+      });
+
+      test('toggleTaskCompleted(true) on repeat task retains earlyReminderMinutes on rescheduled task', () async {
+        final due = DateTime(2026, 5, 10, 10, 0);
+        final task = await repoWithNotifications.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Early Reminder Repeat Task',
+          dueDate: due,
+        );
+        await repoWithNotifications.updateTask(
+          task.taskId,
+          repeatRule: 'daily',
+          earlyReminderMinutes: 30,
+        );
+        reset(mockNotificationService);
+        when(() => mockNotificationService.scheduleForTask(any()))
+            .thenAnswer((_) async {});
+        when(() => mockNotificationService.cancelForTask(any()))
+            .thenAnswer((_) async {});
+
+        await repoWithNotifications.toggleTaskCompleted(
+          task.taskId,
+          isCompleted: true,
+        );
+
+        verify(
+          () => mockNotificationService.scheduleForTask(
+            any(
+              that: isA<Task>()
+                  .having((t) => t.taskId, 'taskId', task.taskId)
+                  .having(
+                    (t) => t.earlyReminderMinutes,
+                    'earlyReminderMinutes',
+                    30,
+                  )
+                  .having(
+                    (t) => t.dueDate,
+                    'dueDate',
+                    DateTime(2026, 5, 11, 10, 0),
+                  ),
+            ),
+          ),
+        ).called(1);
+        verifyNever(() => mockNotificationService.cancelForTask(task.taskId));
+      });
+
+      test('toggleTaskCompleted(true) on repeatRule == custom completes normally and cancels notification', () async {
+        final due = DateTime.now().add(const Duration(days: 1));
+        final task = await repoWithNotifications.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Custom Repeat Task',
+          dueDate: due,
+        );
+        await repoWithNotifications.updateTask(
+          task.taskId,
+          repeatRule: 'custom',
+        );
+        reset(mockNotificationService);
+        when(() => mockNotificationService.cancelForTask(any()))
+            .thenAnswer((_) async {});
+
+        await repoWithNotifications.toggleTaskCompleted(
+          task.taskId,
+          isCompleted: true,
+        );
+
+        final doc = await fakeFirestore
+            .collection('tasks')
+            .doc(task.taskId)
+            .get();
+        final data = doc.data()!;
+        expect(data['completedAt'], isNotNull);
+
+        verify(() => mockNotificationService.cancelForTask(task.taskId))
+            .called(1);
+        verifyNever(() => mockNotificationService.scheduleForTask(any()));
+      });
+
+      test('toggleTaskCompleted(false) on task with repeatRule un-completes without advancing', () async {
+        final due = DateTime(2026, 5, 10, 10, 0);
+        final task = await repoWithNotifications.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Repeat Task',
+          dueDate: due,
+        );
+        await repoWithNotifications.updateTask(
+          task.taskId,
+          repeatRule: 'daily',
+        );
+        await fakeFirestore.collection('tasks').doc(task.taskId).update({
+          'completedAt': Timestamp.now(),
+        });
+        reset(mockNotificationService);
+        when(() => mockNotificationService.scheduleForTask(any()))
+            .thenAnswer((_) async {});
+
+        await repoWithNotifications.toggleTaskCompleted(
+          task.taskId,
+          isCompleted: false,
+        );
+
+        final doc = await fakeFirestore
+            .collection('tasks')
+            .doc(task.taskId)
+            .get();
+        final data = doc.data()!;
+        expect(data['completedAt'], isNull);
+        final currentDue = (data['dueDate'] as Timestamp).toDate();
+        expect(currentDue, equals(due));
+
+        verify(
+          () => mockNotificationService.scheduleForTask(
+            any(
+              that: isA<Task>()
+                  .having((t) => t.taskId, 'taskId', task.taskId)
+                  .having((t) => t.dueDate, 'dueDate', due),
+            ),
+          ),
+        ).called(1);
+      });
+
+      test('softDeleteTask cancels notification', () async {
+        final due = DateTime.now().add(const Duration(days: 1));
+        final task = await repoWithNotifications.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Due Task',
+          dueDate: due,
+        );
+        reset(mockNotificationService);
+        when(() => mockNotificationService.cancelForTask(any()))
+            .thenAnswer((_) async {});
+
+        await repoWithNotifications.softDeleteTask(task.taskId);
+
+        verify(() => mockNotificationService.cancelForTask(task.taskId))
+            .called(1);
+      });
+
+      test('softDeleteTasks cancels notification for each id', () async {
+        final t1 = await repoWithNotifications.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Task 1',
+        );
+        final t2 = await repoWithNotifications.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Task 2',
+        );
+        reset(mockNotificationService);
+        when(() => mockNotificationService.cancelForTask(any()))
+            .thenAnswer((_) async {});
+
+        await repoWithNotifications.softDeleteTasks([t1.taskId, t2.taskId]);
+
+        verify(() => mockNotificationService.cancelForTask(t1.taskId))
+            .called(1);
+        verify(() => mockNotificationService.cancelForTask(t2.taskId))
+            .called(1);
+      });
+
+      test('permanentlyDeleteTask cancels notification defensively', () async {
+        final due = DateTime.now().add(const Duration(days: 1));
+        final task = await repoWithNotifications.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Due Task',
+          dueDate: due,
+        );
+        reset(mockNotificationService);
+        when(() => mockNotificationService.cancelForTask(any()))
+            .thenAnswer((_) async {});
+
+        await repoWithNotifications.permanentlyDeleteTask(
+          uid: 'user-123',
+          taskId: task.taskId,
+        );
+
+        verify(() => mockNotificationService.cancelForTask(task.taskId))
+            .called(1);
+      });
+
+      test(
+        'restoreTask reschedules notification if task has a dueDate',
+        () async {
+          final due = DateTime.now().add(const Duration(days: 1));
+          final task = await repoWithNotifications.createTask(
+            uid: 'user-123',
+            listId: 'inbox-456',
+            title: 'Due Task',
+            dueDate: due,
+          );
+          await repoWithNotifications.softDeleteTask(task.taskId);
+          reset(mockNotificationService);
+          when(() => mockNotificationService.scheduleForTask(any()))
+              .thenAnswer((_) async {});
+
+          await repoWithNotifications.restoreTask(
+            uid: 'user-123',
+            taskId: task.taskId,
+          );
+
+          verify(
+            () => mockNotificationService.scheduleForTask(
+              any(
+                that: isA<Task>().having(
+                  (t) => t.taskId,
+                  'taskId',
+                  task.taskId,
+                ),
+              ),
+            ),
+          ).called(1);
+        },
+      );
+
+      test('restoreTasks reschedules notifications only for incomplete tasks with a dueDate', () async {
+        final due = DateTime.now().add(const Duration(days: 1));
+        final t1 = await repoWithNotifications.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Task With Due Date',
+          dueDate: due,
+        );
+        final t2 = await repoWithNotifications.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Task No Due Date',
+        );
+        final t3 = await repoWithNotifications.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Completed Task With Due Date',
+          dueDate: due,
+        );
+        await repoWithNotifications.toggleTaskCompleted(
+          t3.taskId,
+          isCompleted: true,
+        );
+
+        await repoWithNotifications.softDeleteTasks([
+          t1.taskId,
+          t2.taskId,
+          t3.taskId,
+        ]);
+        reset(mockNotificationService);
+        when(() => mockNotificationService.scheduleForTask(any()))
+            .thenAnswer((_) async {});
+
+        await repoWithNotifications.restoreTasks(
+          uid: 'user-123',
+          taskIds: [t1.taskId, t2.taskId, t3.taskId],
+        );
+
+        verify(
+          () => mockNotificationService.scheduleForTask(
+            any(that: isA<Task>().having((t) => t.taskId, 'taskId', t1.taskId)),
+          ),
+        ).called(1);
+        verifyNever(
+          () => mockNotificationService.scheduleForTask(
+            any(that: isA<Task>().having((t) => t.taskId, 'taskId', t2.taskId)),
+          ),
+        );
+        verifyNever(
+          () => mockNotificationService.scheduleForTask(
+            any(that: isA<Task>().having((t) => t.taskId, 'taskId', t3.taskId)),
+          ),
+        );
+      });
+
+      test('notificationService failure does not prevent Firestore operation from succeeding', () async {
+        reset(mockNotificationService);
+        when(() => mockNotificationService.scheduleForTask(any()))
+            .thenThrow(Exception('Notification platform channel failed'));
+
+        final due = DateTime.now().add(const Duration(days: 1));
+        final task = await repoWithNotifications.createTask(
+          uid: 'user-123',
+          listId: 'inbox-456',
+          title: 'Resilient Task',
+          dueDate: due,
+        );
+
+        // Verify Firestore write succeeded despite notification failure
+        expect(task.taskId, isNotEmpty);
+        final docSnapshot = await fakeFirestore
+            .collection('tasks')
+            .doc(task.taskId)
+            .get();
+        expect(docSnapshot.exists, isTrue);
+        expect(docSnapshot.data()!['title'], equals('Resilient Task'));
+      });
     });
   });
 }

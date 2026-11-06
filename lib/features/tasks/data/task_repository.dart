@@ -1,11 +1,81 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
+import 'package:uuid/uuid.dart';
+
+import '../../../core/firebase/settled_write.dart';
+import '../../../core/notifications/notification_service.dart';
+import '../domain/task_recurrence_utils.dart';
 import 'task.dart';
 
 class TaskRepository {
   final FirebaseFirestore _firestore;
+  final NotificationService? _notificationService;
+  final DateTime Function() _clock;
 
-  TaskRepository(this._firestore);
+  /// Tasks with a completion toggle in progress, so a double tap can't advance
+  /// a repeating task twice.
+  final Set<String> _completionsInFlight = {};
+
+  /// How long after advancing a repeating task another completion is ignored.
+  /// The in-flight guard ends when the server replies, which can be before the
+  /// second click of a double-click.
+  static const _repeatAdvanceCooldown = Duration(seconds: 1);
+
+  /// When each repeating task last advanced.
+  final Map<String, DateTime> _lastRepeatAdvance = {};
+
+  /// Tail of the pending subtask edits for each task.
+  final Map<String, Future<void>> _subtaskEdits = {};
+
+  final void Function(Object error)? _onLateWriteFailure;
+
+  TaskRepository(
+    this._firestore, [
+    this._notificationService,
+    DateTime Function()? clock,
+    this._onLateWriteFailure,
+  ]) : _clock = clock ?? DateTime.now;
+
+  Future<void> _write(Future<void> write) =>
+      settleWrite(write, onLateFailure: _onLateWriteFailure);
+
+  /// Reads [ref] from the local cache first, so it doesn't stall offline.
+  ///
+  /// Local changes are already in the cache, and active listeners keep it
+  /// current. Falls back to a normal read for documents not cached yet.
+  Future<DocumentSnapshot<Map<String, dynamic>>> _read(
+    DocumentReference<Map<String, dynamic>> ref,
+  ) async {
+    try {
+      final cached = await ref.get(const GetOptions(source: Source.cache));
+      if (cached.exists) return cached;
+    } on FirebaseException catch (_) {
+      // Not in the cache.
+    }
+    return ref.get();
+  }
+
+  Future<void> _safeSchedule(Task task) async {
+    if (_notificationService == null) return;
+    try {
+      await _notificationService.scheduleForTask(task);
+    } catch (e, st) {
+      debugPrint(
+        'Failed to schedule notification for task ${task.taskId}: $e\n$st',
+      );
+    }
+  }
+
+  Future<void> _safeCancel(String taskId) async {
+    if (_notificationService == null) return;
+    try {
+      await _notificationService.cancelForTask(taskId);
+    } catch (e, st) {
+      debugPrint('Failed to cancel notification for task $taskId: $e\n$st');
+    }
+  }
 
   CollectionReference<Map<String, dynamic>> get _tasksCollection =>
       _firestore.collection('tasks');
@@ -17,8 +87,16 @@ class TaskRepository {
     required String title,
     String notes = '',
     String url = '',
+    DateTime? dueDate,
+    String? dueTime,
+    String priority = 'none',
+    List<String> tagIds = const [],
+    int earlyReminderMinutes = 0,
+    String repeatRule = 'none',
+    Map<String, dynamic>? repeatCustomConfig,
   }) async {
-    final listDoc = await _firestore.collection('lists').doc(listId).get();
+    final customConfig = repeatRule == 'custom' ? repeatCustomConfig : null;
+    final listDoc = await _read(_firestore.collection('lists').doc(listId));
     if (!listDoc.exists) {
       throw ArgumentError('List not found: $listId');
     }
@@ -27,6 +105,8 @@ class TaskRepository {
     }
 
     final docRef = _tasksCollection.doc();
+    // Epoch millis keep new tasks after every existing manual order.
+    final order = _clock().millisecondsSinceEpoch.toDouble();
     final data = <String, dynamic>{
       'taskId': docRef.id,
       'uid': uid,
@@ -34,42 +114,48 @@ class TaskRepository {
       'title': title.trim(),
       'notes': notes.trim(),
       'url': url.trim(),
-      'priority': 'none',
-      'tagIds': <String>[],
-      'dueDate': null,
-      'dueTime': null,
-      'earlyReminderMinutes': 0,
-      'repeatRule': 'none',
-      'repeatCustomConfig': null,
-      'order': 0,
+      'priority': priority,
+      'tagIds': tagIds,
+      'dueDate': dueDate != null ? Timestamp.fromDate(dueDate) : null,
+      'dueTime': dueTime?.trim(),
+      'earlyReminderMinutes': earlyReminderMinutes,
+      'repeatRule': repeatRule,
+      'repeatCustomConfig': customConfig,
+      'order': order,
       'subtasks': <Map<String, dynamic>>[],
       'createdAt': FieldValue.serverTimestamp(),
       'completedAt': null,
       'deletedAt': null,
     };
 
-    await docRef.set(data);
+    await _write(docRef.set(data));
 
-    return Task(
+    final task = Task(
       taskId: docRef.id,
       uid: uid,
       listId: listId,
       title: title.trim(),
       notes: notes.trim(),
       url: url.trim(),
-      priority: 'none',
-      tagIds: const [],
-      dueDate: null,
-      dueTime: null,
-      earlyReminderMinutes: 0,
-      repeatRule: 'none',
-      repeatCustomConfig: null,
-      order: 0,
+      priority: priority,
+      tagIds: tagIds,
+      dueDate: dueDate,
+      dueTime: dueTime?.trim(),
+      earlyReminderMinutes: earlyReminderMinutes,
+      repeatRule: repeatRule,
+      repeatCustomConfig: customConfig,
+      order: order,
       subtasks: const [],
       createdAt: DateTime.now(),
       completedAt: null,
       deletedAt: null,
     );
+
+    if (dueDate != null) {
+      await _safeSchedule(task);
+    }
+
+    return task;
   }
 
   /// Streams active (non-soft-deleted) tasks for a specific list belonging to [uid],
@@ -84,37 +170,835 @@ class TaskRepository {
         .map((snapshot) => snapshot.docs.map(Task.fromFirestore).toList());
   }
 
-  /// Performs a partial update on the task, restricted to [title], [notes], and [url].
+  /// Streams all active (non-soft-deleted) tasks for [uid] across all lists,
+  /// ordered newest first by [createdAt].
+  Stream<List<Task>> streamAllTasksForUser(String uid) {
+    return _tasksCollection
+        .where('uid', isEqualTo: uid)
+        .where('deletedAt', isNull: true)
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snapshot) => snapshot.docs.map(Task.fromFirestore).toList());
+  }
+
+  static const Object _sentinel = Object();
+
+  /// Performs a partial update on the task attributes.
   Future<void> updateTask(
     String taskId, {
     String? title,
     String? notes,
     String? url,
+    String? priority,
+    List<String>? tagIds,
+    Object? dueDate = _sentinel,
+    Object? dueTime = _sentinel,
+    int? earlyReminderMinutes,
+    String? repeatRule,
+    Map<String, dynamic>? repeatCustomConfig,
+    double? order,
+    bool clearDueDate = false,
+    bool clearDueTime = false,
   }) async {
     final updates = <String, dynamic>{};
     if (title != null) updates['title'] = title.trim();
     if (notes != null) updates['notes'] = notes.trim();
     if (url != null) updates['url'] = url.trim();
+    if (priority != null) updates['priority'] = priority;
+    if (tagIds != null) updates['tagIds'] = tagIds;
+    if (earlyReminderMinutes != null) {
+      updates['earlyReminderMinutes'] = earlyReminderMinutes;
+    }
+    if (repeatRule != null) {
+      updates['repeatRule'] = repeatRule;
+      updates['repeatCustomConfig'] = repeatRule == 'custom'
+          ? repeatCustomConfig
+          : null;
+    }
+    if (order != null) updates['order'] = order;
+
+    if (clearDueDate) {
+      updates['dueDate'] = null;
+      if (identical(dueTime, _sentinel)) {
+        updates['dueTime'] = null;
+      }
+    } else if (!identical(dueDate, _sentinel)) {
+      if (dueDate is DateTime) {
+        updates['dueDate'] = Timestamp.fromDate(dueDate);
+      } else if (dueDate == null) {
+        updates['dueDate'] = null;
+        if (identical(dueTime, _sentinel)) {
+          updates['dueTime'] = null;
+        }
+      }
+    }
+
+    if (clearDueTime) {
+      updates['dueTime'] = null;
+    } else if (!identical(dueTime, _sentinel)) {
+      if (dueTime is String) {
+        updates['dueTime'] = dueTime.trim();
+      } else if (dueTime == null) {
+        updates['dueTime'] = null;
+      }
+    }
 
     if (updates.isNotEmpty) {
-      await _tasksCollection.doc(taskId).update(updates);
+      await _write(_tasksCollection.doc(taskId).update(updates));
+    }
+
+    final touchesDue =
+        clearDueDate ||
+        clearDueTime ||
+        !identical(dueDate, _sentinel) ||
+        !identical(dueTime, _sentinel) ||
+        earlyReminderMinutes != null;
+
+    if (touchesDue) {
+      final updatedDoc = await _read(_tasksCollection.doc(taskId));
+      if (updatedDoc.exists && updatedDoc.data() != null) {
+        final updatedTask = Task.fromFirestore(updatedDoc);
+        if (!updatedTask.isDeleted &&
+            !updatedTask.isCompleted &&
+            updatedTask.dueDate != null) {
+          await _safeSchedule(updatedTask);
+        } else {
+          await _safeCancel(taskId);
+        }
+      } else {
+        await _safeCancel(taskId);
+      }
     }
   }
 
-  /// Marks a task completed or clears its completion status.
+  /// Updates the manual [order] attribute of a single task.
+  Future<void> updateTaskOrder(String taskId, double newOrder) async {
+    await _write(_tasksCollection.doc(taskId).update({'order': newOrder}));
+  }
+
+  /// Updates manual [order] attributes for multiple tasks in a single batch.
+  Future<void> batchUpdateTaskOrders(Map<String, double> taskIdToOrder) async {
+    final batch = _firestore.batch();
+    for (final entry in taskIdToOrder.entries) {
+      batch.update(_tasksCollection.doc(entry.key), {'order': entry.value});
+    }
+    await _write(batch.commit());
+  }
+
+  /// Marks a task completed, clears its completion status, or advances its due date if repeating.
   Future<void> toggleTaskCompleted(
     String taskId, {
     required bool isCompleted,
   }) async {
-    await _tasksCollection.doc(taskId).update({
-      'completedAt': isCompleted ? FieldValue.serverTimestamp() : null,
+    if (!_completionsInFlight.add(taskId)) return;
+    try {
+      await _applyCompletion(taskId, isCompleted: isCompleted);
+    } finally {
+      _completionsInFlight.remove(taskId);
+    }
+  }
+
+  Future<void> _applyCompletion(
+    String taskId, {
+    required bool isCompleted,
+  }) async {
+    final doc = await _read(_tasksCollection.doc(taskId));
+    if (!doc.exists || doc.data() == null) return;
+    final task = Task.fromFirestore(doc);
+
+    if (isCompleted && taskRepeats(task)) {
+      final now = _clock();
+      final lastAdvance = _lastRepeatAdvance[taskId];
+      if (lastAdvance != null &&
+          now.difference(lastAdvance) < _repeatAdvanceCooldown) {
+        return;
+      }
+
+      final nextDueDate = nextOccurrenceAfter(task, now);
+      final anchorDay = resolveRepeatAnchorDay(task);
+      final resetSubtasks = task.subtasks
+          .map((subtask) => {...subtask, 'completed': false})
+          .toList();
+
+      await _write(
+        _tasksCollection.doc(taskId).update({
+          'dueDate': Timestamp.fromDate(nextDueDate),
+          'completedAt': null,
+          'subtasks': resetSubtasks,
+          if (task.repeatRule == 'monthly') 'repeatAnchorDay': anchorDay,
+        }),
+      );
+      _lastRepeatAdvance[taskId] = now;
+
+      final advancedTask = task.copyWith(
+        dueDate: nextDueDate,
+        completedAt: null,
+        subtasks: resetSubtasks,
+      );
+      await _safeSchedule(advancedTask);
+      return;
+    }
+
+    await _write(
+      _tasksCollection.doc(taskId).update({
+        'completedAt': isCompleted ? FieldValue.serverTimestamp() : null,
+      }),
+    );
+
+    if (isCompleted) {
+      await _safeCancel(taskId);
+    } else {
+      if (!task.isDeleted && task.dueDate != null) {
+        await _safeSchedule(task);
+      }
+    }
+  }
+
+  /// Soft-deletes a task by setting its [deletedAt] field to the current timestamp.
+  Future<void> softDeleteTask(String taskId) async {
+    await _write(
+      _tasksCollection.doc(taskId).update({'deletedAt': Timestamp.now()}),
+    );
+    await _safeCancel(taskId);
+  }
+
+  /// Soft-deletes multiple tasks by setting their [deletedAt] field to the current timestamp.
+  ///
+  /// Commits updates in batches of max 500 operations to respect Firestore's WriteBatch limit.
+  /// Cancels notifications for each task after writes succeed.
+  Future<void> softDeleteTasks(List<String> taskIds) async {
+    if (taskIds.isEmpty) return;
+
+    final now = Timestamp.now();
+    const batchSize = 500;
+    for (var i = 0; i < taskIds.length; i += batchSize) {
+      final end = (i + batchSize < taskIds.length)
+          ? i + batchSize
+          : taskIds.length;
+      final chunk = taskIds.sublist(i, end);
+      final batch = _firestore.batch();
+      for (final taskId in chunk) {
+        batch.update(_tasksCollection.doc(taskId), {'deletedAt': now});
+      }
+      await _write(batch.commit());
+    }
+
+    for (final taskId in taskIds) {
+      await _safeCancel(taskId);
+    }
+  }
+
+  /// Streams soft-deleted tasks belonging to [uid], ordered descending by [deletedAt].
+  ///
+  /// Filters by [uid] in Firestore and performs [deletedAt] filtering and sorting in-memory.
+  /// This ensures immediate client-cache visibility upon deletion, avoids Firestore composite
+  /// index propagation lag, and supports instantaneous offline/local snapshot updates.
+  Stream<List<Task>> streamRecentlyDeletedTasks(String uid) {
+    return _tasksCollection
+        .where('uid', isEqualTo: uid)
+        .snapshots()
+        .map((snapshot) {
+          final tasks = <Task>[];
+          for (final doc in snapshot.docs) {
+            final data = doc.data();
+            if (data['deletedAt'] == null) {
+              continue;
+            }
+            try {
+              var task = Task.fromFirestore(doc);
+              if (task.deletedAt == null) {
+                task = task.copyWith(deletedAt: DateTime.now());
+              }
+              tasks.add(task);
+            } catch (e, st) {
+              debugPrint('Error parsing deleted task ${doc.id}: $e\n$st');
+            }
+          }
+          tasks.sort((a, b) {
+            if (a.deletedAt == null && b.deletedAt == null) return 0;
+            if (a.deletedAt == null) return 1;
+            if (b.deletedAt == null) return -1;
+            return b.deletedAt!.compareTo(a.deletedAt!);
+          });
+          return tasks;
+        })
+        .distinct((prev, next) => listEquals(prev, next));
+  }
+
+  /// Streams active (non-soft-deleted) tasks for [uid] that have a `dueDate`.
+  ///
+  /// - If [startDueDate] and [endDueDate] are specified, applies server-side range query on [dueDate].
+  /// - If only [endDueDate] is specified, applies server-side query `dueDate <= endDueDate` (used by Today view).
+  /// - If omitted, queries all tasks where `dueDate != null` (used by Scheduled view).
+  /// - If [onlyIncomplete] is true, applies `completedAt == null` equality check in Firestore.
+  /// - Tasks are sorted chronologically ascending by [dueDate], tie-broken by [dueTime],
+  ///   then [order], then [createdAt].
+  Stream<List<Task>> streamTasksWithDueDate({
+    required String uid,
+    DateTime? startDueDate,
+    DateTime? endDueDate,
+    bool onlyIncomplete = false,
+    String? priority,
+    List<String>? tagIds,
+  }) {
+    if (tagIds != null && tagIds.isEmpty) {
+      return Stream.value(const <Task>[]);
+    }
+
+    Query<Map<String, dynamic>> query = _tasksCollection
+        .where('uid', isEqualTo: uid)
+        .where('deletedAt', isNull: true);
+
+    if (onlyIncomplete) {
+      query = query.where('completedAt', isNull: true);
+    }
+
+    if (priority != null) {
+      query = query.where('priority', isEqualTo: priority);
+    }
+
+    if (tagIds != null && tagIds.isNotEmpty) {
+      query = query.where('tagIds', arrayContainsAny: tagIds);
+    }
+
+    if (startDueDate != null && endDueDate != null) {
+      query = query
+          .where(
+            'dueDate',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(startDueDate),
+          )
+          .where('dueDate', isLessThanOrEqualTo: Timestamp.fromDate(endDueDate))
+          .orderBy('dueDate');
+    } else if (endDueDate != null) {
+      query = query
+          .where('dueDate', isLessThanOrEqualTo: Timestamp.fromDate(endDueDate))
+          .orderBy('dueDate');
+    } else {
+      query = query.where('dueDate', isNull: false).orderBy('dueDate');
+    }
+
+    return query
+        .snapshots()
+        .map((snapshot) {
+          final tasks = snapshot.docs.map(Task.fromFirestore).toList();
+          tasks.sort((a, b) {
+            if (a.dueDate == null && b.dueDate == null) return 0;
+            if (a.dueDate == null) return 1;
+            if (b.dueDate == null) return -1;
+            final dateCmp = a.dueDate!.compareTo(b.dueDate!);
+            if (dateCmp != 0) return dateCmp;
+
+            // Tie-break 1: dueTime ("HH:mm")
+            if (a.dueTime != null && b.dueTime != null) {
+              final timeCmp = a.dueTime!.compareTo(b.dueTime!);
+              if (timeCmp != 0) return timeCmp;
+            } else if (a.dueTime != null && b.dueTime == null) {
+              return -1;
+            } else if (a.dueTime == null && b.dueTime != null) {
+              return 1;
+            }
+
+            // Tie-break 2: order
+            final orderCmp = a.order.compareTo(b.order);
+            if (orderCmp != 0) return orderCmp;
+
+            // Tie-break 3: createdAt
+            if (a.createdAt != null && b.createdAt != null) {
+              return a.createdAt!.compareTo(b.createdAt!);
+            }
+            return 0;
+          });
+          return tasks;
+        })
+        .distinct((prev, next) => listEquals(prev, next));
+  }
+
+  /// Streams all active (non-soft-deleted) tasks belonging to [uid].
+  Stream<List<Task>> streamAllActiveTasks(String uid) {
+    return _tasksCollection
+        .where('uid', isEqualTo: uid)
+        .where('deletedAt', isNull: true)
+        .snapshots()
+        .map((snapshot) => snapshot.docs.map(Task.fromFirestore).toList());
+  }
+
+  /// Streams tasks belonging to [uid] that contain any of [tagIds] (OR semantics),
+  /// ordered chronologically by [createdAt].
+  ///
+  /// Supports optional server-side filtering on [onlyIncomplete] and [priority].
+  Stream<List<Task>> streamTasksForTagIds({
+    required String uid,
+    required List<String> tagIds,
+    bool onlyIncomplete = false,
+    String? priority,
+  }) {
+    if (tagIds.isEmpty) {
+      return Stream.value(const <Task>[]);
+    }
+
+    Query<Map<String, dynamic>> query = _tasksCollection
+        .where('uid', isEqualTo: uid)
+        .where('deletedAt', isNull: true)
+        .where('tagIds', arrayContainsAny: tagIds);
+
+    if (onlyIncomplete) {
+      query = query.where('completedAt', isNull: true);
+    }
+
+    if (priority != null) {
+      query = query.where('priority', isEqualTo: priority);
+    }
+
+    query = query.orderBy('createdAt');
+
+    return query.snapshots().map(
+      (snapshot) => snapshot.docs.map(Task.fromFirestore).toList(),
+    );
+  }
+
+  /// Returns the IDs of the lists owned by [uid].
+  ///
+  /// Restore uses this query instead of reading the task's list directly,
+  /// because a direct read of a deleted list can fail with permission-denied.
+  Future<Set<String>> _ownedListIds(String uid) async {
+    final snapshot = await _firestore
+        .collection('lists')
+        .where('uid', isEqualTo: uid)
+        .get();
+    return snapshot.docs.map((doc) => doc.id).toSet();
+  }
+
+  /// Restores a soft-deleted task by clearing its [deletedAt] timestamp.
+  ///
+  /// Defense-in-depth:
+  /// - Throws [ArgumentError] if the task does not exist or does not belong to [uid].
+  /// - No-ops if the task is already active (deletedAt is already null).
+  ///
+  /// List assignment safeguard:
+  /// - If [task.listId] is empty or the referenced list no longer exists in `lists`,
+  ///   the task is reassigned to [defaultListId] (or resolved from `users/{uid}`).
+  Future<void> restoreTask({
+    required String uid,
+    required String taskId,
+    String? defaultListId,
+  }) async {
+    final taskDoc = await _read(_tasksCollection.doc(taskId));
+    if (!taskDoc.exists) {
+      throw ArgumentError('Task not found: $taskId');
+    }
+    final taskData = taskDoc.data()!;
+    if (taskData['uid'] != uid) {
+      throw ArgumentError('Task does not belong to user: $taskId');
+    }
+
+    // Already active / restored
+    if (taskData['deletedAt'] == null) {
+      return;
+    }
+
+    final currentListId = taskData['listId'] as String?;
+    String? targetListId = currentListId;
+
+    final ownedListIds = await _ownedListIds(uid);
+    if (!ownedListIds.contains(currentListId)) {
+      if (defaultListId != null && defaultListId.isNotEmpty) {
+        targetListId = defaultListId;
+      } else {
+        final userDoc = await _firestore.collection('users').doc(uid).get();
+        targetListId = userDoc.data()?['defaultListId'] as String?;
+      }
+    }
+
+    final updates = <String, dynamic>{'deletedAt': null};
+    if (targetListId != null && targetListId != currentListId) {
+      updates['listId'] = targetListId;
+    }
+
+    await _write(_tasksCollection.doc(taskId).update(updates));
+
+    final restoredDoc = await _read(_tasksCollection.doc(taskId));
+    if (restoredDoc.exists && restoredDoc.data() != null) {
+      final restoredTask = Task.fromFirestore(restoredDoc);
+      if (!restoredTask.isCompleted && restoredTask.dueDate != null) {
+        await _safeSchedule(restoredTask);
+      }
+    }
+  }
+
+  /// Restores multiple soft-deleted tasks belonging to [uid].
+  ///
+  /// - Throws [ArgumentError] if any task does not exist or does not belong to [uid]
+  ///   before performing any writes.
+  /// - Skips tasks whose `deletedAt` is already null.
+  /// - If a task's list no longer exists, reassigns it to [defaultListId] (or resolved from users/{uid}).
+  /// - Commits updates in batches of max 500 operations.
+  /// - Re-reads restored tasks and reschedules notifications for incomplete tasks with due dates.
+  Future<void> restoreTasks({
+    required String uid,
+    required List<String> taskIds,
+    String? defaultListId,
+  }) async {
+    if (taskIds.isEmpty) return;
+
+    final taskDocs = await Future.wait(
+      taskIds.map((id) => _read(_tasksCollection.doc(id))),
+    );
+    for (var i = 0; i < taskIds.length; i++) {
+      final doc = taskDocs[i];
+      if (!doc.exists) {
+        throw ArgumentError('Task not found: ${taskIds[i]}');
+      }
+      final data = doc.data()!;
+      if (data['uid'] != uid) {
+        throw ArgumentError('Task does not belong to user: ${taskIds[i]}');
+      }
+    }
+
+    final tasksToRestore = <DocumentSnapshot<Map<String, dynamic>>>[];
+    for (final doc in taskDocs) {
+      final data = doc.data()!;
+      if (data['deletedAt'] != null) {
+        tasksToRestore.add(doc);
+      }
+    }
+    if (tasksToRestore.isEmpty) return;
+
+    final ownedListIds = await _ownedListIds(uid);
+
+    String? userDefaultListId;
+    bool hasFetchedUserDefaultList = false;
+
+    Future<String?> resolveTargetListId(String? currentListId) async {
+      if (ownedListIds.contains(currentListId)) {
+        return currentListId;
+      }
+
+      if (defaultListId != null && defaultListId.isNotEmpty) {
+        return defaultListId;
+      }
+
+      if (!hasFetchedUserDefaultList) {
+        final userDoc = await _firestore.collection('users').doc(uid).get();
+        userDefaultListId = userDoc.data()?['defaultListId'] as String?;
+        hasFetchedUserDefaultList = true;
+      }
+      return userDefaultListId;
+    }
+
+    final updatesList = <MapEntry<String, Map<String, dynamic>>>[];
+    for (final doc in tasksToRestore) {
+      final data = doc.data()!;
+      final currentListId = data['listId'] as String?;
+      final targetListId = await resolveTargetListId(currentListId);
+
+      final updates = <String, dynamic>{'deletedAt': null};
+      if (targetListId != null && targetListId != currentListId) {
+        updates['listId'] = targetListId;
+      }
+      updatesList.add(MapEntry(doc.id, updates));
+    }
+
+    const batchSize = 500;
+    for (var i = 0; i < updatesList.length; i += batchSize) {
+      final end = (i + batchSize < updatesList.length)
+          ? i + batchSize
+          : updatesList.length;
+      final chunk = updatesList.sublist(i, end);
+      final batch = _firestore.batch();
+      for (final entry in chunk) {
+        batch.update(_tasksCollection.doc(entry.key), entry.value);
+      }
+      await _write(batch.commit());
+    }
+
+    final restoredTaskIds = updatesList.map((e) => e.key).toList();
+    final restoredDocs = await Future.wait(
+      restoredTaskIds.map((id) => _read(_tasksCollection.doc(id))),
+    );
+    for (final doc in restoredDocs) {
+      if (doc.exists && doc.data() != null) {
+        final restoredTask = Task.fromFirestore(doc);
+        if (!restoredTask.isCompleted && restoredTask.dueDate != null) {
+          await _safeSchedule(restoredTask);
+        }
+      }
+    }
+  }
+
+  /// Permanently hard-deletes a task document from Firestore.
+  ///
+  /// Defense-in-depth:
+  /// - Throws [ArgumentError] if the task does not exist or does not belong to [uid].
+  Future<void> permanentlyDeleteTask({
+    required String uid,
+    required String taskId,
+  }) async {
+    final taskDoc = await _read(_tasksCollection.doc(taskId));
+    if (!taskDoc.exists) {
+      throw ArgumentError('Task not found: $taskId');
+    }
+    if (taskDoc.data()?['uid'] != uid) {
+      throw ArgumentError('Task does not belong to user: $taskId');
+    }
+
+    await _write(_tasksCollection.doc(taskId).delete());
+    await _safeCancel(taskId);
+  }
+
+  /// Permanently deletes all soft-deleted tasks belonging to [uid].
+  ///
+  /// Chunks deletions into batches of max 500 operations to respect Firestore's WriteBatch limit.
+  Future<void> emptyRecentlyDeleted(String uid) async {
+    final snapshot = await _tasksCollection.where('uid', isEqualTo: uid).get();
+
+    final docs = snapshot.docs
+        .where((doc) => doc.data()['deletedAt'] != null)
+        .toList();
+
+    if (docs.isEmpty) return;
+
+    const batchSize = 500;
+    for (var i = 0; i < docs.length; i += batchSize) {
+      final end = (i + batchSize < docs.length) ? i + batchSize : docs.length;
+      final chunk = docs.sublist(i, end);
+      final batch = _firestore.batch();
+      for (final doc in chunk) {
+        batch.delete(doc.reference);
+      }
+      await _write(batch.commit());
+    }
+  }
+
+  /// Automatically purges soft-deleted tasks belonging to [uid] that were deleted
+  /// longer ago than [retention] (defaults to 30 days).
+  ///
+  /// Returns the number of permanently purged tasks.
+  Future<int> purgeExpiredDeletedTasks(
+    String uid, {
+    Duration retention = const Duration(days: 30),
+  }) async {
+    final snapshot = await _tasksCollection.where('uid', isEqualTo: uid).get();
+    final now = DateTime.now();
+    final expiredDocs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+
+    for (final doc in snapshot.docs) {
+      final data = doc.data();
+      final deletedAtRaw = data['deletedAt'];
+      if (deletedAtRaw == null) continue;
+
+      DateTime? deletedAt;
+      if (deletedAtRaw is Timestamp) {
+        deletedAt = deletedAtRaw.toDate();
+      } else if (deletedAtRaw is DateTime) {
+        deletedAt = deletedAtRaw;
+      } else if (deletedAtRaw is String) {
+        deletedAt = DateTime.tryParse(deletedAtRaw);
+      }
+
+      if (deletedAt != null && now.difference(deletedAt) >= retention) {
+        expiredDocs.add(doc);
+      }
+    }
+
+    if (expiredDocs.isEmpty) return 0;
+
+    const batchSize = 500;
+    for (var i = 0; i < expiredDocs.length; i += batchSize) {
+      final end = (i + batchSize < expiredDocs.length)
+          ? i + batchSize
+          : expiredDocs.length;
+      final chunk = expiredDocs.sublist(i, end);
+      final batch = _firestore.batch();
+      for (final doc in chunk) {
+        batch.delete(doc.reference);
+      }
+      await _write(batch.commit());
+    }
+
+    return expiredDocs.length;
+  }
+
+  /// Moves an existing task to [newListId], updating only its [listId] field.
+  ///
+  /// Verifies that the target list exists and belongs to the same user as the task.
+  /// Throws [ArgumentError] if the task or target list doesn't exist, or if the
+  /// target list belongs to a different user.
+  Future<void> moveTaskToList(String taskId, String newListId) async {
+    final taskDoc = await _read(_tasksCollection.doc(taskId));
+    if (!taskDoc.exists) {
+      throw ArgumentError('Task not found: $taskId');
+    }
+    final uid = taskDoc.data()?['uid'];
+
+    final listDoc = await _read(_firestore.collection('lists').doc(newListId));
+    if (!listDoc.exists) {
+      throw ArgumentError('List not found: $newListId');
+    }
+    if (listDoc.data()?['uid'] != uid) {
+      throw ArgumentError('List does not belong to user: $newListId');
+    }
+
+    await _write(_tasksCollection.doc(taskId).update({'listId': newListId}));
+  }
+
+  /// Moves multiple tasks to [newListId], updating only their [listId] field.
+  ///
+  /// Validates that all tasks exist, the target list exists, and all tasks belong
+  /// to the same user as the target list before performing any updates.
+  /// Commits updates in batches of max 500 operations to respect Firestore's WriteBatch limit.
+  Future<void> moveTasksToList(List<String> taskIds, String newListId) async {
+    if (taskIds.isEmpty) return;
+
+    final taskDocs = await Future.wait(
+      taskIds.map((id) => _read(_tasksCollection.doc(id))),
+    );
+    for (var i = 0; i < taskIds.length; i++) {
+      if (!taskDocs[i].exists) {
+        throw ArgumentError('Task not found: ${taskIds[i]}');
+      }
+    }
+
+    final listDoc = await _read(_firestore.collection('lists').doc(newListId));
+    if (!listDoc.exists) {
+      throw ArgumentError('List not found: $newListId');
+    }
+    final listUid = listDoc.data()?['uid'];
+
+    for (var i = 0; i < taskDocs.length; i++) {
+      if (listUid != taskDocs[i].data()?['uid']) {
+        throw ArgumentError('List does not belong to user: $newListId');
+      }
+    }
+
+    const batchSize = 500;
+    for (var i = 0; i < taskIds.length; i += batchSize) {
+      final end = (i + batchSize < taskIds.length)
+          ? i + batchSize
+          : taskIds.length;
+      final chunk = taskIds.sublist(i, end);
+      final batch = _firestore.batch();
+      for (final taskId in chunk) {
+        batch.update(_tasksCollection.doc(taskId), {'listId': newListId});
+      }
+      await _write(batch.commit());
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _getSubtasksForTask(String taskId) async {
+    final doc = await _read(_tasksCollection.doc(taskId));
+    if (!doc.exists) {
+      throw ArgumentError('Task not found: $taskId');
+    }
+    final data = doc.data();
+    return (data?['subtasks'] as List<dynamic>?)
+            ?.map((e) => Map<String, dynamic>.from(e as Map))
+            .toList() ??
+        <Map<String, dynamic>>[];
+  }
+
+  /// Runs subtask [edit]s for [taskId] one at a time.
+  ///
+  /// Toggle, remove and reorder rewrite the whole array, so two overlapping
+  /// edits would otherwise lose one of the changes.
+  Future<void> _queueSubtaskEdit(String taskId, Future<void> Function() edit) {
+    final previous = _subtaskEdits[taskId] ?? Future<void>.value();
+    final result = previous.then((_) => edit());
+    final settled = result.then<void>((_) {}, onError: (_) {});
+    _subtaskEdits[taskId] = settled;
+    unawaited(
+      settled.whenComplete(() {
+        if (identical(_subtaskEdits[taskId], settled)) {
+          _subtaskEdits.remove(taskId);
+        }
+      }),
+    );
+    return result;
+  }
+
+  /// Adds a subtask to [taskId] with a generated UUID.
+  Future<void> addSubtask(String taskId, String title) async {
+    final trimmed = title.trim();
+    if (trimmed.isEmpty) {
+      throw ArgumentError('Subtask title cannot be empty');
+    }
+    await _queueSubtaskEdit(taskId, () async {
+      await _getSubtasksForTask(taskId);
+      await _write(
+        _tasksCollection.doc(taskId).update({
+          'subtasks': FieldValue.arrayUnion([
+            <String, dynamic>{
+              'id': const Uuid().v4(),
+              'title': trimmed,
+              'completed': false,
+            },
+          ]),
+        }),
+      );
     });
   }
 
-  /// Soft-deletes a task by setting its [deletedAt] field to the server timestamp.
-  Future<void> softDeleteTask(String taskId) async {
-    await _tasksCollection.doc(taskId).update({
-      'deletedAt': FieldValue.serverTimestamp(),
+  /// Toggles the completion status of subtask [subtaskId] within [taskId].
+  Future<void> toggleSubtask(
+    String taskId,
+    String subtaskId, {
+    required bool completed,
+  }) async {
+    await _queueSubtaskEdit(taskId, () async {
+      final subtasks = await _getSubtasksForTask(taskId);
+      final index = subtasks.indexWhere((s) => s['id'] == subtaskId);
+      if (index == -1) {
+        throw ArgumentError('Subtask not found: $subtaskId');
+      }
+      subtasks[index]['completed'] = completed;
+      await _write(_tasksCollection.doc(taskId).update({'subtasks': subtasks}));
+    });
+  }
+
+  /// Removes subtask [subtaskId] from [taskId].
+  Future<void> removeSubtask(String taskId, String subtaskId) async {
+    await _queueSubtaskEdit(taskId, () async {
+      final subtasks = await _getSubtasksForTask(taskId);
+      final updated = subtasks.where((s) => s['id'] != subtaskId).toList();
+      await _write(_tasksCollection.doc(taskId).update({'subtasks': updated}));
+    });
+  }
+
+  /// Reorders subtasks of [taskId] to match [orderedSubtaskIds].
+  ///
+  /// Throws [ArgumentError] if [orderedSubtaskIds] does not exactly match
+  /// the set and count of current subtask IDs (e.g. duplicates, missing or extra IDs).
+  Future<void> reorderSubtasks(
+    String taskId,
+    List<String> orderedSubtaskIds,
+  ) async {
+    await _queueSubtaskEdit(taskId, () async {
+      final subtasks = await _getSubtasksForTask(taskId);
+      final existingIds = subtasks.map((s) => s['id'] as String).toList();
+
+      if (orderedSubtaskIds.length != existingIds.length) {
+        throw ArgumentError(
+          'Ordered subtask IDs count (${orderedSubtaskIds.length}) does not match existing subtask count (${existingIds.length})',
+        );
+      }
+
+      final orderedSet = orderedSubtaskIds.toSet();
+      if (orderedSet.length != orderedSubtaskIds.length) {
+        throw ArgumentError('Ordered subtask IDs contains duplicate IDs');
+      }
+
+      final existingSet = existingIds.toSet();
+      if (!orderedSet.containsAll(existingSet) ||
+          !existingSet.containsAll(orderedSet)) {
+        throw ArgumentError(
+          'Ordered subtask IDs do not match existing subtask IDs',
+        );
+      }
+
+      final subtaskMap = {for (final s in subtasks) s['id'] as String: s};
+      final reordered = orderedSubtaskIds.map((id) => subtaskMap[id]!).toList();
+      await _write(
+        _tasksCollection.doc(taskId).update({'subtasks': reordered}),
+      );
     });
   }
 }

@@ -1,0 +1,203 @@
+import 'dart:async';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../auth/providers/auth_providers.dart';
+import '../data/task.dart';
+import '../domain/smart_view_models.dart';
+import 'task_providers.dart';
+
+/// Stream that emits the current local time, then again whenever the calendar
+/// date changes.
+///
+/// Checks every minute instead of waiting on one timer until midnight, because
+/// that timer can run late after the device sleeps.
+final currentDateStreamProvider = StreamProvider<DateTime>((ref) {
+  final controller = StreamController<DateTime>();
+  var lastDate = DateTime.now();
+  controller.add(lastDate);
+
+  final timer = Timer.periodic(const Duration(minutes: 1), (_) {
+    final now = DateTime.now();
+    if (!SmartViewDateUtils.isSameCalendarDay(now, lastDate)) {
+      lastDate = now;
+      controller.add(now);
+    }
+  });
+
+  ref.onDispose(() {
+    timer.cancel();
+    controller.close();
+  });
+
+  return controller.stream;
+});
+
+/// Current calendar date provider, updated automatically at local midnight.
+final currentDateProvider = Provider<DateTime>((ref) {
+  final asyncDate = ref.watch(currentDateStreamProvider);
+  return asyncDate.value ?? DateTime.now();
+});
+
+/// Timeout duration for the initial data emission of smart view streams.
+final smartViewTimeoutProvider = Provider<Duration>((ref) {
+  return const Duration(seconds: 10);
+});
+
+/// Extension providing a first-event-only timeout mechanism for streams.
+extension FirstEventTimeoutExtension<T> on Stream<T> {
+  /// Emits a [TimeoutException] if the first event is not received within [duration].
+  ///
+  /// Once the first event or error is received, the timeout timer is cancelled
+  /// and will not fire on subsequent idle periods.
+  Stream<T> timeoutFirstEvent(Duration duration, {String? message}) {
+    final controller = isBroadcast
+        ? StreamController<T>.broadcast(sync: true)
+        : StreamController<T>(sync: true);
+
+    StreamSubscription<T>? subscription;
+    Timer? timer;
+    bool hasEmitted = false;
+
+    controller.onListen = () {
+      timer = Timer(duration, () {
+        if (!hasEmitted) {
+          controller.addError(
+            TimeoutException(
+              message ?? 'This is taking longer than expected — check your connection or try again',
+              duration,
+            ),
+          );
+        }
+      });
+
+      subscription = listen(
+        (data) {
+          hasEmitted = true;
+          timer?.cancel();
+          timer = null;
+          controller.add(data);
+        },
+        onError: (Object error, StackTrace stackTrace) {
+          hasEmitted = true;
+          timer?.cancel();
+          timer = null;
+          controller.addError(error, stackTrace);
+        },
+        onDone: () {
+          timer?.cancel();
+          timer = null;
+          controller.close();
+        },
+        cancelOnError: false,
+      );
+    };
+
+    controller.onCancel = () {
+      timer?.cancel();
+      timer = null;
+      return subscription?.cancel();
+    };
+
+    if (!isBroadcast) {
+      controller.onPause = () => subscription?.pause();
+      controller.onResume = () => subscription?.resume();
+    }
+
+    return controller.stream;
+  }
+}
+
+/// Family provider that streams all non-deleted tasks for a specific [SmartViewType]
+/// without completion, priority, or tag filters applied. Used for unfiltered task counts.
+final unfilteredSmartViewTasksProvider =
+    StreamProvider.family<List<Task>, SmartViewType>((ref, viewType) {
+      final uid = ref.watch(currentUidProvider);
+      if (uid == null) {
+        return Stream.value(const <Task>[]);
+      }
+
+      final repository = ref.watch(taskRepositoryProvider);
+      final currentDate = ref.watch(currentDateProvider);
+      final timeoutDuration = ref.watch(smartViewTimeoutProvider);
+
+      final DateTime? startDueDate;
+      final DateTime? endDueDate;
+
+      switch (viewType) {
+        case SmartViewType.today:
+          startDueDate = null;
+          endDueDate = SmartViewDateUtils.endOfDay(currentDate);
+          break;
+        case SmartViewType.thisWeek:
+          startDueDate = SmartViewDateUtils.startOfWeek(currentDate);
+          endDueDate = SmartViewDateUtils.endOfWeek(currentDate);
+          break;
+        case SmartViewType.scheduled:
+          startDueDate = null;
+          endDueDate = null;
+          break;
+      }
+
+      final baseStream = repository.streamTasksWithDueDate(
+        uid: uid,
+        startDueDate: startDueDate,
+        endDueDate: endDueDate,
+        onlyIncomplete: false,
+      );
+
+      final mappedStream = baseStream.map((tasks) {
+        final startOfToday = SmartViewDateUtils.startOfDay(currentDate);
+        return tasks.where((t) {
+          // In Today view, overdue tasks (dueDate < startOfToday) must only ever be incomplete.
+          // Completed past tasks are never overdue and must not appear in Today view under any filter.
+          if (viewType == SmartViewType.today &&
+              t.dueDate != null &&
+              t.dueDate!.isBefore(startOfToday)) {
+            if (t.isCompleted) return false;
+          }
+
+          return true;
+        }).toList();
+      });
+
+      return mappedStream.timeoutFirstEvent(
+        timeoutDuration,
+        message: 'This is taking longer than expected — check your connection or try again',
+      );
+    });
+
+/// Family provider that streams tasks for a specific [SmartViewType].
+///
+/// Filters [unfilteredSmartViewTasksProvider] in-memory by hiding completed tasks.
+final smartViewTasksProvider = StreamProvider.family<List<Task>, SmartViewType>(
+  (ref, viewType) {
+    final unfilteredAsync = ref.watch(
+      unfilteredSmartViewTasksProvider(viewType),
+    );
+
+    return unfilteredAsync.when(
+      data: (tasks) {
+        final active = tasks.where((t) => !t.isCompleted).toList();
+        return Stream.value(active);
+      },
+      loading: () => Stream<List<Task>>.fromFuture(
+        ref.watch(unfilteredSmartViewTasksProvider(viewType).future).then((
+          tasks,
+        ) {
+          return tasks.where((t) => !t.isCompleted).toList();
+        }),
+      ),
+      error: (e, st) => Stream<List<Task>>.error(e, st),
+    );
+  },
+);
+
+/// Provider exposing the integer count of tasks for a given [SmartViewType].
+final smartViewCountProvider = Provider.family<int, SmartViewType>((
+  ref,
+  viewType,
+) {
+  final tasksAsync = ref.watch(smartViewTasksProvider(viewType));
+  return tasksAsync.value?.length ?? 0;
+});

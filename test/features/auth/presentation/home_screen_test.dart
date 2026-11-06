@@ -1,13 +1,37 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:firebase_auth_mocks/firebase_auth_mocks.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
 import 'package:shukan/core/firebase/firebase_providers.dart';
+import 'package:shukan/core/notifications/notification_service.dart';
+import 'package:shukan/core/notifications/web_reminder_scheduler.dart';
 import 'package:shukan/features/auth/presentation/home_screen.dart';
 import 'package:shukan/features/lists/presentation/list_detail_screen.dart';
+import 'package:shukan/features/lists/presentation/list_icon_picker_dialog.dart';
+import 'package:shukan/features/search/presentation/widgets/search_results_view.dart';
+import 'package:shukan/features/settings/presentation/settings_screen.dart';
+import 'package:shukan/features/tags/presentation/widgets/tag_tasks_popup.dart';
+import 'package:shukan/features/tasks/data/task.dart';
+import 'package:shukan/features/tasks/presentation/recently_deleted_screen.dart';
+import 'package:timezone/data/latest_all.dart' as tz_data;
+
+class MockNotificationService extends Mock implements NotificationService {}
 
 void main() {
+  setUpAll(() {
+    tz_data.initializeTimeZones();
+    registerFallbackValue(
+      WebReminder(
+        task: const Task(taskId: 'fb', uid: 'u', listId: 'l', title: 'fb'),
+        kind: WebReminderKind.due,
+        fireTime: DateTime(2026),
+      ),
+    );
+  });
+
   late MockFirebaseAuth mockAuth;
   late FakeFirebaseFirestore fakeFirestore;
   const uid = 'test-user-id';
@@ -59,83 +83,91 @@ void main() {
     });
   });
 
-  Widget createWidgetUnderTest() {
+  Widget createWidgetUnderTest({List<dynamic> additionalOverrides = const []}) {
     return ProviderScope(
       overrides: [
         firebaseAuthProvider.overrideWithValue(mockAuth),
         firestoreProvider.overrideWithValue(fakeFirestore),
+        ...additionalOverrides,
       ],
-      child: const MaterialApp(
-        home: HomeScreen(),
+      child: MaterialApp(
+        scaffoldMessengerKey: rootScaffoldMessengerKey,
+        home: const HomeScreen(),
       ),
     );
   }
 
   group('HomeScreen Lists Grid Tests', () {
     testWidgets(
-        'shows lists in grid, ensures default list has no delete button and custom list has delete button',
-        (tester) async {
-      await tester.pumpWidget(createWidgetUnderTest());
-      await tester.pumpAndSettle();
+      'shows lists in grid, ensures default list has no delete button and custom list has delete button',
+      (tester) async {
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
 
-      expect(find.text('shukan'), findsOneWidget);
-      expect(find.byKey(const Key('logoutButton')), findsOneWidget);
-      expect(find.byKey(const Key('addListButton')), findsOneWidget);
+        expect(find.text('shukan'), findsOneWidget);
+        expect(find.byKey(const Key('searchButton')), findsOneWidget);
+        expect(find.byKey(const Key('logoutButton')), findsOneWidget);
+        expect(find.byKey(const Key('addListButton')), findsOneWidget);
 
-      // Verify lists are rendered
-      expect(find.byKey(Key('listName_$defaultListId')), findsOneWidget);
-      expect(find.byKey(Key('listName_$customListId')), findsOneWidget);
-      expect(find.text('DEFAULT'), findsOneWidget);
+        // Verify lists are rendered
+        expect(find.byKey(Key('listName_$defaultListId')), findsOneWidget);
+        expect(find.byKey(Key('listName_$customListId')), findsOneWidget);
+        expect(find.text('DEFAULT'), findsOneWidget);
 
-      // Default list has NO delete button
-      expect(
-        find.byKey(Key('deleteListButton_$defaultListId')),
-        findsNothing,
-      );
+        // Default list has NO delete button
+        expect(
+          find.byKey(Key('deleteListButton_$defaultListId')),
+          findsNothing,
+        );
 
-      // Custom list HAS a delete button
-      expect(
-        find.byKey(Key('deleteListButton_$customListId')),
-        findsOneWidget,
-      );
-    });
+        // Custom list HAS a delete button
+        expect(
+          find.byKey(Key('deleteListButton_$customListId')),
+          findsOneWidget,
+        );
+      },
+    );
 
     testWidgets(
-        'delete list shows confirmation dialog with active task count warning and deletes list on confirm',
-        (tester) async {
-      await tester.pumpWidget(createWidgetUnderTest());
-      await tester.pumpAndSettle();
+      'delete list shows confirmation dialog with active task count warning and deletes list on confirm',
+      (tester) async {
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
 
-      // Tap delete on custom list
-      await tester.tap(find.byKey(Key('deleteListButton_$customListId')));
-      await tester.pumpAndSettle();
+        // Tap delete on custom list
+        await tester.tap(find.byKey(Key('deleteListButton_$customListId')));
+        await tester.pumpAndSettle();
 
-      // Verify confirmation dialog and active task warning
-      expect(find.text('Delete "Work"?'), findsOneWidget);
-      expect(
-        find.text('2 task(s) in this list will also be removed.'),
-        findsOneWidget,
-      );
+        // Verify confirmation dialog and active task warning
+        expect(find.text('Delete "Work"?'), findsOneWidget);
+        expect(
+          find.text('2 task(s) in this list will also be removed.'),
+          findsOneWidget,
+        );
 
-      // Tap confirm delete
-      await tester.tap(find.byKey(const Key('confirmDeleteListButton')));
-      await tester.pumpAndSettle();
+        // Tap confirm delete
+        await tester.tap(find.byKey(const Key('confirmDeleteListButton')));
+        await tester.pumpAndSettle();
 
-      // Verify custom list is deleted in Firestore
-      final listDoc =
-          await fakeFirestore.collection('lists').doc(customListId).get();
-      expect(listDoc.exists, isFalse);
+        // Verify custom list is deleted in Firestore
+        final listDoc = await fakeFirestore
+            .collection('lists')
+            .doc(customListId)
+            .get();
+        expect(listDoc.exists, isFalse);
 
-      // Verify tasks soft-deleted
-      final t1 = await fakeFirestore.collection('tasks').doc('t1').get();
-      expect(t1.data()!['deletedAt'], isNotNull);
+        // Verify tasks soft-deleted
+        final t1 = await fakeFirestore.collection('tasks').doc('t1').get();
+        expect(t1.data()!['deletedAt'], isNotNull);
 
-      // List should disappear from home screen
-      expect(find.byKey(Key('listName_$customListId')), findsNothing);
-    });
+        // List should disappear from home screen
+        expect(find.byKey(Key('listName_$customListId')), findsNothing);
+      },
+    );
 
-    testWidgets('create list dialog creates new list and shows it in grid',
-        (tester) async {
+    testWidgets('create list dialog creates new list and shows it in grid', (
+      tester,
+    ) async {
       await tester.pumpWidget(createWidgetUnderTest());
       await tester.pumpAndSettle();
 
@@ -184,16 +216,80 @@ void main() {
       await tester.pumpAndSettle();
 
       // Verify renamed in Firestore
-      final listDoc =
-          await fakeFirestore.collection('lists').doc(defaultListId).get();
+      final listDoc = await fakeFirestore
+          .collection('lists')
+          .doc(defaultListId)
+          .get();
       expect(listDoc.data()!['name'], equals('Primary Inbox'));
       expect(listDoc.data()!['isDefault'], isTrue);
 
       expect(find.text('Primary Inbox'), findsOneWidget);
     });
 
-    testWidgets('tapping a list navigates to ListDetailScreen and back',
-        (tester) async {
+    testWidgets(
+      'tapping changeListIconButton opens picker, highlights current icon, and selecting new icon updates card icon and Firestore',
+      (tester) async {
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        final cardIconButtonFinder = find.byKey(
+          Key('changeListIconButton_$customListId'),
+        );
+        expect(cardIconButtonFinder, findsOneWidget);
+        expect(
+          find.descendant(
+            of: cardIconButtonFinder,
+            matching: find.byIcon(Icons.folder_outlined),
+          ),
+          findsOneWidget,
+        );
+
+        // Tap change icon button on custom list card
+        await tester.tap(cardIconButtonFinder);
+        await tester.pumpAndSettle();
+
+        // Verify picker dialog is displayed and fallback 'folder' is highlighted
+        expect(find.byType(ListIconPickerDialog), findsOneWidget);
+        expect(
+          find.byKey(const Key('selectedListIconOption_folder')),
+          findsOneWidget,
+        );
+
+        // Tap 'work' icon
+        await tester.tap(find.byKey(const Key('listIconOption_work')));
+        await tester.pumpAndSettle();
+
+        // Dialog should be dismissed
+        expect(find.byType(ListIconPickerDialog), findsNothing);
+
+        // Verify updated in Firestore
+        final doc = await fakeFirestore
+            .collection('lists')
+            .doc(customListId)
+            .get();
+        expect(doc.data()!['icon'], equals('work'));
+
+        // Verify card's icon refreshed via stream to reflect 'work' (Icons.work_outline)
+        expect(
+          find.descendant(
+            of: cardIconButtonFinder,
+            matching: find.byIcon(Icons.work_outline),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: cardIconButtonFinder,
+            matching: find.byIcon(Icons.folder_outlined),
+          ),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets('tapping a list navigates to ListDetailScreen and back', (
+      tester,
+    ) async {
       await tester.pumpWidget(createWidgetUnderTest());
       await tester.pumpAndSettle();
 
@@ -216,6 +312,205 @@ void main() {
       expect(find.byType(HomeScreen), findsOneWidget);
     });
 
+    testWidgets(
+      'tapping search button expands search inline and collapses back',
+      (tester) async {
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        final initialRoute = ModalRoute.of(
+          tester.element(find.byType(HomeScreen)),
+        );
+
+        // Normal home body is visible
+        expect(find.byKey(const Key('smartViewCard_today')), findsOneWidget);
+        expect(find.byKey(const Key('logoutButton')), findsOneWidget);
+
+        // Tap searchButton to expand search inline
+        await tester.tap(find.byKey(const Key('searchButton')));
+        await tester.pumpAndSettle();
+
+        // Search input is visible
+        expect(find.byKey(const Key('searchQueryInput')), findsOneWidget);
+        // Normal home body is gone
+        expect(find.byKey(const Key('smartViewCard_today')), findsNothing);
+        expect(find.byKey(const Key('noListsText')), findsNothing);
+
+        // Assert NO new route was pushed (same route / ModalRoute before and after)
+        final currentRoute = ModalRoute.of(
+          tester.element(find.byType(HomeScreen)),
+        );
+        expect(currentRoute, equals(initialRoute));
+        expect(find.byType(Dialog), findsNothing);
+
+        // Tap searchButton again (now showing close icon)
+        final searchButton = tester.widget<IconButton>(
+          find.byKey(const Key('searchButton')),
+        );
+        expect((searchButton.icon as Icon).icon, Icons.close);
+        await tester.tap(find.byKey(const Key('searchButton')));
+        await tester.pumpAndSettle();
+
+        // Home body, logoutButton, and normal search icon are restored
+        expect(find.byKey(const Key('searchQueryInput')), findsNothing);
+        expect(find.byKey(const Key('smartViewCard_today')), findsOneWidget);
+        expect(find.byKey(const Key('logoutButton')), findsOneWidget);
+        final restoredButton = tester.widget<IconButton>(
+          find.byKey(const Key('searchButton')),
+        );
+        expect((restoredButton.icon as Icon).icon, Icons.search);
+        expect(find.byType(HomeScreen), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'inline search expands to span available width with no Dialog on both narrow and wide screens',
+      (tester) async {
+        // Narrow width (e.g. mobile 450x800)
+        tester.view.physicalSize = const Size(450, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('searchButton')));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(Dialog), findsNothing);
+        expect(
+          find.byKey(const Key('searchDialogConstrainedBox')),
+          findsNothing,
+        );
+        expect(find.byKey(const Key('searchQueryInput')), findsOneWidget);
+        final narrowBodySize = tester.getSize(find.byType(SearchResultsView));
+        expect(narrowBodySize.width, 450);
+
+        // Collapse search
+        await tester.tap(find.byKey(const Key('searchButton')));
+        await tester.pumpAndSettle();
+
+        // Wide width (e.g. desktop 800x800)
+        tester.view.physicalSize = const Size(800, 800);
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('searchButton')));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(Dialog), findsNothing);
+        expect(
+          find.byKey(const Key('searchDialogConstrainedBox')),
+          findsNothing,
+        );
+        expect(find.byKey(const Key('searchQueryInput')), findsOneWidget);
+        final wideBodySize = tester.getSize(find.byType(SearchResultsView));
+        expect(wideBodySize.width, 800);
+
+        // Collapse search
+        await tester.tap(find.byKey(const Key('searchButton')));
+        await tester.pumpAndSettle();
+      },
+    );
+
+    testWidgets(
+      'tapping View on add-task SnackBar collapses inline search and opens ListDetailScreen',
+      (tester) async {
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        // Expand inline search
+        await tester.tap(find.byKey(const Key('searchButton')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('searchQueryInput')), findsOneWidget);
+
+        // Enter task query to show add task action
+        await tester.enterText(
+          find.byKey(const Key('searchQueryInput')),
+          'Buy fresh apples',
+        );
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('searchAddTaskAction')), findsOneWidget);
+
+        // Tap Add as task
+        await tester.tap(find.byKey(const Key('searchAddTaskAction')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Added to Inbox'), findsOneWidget);
+        expect(find.text('View'), findsOneWidget);
+
+        // Tap View action
+        await tester.tap(find.text('View'));
+        await tester.pumpAndSettle();
+
+        // ListDetailScreen is pushed as a new route on top of HomeScreen
+        expect(find.byType(ListDetailScreen), findsOneWidget);
+        expect(find.text('Inbox'), findsWidgets);
+        // Search is collapsed
+        expect(find.byKey(const Key('searchQueryInput')), findsNothing);
+
+        // Tapping Back from ListDetailScreen returns to HomeScreen with normal body restored
+        await tester.tap(find.byTooltip('Back'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(ListDetailScreen), findsNothing);
+        expect(find.byKey(const Key('searchQueryInput')), findsNothing);
+        expect(find.byType(HomeScreen), findsOneWidget);
+        expect(find.byKey(const Key('smartViewCard_today')), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'logoutButton is absent while search is active and present once collapsed',
+      (tester) async {
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('logoutButton')), findsOneWidget);
+
+        // Expand search
+        await tester.tap(find.byKey(const Key('searchButton')));
+        await tester.pumpAndSettle();
+
+        // logoutButton is absent from the widget tree
+        expect(find.byKey(const Key('logoutButton')), findsNothing);
+
+        // Collapse search
+        await tester.tap(find.byKey(const Key('searchButton')));
+        await tester.pumpAndSettle();
+
+        // logoutButton is present again
+        expect(find.byKey(const Key('logoutButton')), findsOneWidget);
+      },
+    );
+
+    testWidgets('system back action collapses inline search when active', (
+      tester,
+    ) async {
+      await tester.pumpWidget(createWidgetUnderTest());
+      await tester.pumpAndSettle();
+
+      // Expand search
+      await tester.tap(find.byKey(const Key('searchButton')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('searchQueryInput')), findsOneWidget);
+
+      // Simulate system back action
+      final dynamic widgetsAppState = tester.state(find.byType(WidgetsApp));
+      await widgetsAppState.didPopRoute();
+      await tester.pumpAndSettle();
+
+      // Search is collapsed, home body restored
+      expect(find.byKey(const Key('searchQueryInput')), findsNothing);
+      expect(find.byKey(const Key('smartViewCard_today')), findsOneWidget);
+      expect(find.byKey(const Key('logoutButton')), findsOneWidget);
+    });
+
     testWidgets('logout button signs user out', (tester) async {
       await tester.pumpWidget(createWidgetUnderTest());
       await tester.pumpAndSettle();
@@ -224,6 +519,560 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(mockAuth.currentUser, isNull);
+    });
+
+    testWidgets('app bar does not have tagBrowserButton', (tester) async {
+      await tester.pumpWidget(createWidgetUnderTest());
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('tagBrowserButton')), findsNothing);
+    });
+
+    testWidgets(
+      'Home tags section starts collapsed, expands on tap, shows chips, and opens TagTasksPopup',
+      (tester) async {
+        await fakeFirestore.collection('tags').doc('tag-urgent').set({
+          'tagId': 'tag-urgent',
+          'uid': uid,
+          'name': 'Urgent',
+          'createdAt': DateTime.now(),
+        });
+        await fakeFirestore.collection('tasks').doc('t-tag-1').set({
+          'taskId': 't-tag-1',
+          'uid': uid,
+          'listId': defaultListId,
+          'title': 'Tagged Task',
+          'tagIds': ['tag-urgent'],
+          'deletedAt': null,
+          'completedAt': null,
+        });
+
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        // Starts collapsed: header exists, chevron is expand_more, chips not rendered
+        expect(
+          find.byKey(const Key('tagChipsSectionHeader_home')),
+          findsOneWidget,
+        );
+        expect(find.byIcon(Icons.expand_more), findsOneWidget);
+        expect(find.byKey(const Key('tagChip_home_tag-urgent')), findsNothing);
+
+        // Tap to expand
+        await tester.tap(find.byKey(const Key('tagChipsSectionHeader_home')));
+        await tester.pumpAndSettle();
+
+        expect(find.byIcon(Icons.expand_less), findsOneWidget);
+        expect(
+          find.byKey(const Key('tagChip_home_tag-urgent')),
+          findsOneWidget,
+        );
+        expect(find.text('#Urgent'), findsOneWidget);
+        expect(
+          find.byKey(const Key('tagChipCount_home_tag-urgent')),
+          findsOneWidget,
+        );
+        expect(find.text('1'), findsWidgets);
+
+        // Tap chip to open TagTasksPopup
+        await tester.tap(find.byKey(const Key('tagChip_home_tag-urgent')));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(TagTasksPopup), findsOneWidget);
+        expect(
+          find.byKey(const Key('tagTasksPopup_tag-urgent')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('tagTasksPopupTask_tag-urgent_t-tag-1')),
+          findsOneWidget,
+        );
+        expect(find.text('Tagged Task'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'long-pressing a tag chip opens bottom sheet with functional Edit and Delete actions',
+      (tester) async {
+        await fakeFirestore.collection('tags').doc('tag-work').set({
+          'tagId': 'tag-work',
+          'uid': uid,
+          'name': 'Work',
+          'createdAt': DateTime.now(),
+        });
+        await fakeFirestore.collection('tasks').doc('t-work-1').set({
+          'taskId': 't-work-1',
+          'uid': uid,
+          'listId': defaultListId,
+          'title': 'Work Task',
+          'tagIds': ['tag-work'],
+          'deletedAt': null,
+          'completedAt': null,
+        });
+
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        // Expand section
+        await tester.tap(find.byKey(const Key('tagChipsSectionHeader_home')));
+        await tester.pumpAndSettle();
+
+        // Long press chip
+        await tester.longPress(find.byKey(const Key('tagChip_home_tag-work')));
+        await tester.pumpAndSettle();
+
+        // Bottom sheet appears
+        expect(
+          find.byKey(const Key('tagActionsBottomSheet_tag-work')),
+          findsOneWidget,
+        );
+        expect(find.byKey(const Key('editTagAction_tag-work')), findsOneWidget);
+        expect(
+          find.byKey(const Key('deleteTagAction_tag-work')),
+          findsOneWidget,
+        );
+
+        // Tap Edit action
+        await tester.tap(find.byKey(const Key('editTagAction_tag-work')));
+        await tester.pumpAndSettle();
+
+        // Rename dialog opens
+        expect(find.text('Rename Tag'), findsOneWidget);
+        await tester.tap(find.byKey(const Key('cancelRenameTagButton')));
+        await tester.pumpAndSettle();
+
+        // Long press chip again and tap Delete action
+        await tester.longPress(find.byKey(const Key('tagChip_home_tag-work')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('deleteTagAction_tag-work')));
+        await tester.pumpAndSettle();
+
+        // Delete confirmation dialog opens
+        expect(find.text('Delete "#Work"?'), findsOneWidget);
+        await tester.tap(find.byKey(const Key('cancelDeleteTagButton')));
+        await tester.pumpAndSettle();
+        expect(find.text('Delete "#Work"?'), findsNothing);
+      },
+    );
+
+    testWidgets('renders active task count badge on each list card', (
+      tester,
+    ) async {
+      await tester.pumpWidget(createWidgetUnderTest());
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(Key('taskCountBadge_$defaultListId')), findsOneWidget);
+      expect(find.byKey(Key('taskCountText_$defaultListId')), findsOneWidget);
+      expect(
+        tester
+            .widget<Text>(find.byKey(Key('taskCountText_$defaultListId')))
+            .data,
+        '0',
+      );
+
+      expect(find.byKey(Key('taskCountBadge_$customListId')), findsOneWidget);
+      expect(find.byKey(Key('taskCountText_$customListId')), findsOneWidget);
+      expect(
+        tester
+            .widget<Text>(find.byKey(Key('taskCountText_$customListId')))
+            .data,
+        '2',
+      );
+    });
+
+    testWidgets(
+      'active task count badge updates live when tasks are added, completed, and deleted',
+      (tester) async {
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        // Initial: Inbox has 0, Work has 2
+        expect(
+          tester
+              .widget<Text>(find.byKey(Key('taskCountText_$defaultListId')))
+              .data,
+          '0',
+        );
+        expect(
+          tester
+              .widget<Text>(find.byKey(Key('taskCountText_$customListId')))
+              .data,
+          '2',
+        );
+
+        // 1. Add task to Inbox
+        await fakeFirestore.collection('tasks').doc('t-new').set({
+          'taskId': 't-new',
+          'uid': uid,
+          'listId': defaultListId,
+          'title': 'New inbox task',
+          'deletedAt': null,
+          'completedAt': null,
+        });
+        await tester.pump();
+
+        expect(
+          tester
+              .widget<Text>(find.byKey(Key('taskCountText_$defaultListId')))
+              .data,
+          '1',
+        );
+
+        // 2. Complete task in Work list
+        await fakeFirestore.collection('tasks').doc('t1').update({
+          'completedAt': Timestamp.now(),
+        });
+        await tester.pump();
+
+        expect(
+          tester
+              .widget<Text>(find.byKey(Key('taskCountText_$customListId')))
+              .data,
+          '1',
+        );
+
+        // 3. Soft-delete task in Work list
+        await fakeFirestore.collection('tasks').doc('t2').update({
+          'deletedAt': Timestamp.now(),
+        });
+        await tester.pump();
+
+        expect(
+          tester
+              .widget<Text>(find.byKey(Key('taskCountText_$customListId')))
+              .data,
+          '0',
+        );
+      },
+    );
+
+    testWidgets(
+      'shows missed tasks banner when overdue tasks exist, and dismisses on tap',
+      (tester) async {
+        final yesterday = DateTime.now().subtract(const Duration(days: 1));
+        await fakeFirestore.collection('tasks').doc('t-overdue').set({
+          'taskId': 't-overdue',
+          'uid': uid,
+          'listId': customListId,
+          'title': 'Overdue Task',
+          'dueDate': Timestamp.fromDate(yesterday),
+          'deletedAt': null,
+          'completedAt': null,
+        });
+
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('missedTasksBanner')), findsOneWidget);
+        expect(find.text('1 task overdue'), findsOneWidget);
+
+        // Tap dismiss
+        await tester.tap(
+          find.byKey(const Key('missedTasksBannerDismissButton')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('missedTasksBanner')), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'Recently Deleted card is hidden when recently deleted count is 0',
+      (tester) async {
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('recentlyDeletedButton')), findsNothing);
+        expect(find.byKey(const Key('listCard_recentlyDeleted')), findsNothing);
+        expect(find.byKey(const Key('listTile_recentlyDeleted')), findsNothing);
+        expect(
+          find.descendant(
+            of: find.byType(GridView),
+            matching: find.text('Recently Deleted'),
+          ),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets(
+      'Recently Deleted card is visible, renders last in grid when count > 0, and disappears reactively when count drops to 0',
+      (tester) async {
+        // Initial setup: count is 0, card not in grid
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('listCard_recentlyDeleted')), findsNothing);
+
+        // Add soft-deleted task
+        await fakeFirestore.collection('tasks').doc('t-del').set({
+          'taskId': 't-del',
+          'uid': uid,
+          'listId': customListId,
+          'title': 'Deleted Task',
+          'deletedAt': Timestamp.now(),
+        });
+        await tester.pump();
+
+        // Card is now visible in the grid
+        expect(
+          find.byKey(const Key('listCard_recentlyDeleted')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('listTile_recentlyDeleted')),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: find.byType(GridView),
+            matching: find.text('Recently Deleted'),
+          ),
+          findsOneWidget,
+        );
+
+        // Verify task count badge on card
+        expect(
+          find.byKey(const Key('taskCountBadge_recentlyDeleted')),
+          findsOneWidget,
+        );
+        expect(
+          tester
+              .widget<Text>(
+                find.byKey(const Key('taskCountText_recentlyDeleted')),
+              )
+              .data,
+          '1',
+        );
+
+        // Verify card renders last in grid after all user lists
+        final gridCards = find.descendant(
+          of: find.byType(GridView),
+          matching: find.byType(Card),
+        );
+        expect(gridCards, findsNWidgets(3));
+        expect(
+          tester.widget<Card>(gridCards.at(0)).key,
+          equals(Key('listTile_$defaultListId')),
+        );
+        expect(
+          tester.widget<Card>(gridCards.at(1)).key,
+          equals(Key('listTile_$customListId')),
+        );
+        expect(
+          tester.widget<Card>(gridCards.at(2)).key,
+          equals(const Key('listTile_recentlyDeleted')),
+        );
+
+        // Reactive disappearance: Restore task (deletedAt -> null)
+        await fakeFirestore.collection('tasks').doc('t-del').update({
+          'deletedAt': null,
+        });
+        await tester.pump();
+
+        // Card disappears immediately
+        expect(find.byKey(const Key('listCard_recentlyDeleted')), findsNothing);
+        final gridCardsAfterRestore = find.descendant(
+          of: find.byType(GridView),
+          matching: find.byType(Card),
+        );
+        expect(gridCardsAfterRestore, findsNWidgets(2));
+      },
+    );
+
+    testWidgets(
+      'tapping Recently Deleted card navigates to RecentlyDeletedScreen and back',
+      (tester) async {
+        // Add soft-deleted task so card appears
+        await fakeFirestore.collection('tasks').doc('t-del').set({
+          'taskId': 't-del',
+          'uid': uid,
+          'listId': customListId,
+          'title': 'Deleted Task',
+          'deletedAt': Timestamp.now(),
+        });
+
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('listCard_recentlyDeleted')),
+          findsOneWidget,
+        );
+
+        // Tap the Recently Deleted card
+        await tester.tap(find.byKey(const Key('listCard_recentlyDeleted')));
+        await tester.pumpAndSettle();
+
+        // Should be on RecentlyDeletedScreen
+        expect(find.byType(RecentlyDeletedScreen), findsOneWidget);
+        expect(find.text('Deleted Task'), findsOneWidget);
+
+        // Tap back button
+        await tester.tap(find.byTooltip('Back'));
+        await tester.pumpAndSettle();
+
+        // Back on HomeScreen
+        expect(find.byType(RecentlyDeletedScreen), findsNothing);
+        expect(find.byType(HomeScreen), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'create list shows snackbar with trimmed name, and cancelling shows none',
+      (tester) async {
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        // Tap FAB to open create dialog
+        await tester.tap(find.byKey(const Key('addListButton')));
+        await tester.pumpAndSettle();
+
+        // Cancel test: tap Cancel and verify no snackbar appears
+        await tester.tap(find.text('Cancel'));
+        await tester.pumpAndSettle();
+        expect(find.byType(SnackBar), findsNothing);
+
+        // Open again, enter whitespace-padded name, and submit
+        await tester.tap(find.byKey(const Key('addListButton')));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('createListNameInput')),
+          '  Personal Projects  ',
+        );
+        await tester.tap(find.byKey(const Key('confirmCreateListButton')));
+        await tester.pumpAndSettle();
+
+        // Verify snackbar has trimmed name and no action
+        expect(find.text('Created list "Personal Projects"'), findsOneWidget);
+        expect(find.byType(SnackBarAction), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'rename list shows snackbar with new name; cancelling or renaming to same name shows none',
+      (tester) async {
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        // Cancel test: open rename, tap Cancel, verify no snackbar
+        await tester.tap(find.byKey(Key('renameListButton_$customListId')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Cancel'));
+        await tester.pumpAndSettle();
+        expect(find.byType(SnackBar), findsNothing);
+
+        // No-op rename test: save same name (with whitespace), verify no snackbar
+        await tester.tap(find.byKey(Key('renameListButton_$customListId')));
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const Key('renameListInput')),
+          '  Work  ',
+        );
+        await tester.tap(find.byKey(const Key('confirmRenameListButton')));
+        await tester.pumpAndSettle();
+        expect(find.byType(SnackBar), findsNothing);
+
+        // Successful rename: enter new name
+        await tester.tap(find.byKey(Key('renameListButton_$customListId')));
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const Key('renameListInput')),
+          '  Work 2.0  ',
+        );
+        await tester.tap(find.byKey(const Key('confirmRenameListButton')));
+        await tester.pumpAndSettle();
+
+        // Verify snackbar has trimmed name and no action
+        expect(find.text('Renamed list to "Work 2.0"'), findsOneWidget);
+        expect(find.byType(SnackBarAction), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'delete list shows snackbar with original name; cancelling delete shows none',
+      (tester) async {
+        await tester.pumpWidget(createWidgetUnderTest());
+        await tester.pumpAndSettle();
+
+        // Cancel delete: tap delete, tap Cancel, verify no snackbar
+        await tester.tap(find.byKey(Key('deleteListButton_$customListId')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('cancelDeleteListButton')));
+        await tester.pumpAndSettle();
+        expect(find.byType(SnackBar), findsNothing);
+
+        // Confirm delete: tap delete, tap Delete button
+        await tester.tap(find.byKey(Key('deleteListButton_$customListId')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('confirmDeleteListButton')));
+        await tester.pumpAndSettle();
+
+        // Verify snackbar has original name and no action
+        expect(find.text('Deleted list "Work"'), findsOneWidget);
+        expect(find.byType(SnackBarAction), findsNothing);
+      },
+    );
+
+    testWidgets('two rapid actions leave only the latest snackbar', (
+      tester,
+    ) async {
+      await tester.pumpWidget(createWidgetUnderTest());
+      await tester.pumpAndSettle();
+
+      // Create first list
+      await tester.tap(find.byKey(const Key('addListButton')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('createListNameInput')),
+        'First List',
+      );
+      await tester.tap(find.byKey(const Key('confirmCreateListButton')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Created list "First List"'), findsOneWidget);
+
+      // Immediately create second list
+      await tester.tap(find.byKey(const Key('addListButton')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('createListNameInput')),
+        'Second List',
+      );
+      await tester.tap(find.byKey(const Key('confirmCreateListButton')));
+      await tester.pumpAndSettle();
+
+      // Only second snackbar remains
+      expect(find.text('Created list "First List"'), findsNothing);
+      expect(find.text('Created list "Second List"'), findsOneWidget);
+      expect(find.byType(SnackBar), findsOneWidget);
+    });
+  });
+
+  group('HomeScreen settings', () {
+    testWidgets('the settings button opens the settings screen', (
+      tester,
+    ) async {
+      await tester.pumpWidget(createWidgetUnderTest());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('settingsButton')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SettingsScreen), findsOneWidget);
+    });
+
+    testWidgets('the settings button is hidden while search is active', (
+      tester,
+    ) async {
+      await tester.pumpWidget(createWidgetUnderTest());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('searchButton')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('settingsButton')), findsNothing);
     });
   });
 }

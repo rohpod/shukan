@@ -1,0 +1,253 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../data/task.dart';
+import '../domain/smart_view_models.dart';
+import '../domain/task_priority_filter.dart';
+import '../domain/task_sort_options.dart';
+import 'smart_view_providers.dart';
+import 'task_providers.dart';
+import 'task_tag_filter_providers.dart';
+
+/// Provider for SharedPreferences instance. Overridden in ProviderScope at app startup and in tests.
+final sharedPreferencesProvider = Provider<SharedPreferences?>((ref) {
+  return null;
+});
+
+/// Per-view sort mode notifier, keyed by `listId` (for list views) or `viewType.name` (for smart views).
+///
+/// Persists the selected [TaskSortOption] to SharedPreferences under `task_sort_mode_<viewKey>`.
+/// Defaults to [TaskSortOption.dueDate] for smart views, and [TaskSortOption.manual] for list views.
+class TaskSortModeNotifier extends Notifier<TaskSortOption> {
+  TaskSortModeNotifier(this.viewKey);
+
+  final String viewKey;
+
+  @override
+  TaskSortOption build() {
+    final prefs = ref.watch(sharedPreferencesProvider);
+    final saved = prefs?.getString('task_sort_mode_$viewKey');
+    if (saved != null) {
+      for (final option in TaskSortOption.values) {
+        if (option.name == saved) {
+          return option;
+        }
+      }
+    }
+    if (SmartViewType.values.any((v) => v.name == viewKey)) {
+      return TaskSortOption.dueDate;
+    }
+    return TaskSortOption.manual;
+  }
+
+  Future<void> setSortMode(TaskSortOption option) async {
+    state = option;
+    final prefs = ref.read(sharedPreferencesProvider);
+    await prefs?.setString('task_sort_mode_$viewKey', option.name);
+  }
+}
+
+/// Provider exposing the independent [TaskSortOption] for each view.
+final taskSortModeProvider =
+    NotifierProvider.family<TaskSortModeNotifier, TaskSortOption, String>(
+      (arg) => TaskSortModeNotifier(arg),
+    );
+
+/// Per-view priority filter notifier, keyed by `listId` (for list views) or `viewType.name` (for smart views).
+///
+/// Persists the selected [TaskPriorityFilter] to SharedPreferences under `task_priority_filter_<viewKey>`.
+/// Defaults to [TaskPriorityFilter.all].
+class TaskPriorityFilterNotifier extends Notifier<TaskPriorityFilter> {
+  TaskPriorityFilterNotifier(this.viewKey);
+
+  final String viewKey;
+
+  @override
+  TaskPriorityFilter build() {
+    final prefs = ref.watch(sharedPreferencesProvider);
+    final saved = prefs?.getString('task_priority_filter_$viewKey');
+    if (saved != null) {
+      for (final option in TaskPriorityFilter.values) {
+        if (option.name == saved) {
+          return option;
+        }
+      }
+    }
+    return TaskPriorityFilter.all;
+  }
+
+  Future<void> setFilter(TaskPriorityFilter filter) async {
+    state = filter;
+    final prefs = ref.read(sharedPreferencesProvider);
+    await prefs?.setString('task_priority_filter_$viewKey', filter.name);
+  }
+}
+
+/// Provider exposing the active priority filter for a given view.
+final taskPriorityFilterProvider =
+    NotifierProvider.family<
+      TaskPriorityFilterNotifier,
+      TaskPriorityFilter,
+      String
+    >((arg) => TaskPriorityFilterNotifier(arg));
+
+/// Helper to map and sort tasks within an AsyncValue while preserving errors and loading states.
+AsyncValue<List<Task>> _mapSortedTasks(
+  AsyncValue<List<Task>> tasksAsync,
+  TaskSortOption sortOption,
+) {
+  if (tasksAsync.hasError && !tasksAsync.hasValue) {
+    return AsyncError(
+      tasksAsync.error!,
+      tasksAsync.stackTrace ?? StackTrace.current,
+    );
+  }
+
+  if (tasksAsync.hasValue) {
+    return AsyncData(TaskSortUtils.sortTasks(tasksAsync.value!, sortOption));
+  }
+
+  if (tasksAsync.hasError) {
+    return AsyncError(
+      tasksAsync.error!,
+      tasksAsync.stackTrace ?? StackTrace.current,
+    );
+  }
+
+  return const AsyncLoading();
+}
+
+/// Per-list notifier tracking whether the Completed section is collapsed.
+/// Persists the state to SharedPreferences under `task_completed_section_collapsed_<listId>`.
+/// Defaults to true (collapsed).
+class CompletedSectionCollapsedNotifier extends Notifier<bool> {
+  CompletedSectionCollapsedNotifier(this.listId);
+
+  final String listId;
+
+  @override
+  bool build() {
+    final prefs = ref.watch(sharedPreferencesProvider);
+    return prefs?.getBool('task_completed_section_collapsed_$listId') ?? true;
+  }
+
+  Future<void> toggle() async {
+    state = !state;
+    final prefs = ref.read(sharedPreferencesProvider);
+    await prefs?.setBool('task_completed_section_collapsed_$listId', state);
+  }
+
+  Future<void> setCollapsed(bool collapsed) async {
+    state = collapsed;
+    final prefs = ref.read(sharedPreferencesProvider);
+    await prefs?.setBool('task_completed_section_collapsed_$listId', state);
+  }
+}
+
+/// Provider exposing whether the Completed section is collapsed for a given list.
+final completedSectionCollapsedProvider =
+    NotifierProvider.family<CompletedSectionCollapsedNotifier, bool, String>(
+      (arg) => CompletedSectionCollapsedNotifier(arg),
+    );
+
+/// Manages collapsed state of the Tags section on HomeScreen, persisted in [SharedPreferences].
+class HomeTagsSectionCollapsedNotifier extends Notifier<bool> {
+  static const prefKey = 'home_tags_section_collapsed';
+
+  @override
+  bool build() {
+    final prefs = ref.watch(sharedPreferencesProvider);
+    return prefs?.getBool(prefKey) ?? true;
+  }
+
+  Future<void> toggle() async {
+    state = !state;
+    final prefs = ref.read(sharedPreferencesProvider);
+    await prefs?.setBool(prefKey, state);
+  }
+
+  Future<void> setCollapsed(bool collapsed) async {
+    state = collapsed;
+    final prefs = ref.read(sharedPreferencesProvider);
+    await prefs?.setBool(prefKey, state);
+  }
+}
+
+/// Provider exposing whether the Tags section is collapsed on HomeScreen.
+final homeTagsSectionCollapsedProvider =
+    NotifierProvider<HomeTagsSectionCollapsedNotifier, bool>(
+      HomeTagsSectionCollapsedNotifier.new,
+    );
+
+/// Streams active (non-completed) tasks for [listId] sorted by that list's independent [TaskSortOption]
+/// and filtered by its independent [taskPriorityFilterProvider] and [taskTagFilterProvider].
+final sortedTasksForListProvider =
+    Provider.family<AsyncValue<List<Task>>, String>((ref, listId) {
+      final tasksAsync = ref.watch(tasksForListProvider(listId));
+      final sortOption = ref.watch(taskSortModeProvider(listId));
+      final priorityFilter = ref.watch(taskPriorityFilterProvider(listId));
+      final tagFilter = ref.watch(taskTagFilterProvider(listId));
+
+      final filteredTasksAsync = tasksAsync.whenData((tasks) {
+        var filtered = tasks.where((t) => !t.isCompleted).toList();
+        if (priorityFilter != TaskPriorityFilter.all) {
+          final target = priorityFilter.firestoreValue;
+          filtered = filtered.where((t) => t.priority == target).toList();
+        }
+        if (tagFilter.isNotEmpty) {
+          filtered = filtered
+              .where((t) => t.tagIds.any(tagFilter.contains))
+              .toList();
+        }
+        return filtered;
+      });
+
+      return _mapSortedTasks(filteredTasksAsync, sortOption);
+    });
+
+/// Streams completed tasks for [listId] ordered always by most recently completed first
+/// (descending by [Task.completedAt], falling back to [Task.createdAt]).
+/// Completed tasks are independent of sort mode, priority, and tag filters.
+final completedTasksForListProvider =
+    Provider.family<AsyncValue<List<Task>>, String>((ref, listId) {
+      final tasksAsync = ref.watch(tasksForListProvider(listId));
+      return tasksAsync.whenData((tasks) {
+        final completed = tasks.where((t) => t.isCompleted).toList();
+        completed.sort((a, b) {
+          final aTime =
+              a.completedAt ??
+              a.createdAt ??
+              DateTime.fromMillisecondsSinceEpoch(0);
+          final bTime =
+              b.completedAt ??
+              b.createdAt ??
+              DateTime.fromMillisecondsSinceEpoch(0);
+          return bTime.compareTo(aTime);
+        });
+        return completed;
+      });
+    });
+
+/// Streams tasks for [viewType] with fixed due-date ordering.
+final sortedSmartViewTasksProvider =
+    Provider.family<AsyncValue<List<Task>>, SmartViewType>((ref, viewType) {
+      final tasksAsync = ref.watch(smartViewTasksProvider(viewType));
+      if (tasksAsync.hasError && !tasksAsync.hasValue) {
+        return AsyncError(
+          tasksAsync.error!,
+          tasksAsync.stackTrace ?? StackTrace.current,
+        );
+      }
+      if (tasksAsync.hasValue) {
+        final sorted = List<Task>.from(tasksAsync.value!)
+          ..sort(TaskSortUtils.compareByDueDate);
+        return AsyncData(sorted);
+      }
+      if (tasksAsync.hasError) {
+        return AsyncError(
+          tasksAsync.error!,
+          tasksAsync.stackTrace ?? StackTrace.current,
+        );
+      }
+      return const AsyncLoading();
+    });

@@ -1,21 +1,94 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'dart:ui';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:timezone/data/latest_all.dart' as tz_data;
+import 'package:timezone/timezone.dart' as tz;
+
+import 'core/notifications/notification_service.dart';
+import 'core/notifications/web_reminder_scheduler.dart';
+import 'core/report_error.dart';
+import 'core/startup/startup_host.dart';
+import 'core/sync/sync_banner.dart';
 import 'features/auth/presentation/auth_gate.dart';
+import 'features/tasks/presentation/reminder_navigation_handler.dart';
+import 'features/tasks/providers/task_sort_providers.dart';
 import 'firebase_options.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    reportError(details.exception, details.stack, source: 'flutter');
+  };
+  PlatformDispatcher.instance.onError = (error, stack) {
+    reportError(error, stack, source: 'platform');
+    return true;
+  };
 
-  FirebaseFirestore.instance.settings = const Settings(
-    persistenceEnabled: true,
+  runApp(const StartupHost(start: bootstrap));
+}
+
+var _firestoreConfigured = false;
+
+/// Initialises everything the app needs and returns the app widget.
+///
+/// Safe to call again after a failure: it skips work that already succeeded,
+/// since Firebase can only be initialised once and Firestore settings can't
+/// change after first use.
+Future<Widget> bootstrap() async {
+  // Initialize timezone database and set device local timezone
+  tz_data.initializeTimeZones();
+  try {
+    final timezoneInfo = await FlutterTimezone.getLocalTimezone();
+    tz.setLocalLocation(tz.getLocation(timezoneInfo.identifier));
+  } catch (e) {
+    debugPrint(
+      'Warning: Failed to resolve device local timezone ($e). Timezone fallback remains UTC.',
+    );
+  }
+
+  if (Firebase.apps.isEmpty) {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  }
+
+  if (!_firestoreConfigured) {
+    FirebaseFirestore.instance.settings = const Settings(
+      persistenceEnabled: true,
+      webPersistentTabManager: WebPersistentMultipleTabManager(),
+    );
+    _firestoreConfigured = true;
+  }
+
+  final sharedPreferences = await SharedPreferences.getInstance();
+
+  final notificationPlugin = FlutterLocalNotificationsPlugin();
+  final notificationService = NotificationService(notificationPlugin);
+  try {
+    await notificationService.initialize();
+  } catch (e) {
+    debugPrint('Failed to initialize notifications service worker: $e');
+  }
+
+  return ProviderScope(
+    overrides: [
+      sharedPreferencesProvider.overrideWithValue(sharedPreferences),
+      flutterLocalNotificationsPluginProvider.overrideWithValue(
+        notificationPlugin,
+      ),
+      notificationServiceProvider.overrideWithValue(notificationService),
+    ],
+    child: const ShukanApp(),
   );
-
-  runApp(const ProviderScope(child: ShukanApp()));
 }
 
 class ShukanApp extends StatelessWidget {
@@ -25,10 +98,24 @@ class ShukanApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'shukan',
+      scaffoldMessengerKey: rootScaffoldMessengerKey,
+      navigatorKey: rootNavigatorKey,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
+      builder: (context, child) {
+        return WebReminderHost(
+          child: ReminderNavigationHandler(
+            child: Column(
+              children: [
+                const SyncBanner(),
+                Expanded(child: child ?? const SizedBox.shrink()),
+              ],
+            ),
+          ),
+        );
+      },
       home: const AuthGate(),
     );
   }

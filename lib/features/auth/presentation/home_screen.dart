@@ -1,124 +1,148 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/ui/feedback_snackbar.dart';
 import '../../lists/data/list.dart';
+import '../../lists/domain/list_icons.dart';
 import '../../lists/presentation/list_detail_screen.dart';
+import '../../lists/presentation/list_icon_picker_dialog.dart';
+import '../../lists/presentation/widgets/list_name_dialog.dart';
 import '../../lists/providers/list_providers.dart';
+import '../../search/presentation/search_screen.dart';
+import '../../settings/presentation/settings_screen.dart';
+import '../../tags/presentation/widgets/tag_chips_section.dart';
+import '../../tasks/domain/smart_view_models.dart';
+import '../../tasks/presentation/missed_tasks_banner.dart';
+import '../../tasks/presentation/recently_deleted_screen.dart';
+import '../../tasks/presentation/smart_view_detail_screen.dart';
+import '../../tasks/providers/smart_view_providers.dart';
+import '../../tasks/providers/task_providers.dart';
+import '../../tasks/providers/task_purge_providers.dart';
+import '../../tasks/providers/task_tag_filter_providers.dart';
 import '../providers/auth_providers.dart';
 
-class HomeScreen extends ConsumerWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
+  @override
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> with SearchLogicMixin {
+  bool _isSearchActive = false;
+
+  @override
+  void initState() {
+    super.initState();
+    initSearchLogic();
+  }
+
+  @override
+  void dispose() {
+    disposeSearchLogic();
+    super.dispose();
+  }
+
+  void _expandSearch() {
+    setState(() {
+      _isSearchActive = true;
+    });
+  }
+
+  void _collapseSearch() {
+    clearSearchQuery();
+    setState(() {
+      _isSearchActive = false;
+    });
+  }
+
   Future<void> _showCreateDialog(
-      BuildContext context, WidgetRef ref, String uid) async {
-    final controller = TextEditingController();
-    final formKey = GlobalKey<FormState>();
+    BuildContext context,
+    WidgetRef ref,
+    String uid,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
 
     await showDialog<void>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Create New List'),
-        content: Form(
-          key: formKey,
-          child: TextFormField(
-            key: const Key('createListNameInput'),
-            controller: controller,
-            autofocus: true,
-            decoration: const InputDecoration(
-              labelText: 'List Name',
-              hintText: 'e.g. Work, Groceries',
-            ),
-            validator: (val) {
-              if (val == null || val.trim().isEmpty) {
-                return 'Please enter a list name.';
-              }
-              return null;
-            },
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            key: const Key('confirmCreateListButton'),
-            onPressed: () async {
-              if (!formKey.currentState!.validate()) return;
-              final name = controller.text.trim();
+      builder: (dialogContext) => ListNameDialog(
+        title: 'Create New List',
+        confirmLabel: 'Create',
+        inputKey: const Key('createListNameInput'),
+        confirmKey: const Key('confirmCreateListButton'),
+        hintText: 'e.g. Work, Groceries',
+        emptyMessage: 'Please enter a list name.',
+        onConfirm: (dialogContext, name) =>
+            runWithFeedback(messenger, "Couldn't create the list.", () async {
               await ref
                   .read(listRepositoryProvider)
                   .createList(uid: uid, name: name);
               if (dialogContext.mounted) {
                 Navigator.of(dialogContext).pop();
               }
-            },
-            child: const Text('Create'),
-          ),
-        ],
+              showFeedbackSnackBar(messenger, 'Created list "$name"');
+            }),
       ),
     );
   }
 
   Future<void> _showRenameDialog(
-      BuildContext context, WidgetRef ref, ListModel list) async {
-    final controller = TextEditingController(text: list.name);
-    final formKey = GlobalKey<FormState>();
+    BuildContext context,
+    WidgetRef ref,
+    ListModel list,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
 
     await showDialog<void>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Rename List'),
-        content: Form(
-          key: formKey,
-          child: TextFormField(
-            key: const Key('renameListInput'),
-            controller: controller,
-            autofocus: true,
-            decoration: const InputDecoration(labelText: 'New Name'),
-            validator: (val) {
-              if (val == null || val.trim().isEmpty) {
-                return 'List name cannot be empty.';
-              }
-              return null;
-            },
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            key: const Key('confirmRenameListButton'),
-            onPressed: () async {
-              if (!formKey.currentState!.validate()) return;
+      builder: (dialogContext) => ListNameDialog(
+        title: 'Rename List',
+        confirmLabel: 'Save',
+        inputKey: const Key('renameListInput'),
+        confirmKey: const Key('confirmRenameListButton'),
+        labelText: 'New Name',
+        initialName: list.name,
+        emptyMessage: 'List name cannot be empty.',
+        onConfirm: (dialogContext, newName) async {
+          if (newName == list.name) {
+            if (dialogContext.mounted) {
+              Navigator.of(dialogContext).pop();
+            }
+            return;
+          }
+          await runWithFeedback(
+            messenger,
+            "Couldn't rename the list.",
+            () async {
               await ref
                   .read(listRepositoryProvider)
-                  .renameList(list.listId, controller.text.trim());
+                  .renameList(list.listId, newName);
               if (dialogContext.mounted) {
                 Navigator.of(dialogContext).pop();
               }
+              showFeedbackSnackBar(messenger, 'Renamed list to "$newName"');
             },
-            child: const Text('Save'),
-          ),
-        ],
+          );
+        },
       ),
     );
   }
 
   Future<void> _showDeleteDialog(
-      BuildContext context, WidgetRef ref, ListModel list, String uid) async {
-    final taskCount = await ref
-        .read(listRepositoryProvider)
-        .getActiveTaskCountForList(uid: uid, listId: list.listId);
-
-    if (!context.mounted) return;
+    BuildContext context,
+    WidgetRef ref,
+    ListModel list,
+    String uid,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final listName = list.name;
+    final tasks = ref.read(allTasksForCurrentUserProvider).value ?? const [];
+    final taskCount = tasks.where((t) => t.listId == list.listId).length;
 
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text('Delete "${list.name}"?'),
+        title: Text('Delete "$listName"?'),
         content: Text(
           '$taskCount task(s) in this list will also be removed.',
           key: const Key('deleteListWarningText'),
@@ -136,12 +160,19 @@ class HomeScreen extends ConsumerWidget {
               foregroundColor: Colors.white,
             ),
             onPressed: () async {
-              await ref
-                  .read(listRepositoryProvider)
-                  .deleteList(list.listId, uid);
-              if (dialogContext.mounted) {
-                Navigator.of(dialogContext).pop();
-              }
+              await runWithFeedback(
+                messenger,
+                "Couldn't delete the list.",
+                () async {
+                  await ref
+                      .read(listRepositoryProvider)
+                      .deleteList(list.listId, uid);
+                  if (dialogContext.mounted) {
+                    Navigator.of(dialogContext).pop();
+                  }
+                  showFeedbackSnackBar(messenger, 'Deleted list "$listName"');
+                },
+              );
             },
             child: const Text('Delete'),
           ),
@@ -151,165 +182,483 @@ class HomeScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final uid = ref.watch(currentUidProvider);
+    ref.watch(dailyPurgeProvider);
     final listsAsync = ref.watch(listsForUserProvider);
+    final recentlyDeletedCount = ref.watch(recentlyDeletedCountProvider);
+    final tagEntries =
+        ref.watch(tagBrowserEntriesProvider).value ?? const <TagBrowserEntry>[];
+    final effectiveList = ref.watch(effectiveDefaultListProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('shukan'),
-        actions: [
-          IconButton(
-            key: const Key('logoutButton'),
-            icon: const Icon(Icons.logout),
-            tooltip: 'Log Out',
-            onPressed: () async {
-              await ref.read(authRepositoryProvider).signOut();
-            },
-          ),
-        ],
-      ),
-      floatingActionButton: uid != null
-          ? FloatingActionButton(
-              key: const Key('addListButton'),
-              tooltip: 'New List',
-              onPressed: () => _showCreateDialog(context, ref, uid),
-              child: const Icon(Icons.add),
-            )
-          : null,
-      body: SafeArea(
-        child: listsAsync.when(
-          data: (lists) {
-            if (lists.isEmpty) {
-              return const Center(
-                child: Text('No lists found', key: Key('noListsText')),
-              );
-            }
-
-            return GridView.builder(
-              padding: const EdgeInsets.all(16),
-              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 280,
-                childAspectRatio: 1.25,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-              ),
-              itemCount: lists.length,
-              itemBuilder: (context, index) {
-                final list = lists[index];
-
-                return Card(
-                  key: Key('listTile_${list.listId}'),
-                  clipBehavior: Clip.antiAlias,
-                  elevation: 1.5,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: InkWell(
-                    key: Key('listCard_${list.listId}'),
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => ListDetailScreen(list: list),
-                        ),
+    return PopScope(
+      canPop: !_isSearchActive,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && _isSearchActive) {
+          _collapseSearch();
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: _isSearchActive
+              ? SearchInputField(
+                  controller: searchController,
+                  onChanged: onSearchQueryChanged,
+                  onClear: clearSearchQuery,
+                  onSubmitted: (trimmed) {
+                    if (uid != null &&
+                        effectiveList != null &&
+                        trimmed.isNotEmpty) {
+                      handleAddTaskAction(
+                        uid: uid,
+                        list: effectiveList,
+                        trimmedQuery: trimmed,
+                        onCollapse: _collapseSearch,
                       );
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                list.isDefault
-                                    ? Icons.inbox
-                                    : Icons.folder_outlined,
-                                color: list.isDefault
-                                    ? Theme.of(context).colorScheme.primary
-                                    : Theme.of(context)
-                                        .colorScheme
-                                        .onSurfaceVariant,
+                    }
+                  },
+                )
+              : const Text('shukan'),
+          actions: [
+            IconButton(
+              key: const Key('searchButton'),
+              icon: Icon(_isSearchActive ? Icons.close : Icons.search),
+              tooltip: _isSearchActive ? 'Close search' : 'Search',
+              onPressed: () {
+                if (_isSearchActive) {
+                  _collapseSearch();
+                } else {
+                  _expandSearch();
+                }
+              },
+            ),
+            if (!_isSearchActive)
+              IconButton(
+                key: const Key('settingsButton'),
+                icon: const Icon(Icons.settings_outlined),
+                tooltip: 'Settings',
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const SettingsScreen(),
+                    ),
+                  );
+                },
+              ),
+            if (!_isSearchActive)
+              IconButton(
+                key: const Key('logoutButton'),
+                icon: const Icon(Icons.logout),
+                tooltip: 'Log Out',
+                onPressed: () async {
+                  await ref.read(authRepositoryProvider).signOut();
+                },
+              ),
+          ],
+        ),
+        floatingActionButton: (!_isSearchActive && uid != null)
+            ? FloatingActionButton(
+                key: const Key('addListButton'),
+                tooltip: 'New List',
+                onPressed: () => _showCreateDialog(context, ref, uid),
+                child: const Icon(Icons.add),
+              )
+            : null,
+        body: _isSearchActive
+            ? SearchResultsView(
+                searchController: searchController,
+                hasParsedAdd: hasParsedAdd,
+                parsedTitle: parsedTitle,
+                parsedAddDueDate: parsedAddDueDate,
+                parsedAddDueTime: parsedAddDueTime,
+                isCreatingTask: isCreatingTask,
+                onDismissAddChip: dismissAddChip,
+                onAddTaskAction: (ctx, actionUid, actionList, query) =>
+                    handleAddTaskAction(
+                      uid: actionUid,
+                      list: actionList,
+                      trimmedQuery: query,
+                      onCollapse: _collapseSearch,
+                    ),
+                onClearSearch: clearSearchQuery,
+                onCollapse: _collapseSearch,
+              )
+            : SafeArea(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const MissedTasksBanner(),
+                    _buildSmartViews(context, ref),
+                    Expanded(
+                      child: listsAsync.when(
+                        data: (lists) {
+                          final showRecentlyDeleted = recentlyDeletedCount > 0;
+                          if (lists.isEmpty && !showRecentlyDeleted) {
+                            return Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Text(
+                                    'No lists found',
+                                    key: Key('noListsText'),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  TextButton(
+                                    key: const Key('repairAccountButton'),
+                                    onPressed: () =>
+                                        ref.invalidate(userBootstrapProvider),
+                                    child: const Text('Set up my Inbox'),
+                                  ),
+                                ],
                               ),
-                              const Spacer(),
-                              if (list.isDefault)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .primaryContainer
-                                        .withValues(alpha: 0.5),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: const Text(
-                                    'DEFAULT',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
+                            );
+                          }
+
+                          final totalItemCount =
+                              lists.length + (showRecentlyDeleted ? 1 : 0);
+
+                          return GridView.builder(
+                            padding: const EdgeInsets.all(16),
+                            gridDelegate:
+                                const SliverGridDelegateWithMaxCrossAxisExtent(
+                                  maxCrossAxisExtent: 280,
+                                  childAspectRatio: 1.0,
+                                  crossAxisSpacing: 12,
+                                  mainAxisSpacing: 12,
                                 ),
-                            ],
-                          ),
-                          const Spacer(),
-                          Text(
-                            list.name,
-                            key: Key('listName_${list.listId}'),
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              IconButton(
-                                key: Key('renameListButton_${list.listId}'),
-                                icon:
-                                    const Icon(Icons.edit_outlined, size: 18),
-                                tooltip: 'Rename List',
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(),
-                                onPressed: () =>
-                                    _showRenameDialog(context, ref, list),
-                              ),
-                              if (!list.isDefault && uid != null) ...[
-                                const SizedBox(width: 12),
-                                IconButton(
-                                  key: Key('deleteListButton_${list.listId}'),
-                                  icon: const Icon(
-                                    Icons.delete_outline,
-                                    size: 18,
-                                    color: Colors.redAccent,
-                                  ),
-                                  tooltip: 'Delete List',
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(),
-                                  onPressed: () => _showDeleteDialog(
-                                      context, ref, list, uid),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ],
+                            itemCount: totalItemCount,
+                            itemBuilder: (context, index) {
+                              if (index < lists.length) {
+                                final list = lists[index];
+                                return _buildUserListCard(
+                                  context,
+                                  ref,
+                                  list,
+                                  uid,
+                                );
+                              }
+                              return _buildRecentlyDeletedCard(
+                                context,
+                                recentlyDeletedCount,
+                              );
+                            },
+                          );
+                        },
+                        loading: () => const Center(
+                          key: Key('listsLoadingIndicator'),
+                          child: CircularProgressIndicator(),
+                        ),
+                        error: (e, _) =>
+                            Center(child: Text('Error loading lists: $e')),
                       ),
                     ),
-                  ),
-                );
-              },
+                    TagChipsSection(
+                      contextKey: 'home',
+                      uid: uid,
+                      entries: tagEntries,
+                    ),
+                  ],
+                ),
+              ),
+      ),
+    );
+  }
+
+  Widget _buildCountBadge(
+    BuildContext context,
+    int count, {
+    Key? badgeKey,
+    Key? textKey,
+  }) {
+    final theme = Theme.of(context);
+    return Container(
+      key: badgeKey,
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: count > 0
+            ? theme.colorScheme.secondaryContainer
+            : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        '$count',
+        key: textKey,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: count > 0
+              ? theme.colorScheme.onSecondaryContainer
+              : theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildListCard({
+    required BuildContext context,
+    required Key cardKey,
+    required Key inkWellKey,
+    required VoidCallback onTap,
+    required Widget icon,
+    required Widget countBadge,
+    required String title,
+    required Key titleKey,
+    Widget? tag,
+    Widget? actions,
+  }) {
+    return Card(
+      key: cardKey,
+      clipBehavior: Clip.antiAlias,
+      elevation: 1.5,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: InkWell(
+        key: inkWellKey,
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  icon,
+                  const Spacer(),
+                  if (tag != null) ...[tag, const SizedBox(width: 6)],
+                  countBadge,
+                ],
+              ),
+              const Spacer(),
+              Text(
+                title,
+                key: titleKey,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 8),
+              actions ?? const SizedBox(height: 18),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUserListCard(
+    BuildContext context,
+    WidgetRef ref,
+    ListModel list,
+    String? uid,
+  ) {
+    final theme = Theme.of(context);
+    return _buildListCard(
+      context: context,
+      cardKey: Key('listTile_${list.listId}'),
+      inkWellKey: Key('listCard_${list.listId}'),
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => ListDetailScreen(list: list)),
+        );
+      },
+      icon: IconButton(
+        key: Key('changeListIconButton_${list.listId}'),
+        tooltip: 'Change icon',
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(),
+        visualDensity: VisualDensity.compact,
+        icon: Icon(
+          resolveListIcon(list),
+          color: list.isDefault
+              ? theme.colorScheme.primary
+              : theme.colorScheme.onSurfaceVariant,
+        ),
+        onPressed: () {
+          showDialog<void>(
+            context: context,
+            builder: (_) => ListIconPickerDialog(list: list),
+          );
+        },
+      ),
+      tag: list.isDefault
+          ? Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primaryContainer.withValues(
+                  alpha: 0.5,
+                ),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: const Text(
+                'DEFAULT',
+                style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+              ),
+            )
+          : null,
+      countBadge: Consumer(
+        builder: (context, ref, _) {
+          final count = ref.watch(activeTaskCountForListProvider(list.listId));
+          return _buildCountBadge(
+            context,
+            count,
+            badgeKey: Key('taskCountBadge_${list.listId}'),
+            textKey: Key('taskCountText_${list.listId}'),
+          );
+        },
+      ),
+      title: list.name,
+      titleKey: Key('listName_${list.listId}'),
+      actions: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          IconButton(
+            key: Key('renameListButton_${list.listId}'),
+            icon: const Icon(Icons.edit_outlined, size: 18),
+            tooltip: 'Rename List',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            onPressed: () => _showRenameDialog(context, ref, list),
+          ),
+          if (!list.isDefault && uid != null) ...[
+            const SizedBox(width: 12),
+            IconButton(
+              key: Key('deleteListButton_${list.listId}'),
+              icon: const Icon(
+                Icons.delete_outline,
+                size: 18,
+                color: Colors.redAccent,
+              ),
+              tooltip: 'Delete List',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              onPressed: () => _showDeleteDialog(context, ref, list, uid),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecentlyDeletedCard(BuildContext context, int count) {
+    final theme = Theme.of(context);
+    return _buildListCard(
+      context: context,
+      cardKey: const Key('listTile_recentlyDeleted'),
+      inkWellKey: const Key('listCard_recentlyDeleted'),
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => const RecentlyDeletedScreen(),
+          ),
+        );
+      },
+      icon: Icon(
+        Icons.delete_outline,
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+      countBadge: _buildCountBadge(
+        context,
+        count,
+        badgeKey: const Key('taskCountBadge_recentlyDeleted'),
+        textKey: const Key('taskCountText_recentlyDeleted'),
+      ),
+      title: 'Recently Deleted',
+      titleKey: const Key('listName_recentlyDeleted'),
+      actions: null,
+    );
+  }
+
+  Widget _buildSmartViews(BuildContext context, WidgetRef ref) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _buildSmartViewCard(context, ref, SmartViewType.today),
+              const SizedBox(width: 8),
+              _buildSmartViewCard(context, ref, SmartViewType.thisWeek),
+              const SizedBox(width: 8),
+              _buildSmartViewCard(context, ref, SmartViewType.scheduled),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Divider(height: 1),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSmartViewCard(
+    BuildContext context,
+    WidgetRef ref,
+    SmartViewType type,
+  ) {
+    final count = ref.watch(smartViewCountProvider(type));
+    final theme = Theme.of(context);
+
+    return Expanded(
+      child: Card(
+        key: Key('smartViewCard_${type.name}'),
+        elevation: 1,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        child: InkWell(
+          key: Key('smartViewInkWell_${type.name}'),
+          borderRadius: BorderRadius.circular(10),
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => SmartViewDetailScreen(viewType: type),
+              ),
             );
           },
-          loading: () => const Center(
-            key: Key('listsLoadingIndicator'),
-            child: CircularProgressIndicator(),
-          ),
-          error: (e, _) => Center(
-            child: Text('Error loading lists: $e'),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Icon(type.icon, size: 22, color: theme.colorScheme.primary),
+                    if (count > 0)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '$count',
+                          key: Key('smartViewCount_${type.name}'),
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: theme.colorScheme.onPrimaryContainer,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  type.label,
+                  key: Key('smartViewLabel_${type.name}'),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
           ),
         ),
       ),
