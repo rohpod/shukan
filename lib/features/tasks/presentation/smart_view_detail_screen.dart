@@ -296,6 +296,7 @@ class _SmartViewDetailScreenState extends ConsumerState<SmartViewDetailScreen> {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: Text('Added to $listName'),
+                  persist: false,
                   action: effectiveList != null
                       ? SnackBarAction(
                           label: 'View',

@@ -106,11 +106,13 @@ class ExportService {
     required List<Map<String, dynamic>> lists,
     required List<Map<String, dynamic>> tags,
     required List<Map<String, dynamic>> tasks,
+    Map<String, dynamic>? profile,
     DateTime? exportDate,
   }) {
     return const JsonEncoder.withIndent('  ').convert(
       _jsonSafe({
         'exportedAt': exportDate ?? DateTime.now(),
+        'profile': profile,
         'lists': lists,
         'tags': tags,
         'tasks': tasks,
@@ -144,7 +146,10 @@ class ExportService {
       return snapshot.docs.map((doc) => doc.data()).toList();
     }
 
+    final profile = await firestore.collection('users').doc(uid).get();
+
     final json = generateAccountJson(
+      profile: profile.data(),
       lists: await ownedBy('lists'),
       tags: await ownedBy('tags'),
       tasks: await ownedBy('tasks'),

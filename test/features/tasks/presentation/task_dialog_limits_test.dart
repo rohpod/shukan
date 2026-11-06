@@ -95,6 +95,36 @@ void main() {
     expect(find.text('Edit Task'), findsOneWidget);
   });
 
+  testWidgets("an unchanged old link doesn't block saving", (tester) async {
+    await seedTask('mailto:me@example.com');
+    await openEditDialog(tester);
+
+    await tester.tap(find.byKey(const Key('saveTaskButton')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Edit Task'), findsNothing);
+  });
+
+  testWidgets('changing an old link to another bad one is blocked', (
+    tester,
+  ) async {
+    await seedTask('mailto:me@example.com');
+    await openEditDialog(tester);
+
+    await tester.enterText(
+      find.byKey(const Key('editTaskUrlInput')),
+      'javascript:alert(1)',
+    );
+    await tester.tap(find.byKey(const Key('saveTaskButton')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Enter a valid web link (http or https).'),
+      findsOneWidget,
+    );
+    expect(find.text('Edit Task'), findsOneWidget);
+  });
+
   testWidgets('a bare domain is accepted', (tester) async {
     await seedTask('');
     await openEditDialog(tester);

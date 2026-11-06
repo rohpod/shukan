@@ -99,6 +99,7 @@ class _ReminderNavigationHandlerState
       SnackBar(
         key: const Key('missedRemindersSnackBar'),
         duration: const Duration(seconds: 10),
+        persist: false,
         content: Text(message),
         action: SnackBarAction(
           label: 'View',

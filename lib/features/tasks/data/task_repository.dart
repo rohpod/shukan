@@ -18,6 +18,14 @@ class TaskRepository {
   /// a repeating task twice.
   final Set<String> _completionsInFlight = {};
 
+  /// How long after advancing a repeating task another completion is ignored.
+  /// The in-flight guard ends when the server replies, which can be before the
+  /// second click of a double-click.
+  static const _repeatAdvanceCooldown = Duration(seconds: 1);
+
+  /// When each repeating task last advanced.
+  final Map<String, DateTime> _lastRepeatAdvance = {};
+
   /// Tail of the pending subtask edits for each task.
   final Map<String, Future<void>> _subtaskEdits = {};
 
@@ -299,7 +307,14 @@ class TaskRepository {
     final task = Task.fromFirestore(doc);
 
     if (isCompleted && taskRepeats(task)) {
-      final nextDueDate = nextOccurrenceAfter(task, _clock());
+      final now = _clock();
+      final lastAdvance = _lastRepeatAdvance[taskId];
+      if (lastAdvance != null &&
+          now.difference(lastAdvance) < _repeatAdvanceCooldown) {
+        return;
+      }
+
+      final nextDueDate = nextOccurrenceAfter(task, now);
       final anchorDay = resolveRepeatAnchorDay(task);
       final resetSubtasks = task.subtasks
           .map((subtask) => {...subtask, 'completed': false})
@@ -313,6 +328,7 @@ class TaskRepository {
           if (task.repeatRule == 'monthly') 'repeatAnchorDay': anchorDay,
         }),
       );
+      _lastRepeatAdvance[taskId] = now;
 
       final advancedTask = task.copyWith(
         dueDate: nextDueDate,

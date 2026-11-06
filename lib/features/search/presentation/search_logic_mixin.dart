@@ -159,6 +159,7 @@ mixin SearchLogicMixin<T extends ConsumerStatefulWidget> on ConsumerState<T> {
         messenger.showSnackBar(
           SnackBar(
             content: Text('Added to ${list.name}'),
+            persist: false,
             action: SnackBarAction(
               label: 'View',
               onPressed: () {
