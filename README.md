@@ -8,7 +8,8 @@ layering habit-tracking and anime-philosophy theming on top.
 
 ## Status
 
-🚧 Phase 1 (reminders) is code-complete, but not signed off or live yet. Implemented:
+🚧 Phase 1 (reminders) is code-complete and has passed its manual browser checks, but
+isn't live yet. Implemented:
 authentication and password reset, tasks and lists (CRUD, soft delete with a 30-day
 Recently Deleted), tags, search, smart views, subtasks, repeating tasks (daily, weekly,
 monthly and custom schedules), due-date reminders, offline-safe saves, account settings,
@@ -16,8 +17,6 @@ and JSON/Markdown export. Habit tracking (Phase 2) comes next — see [Roadmap](
 
 Still to do before Phase 1 is finished:
 
-- Run the manual browser checks. Automated tests fake the offline, notification and
-  account flows, so those haven't been tried in a real browser.
 - Deploy hosting, and review the report-only Content Security Policy on a live run.
 - Merge `dev` into `main`.
 
