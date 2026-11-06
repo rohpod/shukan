@@ -267,6 +267,11 @@ void main() {
     test('exports all owned data with timestamps as ISO strings', () async {
       final firestore = FakeFirebaseFirestore();
       final due = DateTime.utc(2026, 6, 5, 9);
+      await firestore.collection('users').doc('u1').set({
+        'uid': 'u1',
+        'email': 'me@example.com',
+        'createdAt': Timestamp.fromDate(due),
+      });
       await firestore.collection('lists').doc('l1').set({
         'uid': 'u1',
         'name': 'Inbox',
@@ -311,6 +316,8 @@ void main() {
         tasks.map((t) => t['title']),
         unorderedEquals(['Active', 'Deleted']),
       );
+      expect(data['profile']['email'], 'me@example.com');
+      expect(data['profile']['createdAt'], '2026-06-05T09:00:00.000Z');
       expect(data['lists'], hasLength(1));
       expect(data['tags'], hasLength(1));
       final active = tasks.firstWhere((t) => t['title'] == 'Active');
