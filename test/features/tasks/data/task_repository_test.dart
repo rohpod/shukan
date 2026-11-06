@@ -2334,22 +2334,72 @@ service cloud.firestore {
       });
 
       test('a monthly task records its anchor day', () async {
-        final repo = TaskRepository(
-          fakeFirestore,
-          null,
-          () => DateTime(2026, 1, 31),
-        );
+        var now = DateTime(2026, 1, 31);
+        final repo = TaskRepository(fakeFirestore, null, () => now);
         final id = await seedRepeating(
           dueDate: DateTime(2026, 1, 31),
           rule: 'monthly',
         );
 
         await repo.toggleTaskCompleted(id, isCompleted: true);
+        now = now.add(const Duration(seconds: 2));
         await repo.toggleTaskCompleted(id, isCompleted: true);
 
         final data = await read(id);
         expect((data['dueDate'] as Timestamp).toDate(), DateTime(2026, 3, 31));
         expect(data['repeatAnchorDay'], 31);
+      });
+
+      test('a second completion right after the first is ignored', () async {
+        var now = DateTime(2026, 6, 1, 10);
+        final repo = TaskRepository(fakeFirestore, null, () => now);
+        final id = await seedRepeating(dueDate: DateTime(2026, 6, 5));
+
+        await repo.toggleTaskCompleted(id, isCompleted: true);
+        now = now.add(const Duration(milliseconds: 500));
+        await repo.toggleTaskCompleted(id, isCompleted: true);
+
+        expect(
+          ((await read(id))['dueDate'] as Timestamp).toDate(),
+          DateTime(2026, 6, 6),
+        );
+      });
+
+      test('a completion after the cooldown advances again', () async {
+        var now = DateTime(2026, 6, 1, 10);
+        final repo = TaskRepository(fakeFirestore, null, () => now);
+        final id = await seedRepeating(dueDate: DateTime(2026, 6, 5));
+
+        await repo.toggleTaskCompleted(id, isCompleted: true);
+        now = now.add(const Duration(seconds: 2));
+        await repo.toggleTaskCompleted(id, isCompleted: true);
+
+        expect(
+          ((await read(id))['dueDate'] as Timestamp).toDate(),
+          DateTime(2026, 6, 7),
+        );
+      });
+
+      test('the cooldown is per task', () async {
+        final repo = TaskRepository(
+          fakeFirestore,
+          null,
+          () => DateTime(2026, 6, 1, 10),
+        );
+        final first = await seedRepeating(dueDate: DateTime(2026, 6, 5));
+        final second = await seedRepeating(dueDate: DateTime(2026, 6, 5));
+
+        await repo.toggleTaskCompleted(first, isCompleted: true);
+        await repo.toggleTaskCompleted(second, isCompleted: true);
+
+        expect(
+          ((await read(first))['dueDate'] as Timestamp).toDate(),
+          DateTime(2026, 6, 6),
+        );
+        expect(
+          ((await read(second))['dueDate'] as Timestamp).toDate(),
+          DateTime(2026, 6, 6),
+        );
       });
 
       test('overlapping subtask edits all apply', () async {
