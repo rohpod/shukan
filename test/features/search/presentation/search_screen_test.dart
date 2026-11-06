@@ -798,6 +798,28 @@ void main() {
       },
     );
 
+    testWidgets('the "Added to" snackbar dismisses itself', (tester) async {
+      await seedDefaultLists();
+      await tester.pumpWidget(createWidgetUnderTest());
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const Key('searchQueryInput')),
+        'Check emails',
+      );
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('searchAddTaskAction')));
+      await tester.pumpAndSettle();
+      expect(find.text('Added to Inbox'), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Added to Inbox'), findsNothing);
+    });
+
     testWidgets('Rapid double-tap creates only one task', (tester) async {
       await seedDefaultLists();
       final gate = Completer<void>();

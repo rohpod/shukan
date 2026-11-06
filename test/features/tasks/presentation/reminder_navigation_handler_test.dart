@@ -131,4 +131,17 @@ void main() {
 
     expect(find.byType(SmartViewDetailScreen), findsOneWidget);
   });
+
+  testWidgets('the missed reminders summary dismisses itself', (tester) async {
+    await pumpHandler(tester);
+
+    scheduler.controller.add(3);
+    await tester.pumpAndSettle();
+    expect(find.text('3 reminders while you were away'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 11));
+    await tester.pumpAndSettle();
+
+    expect(find.text('3 reminders while you were away'), findsNothing);
+  });
 }

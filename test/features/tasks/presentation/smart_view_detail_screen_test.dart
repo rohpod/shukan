@@ -515,6 +515,25 @@ void main() {
       },
     );
 
+    testWidgets('the "Added to" snackbar dismisses itself', (tester) async {
+      await tester.pumpWidget(createWidgetUnderTest(SmartViewType.thisWeek));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const Key('quickAddTextInput')),
+        'Buy groceries',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('quickAddSubmitButton')));
+      await tester.pumpAndSettle();
+      expect(find.text('Added to Inbox'), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Added to Inbox'), findsNothing);
+    });
+
     testWidgets(
       'tapping a task row opens TaskDialog in edit mode on SmartViewDetailScreen',
       (tester) async {
