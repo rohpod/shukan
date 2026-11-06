@@ -38,7 +38,7 @@ flutterfire configure --project=shukan-loop
 ```
 
 When prompted for platforms, select **web** — this project is web-only for
-now (see README for why). This command writes `lib/firebase_options.dart` for
+now (Android and iOS come later). This command writes `lib/firebase_options.dart` for
 you. It's gitignored, so it stays local to your machine — don't try to commit
 it.
 

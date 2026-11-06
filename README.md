@@ -8,11 +8,18 @@ layering habit-tracking and anime-philosophy theming on top.
 
 ## Status
 
-🚧 Phase 1 (reminders) is code-complete and being prepared for release. Implemented:
+🚧 Phase 1 (reminders) is code-complete, but not signed off or live yet. Implemented:
 authentication and password reset, tasks and lists (CRUD, soft delete with a 30-day
 Recently Deleted), tags, search, smart views, subtasks, repeating tasks (daily, weekly,
 monthly and custom schedules), due-date reminders, offline-safe saves, account settings,
 and JSON/Markdown export. Habit tracking (Phase 2) comes next — see [Roadmap](#roadmap).
+
+Still to do before Phase 1 is finished:
+
+- Run the manual browser checks. Automated tests fake the offline, notification and
+  account flows, so those haven't been tried in a real browser.
+- Deploy hosting, and review the report-only Content Security Policy on a live run.
+- Merge `dev` into `main`.
 
 **Reminders are tab-only.** They fire through the browser while a shukan tab is open,
 including catching up on ones missed while it was closed. Nothing is delivered when every
@@ -22,12 +29,13 @@ tab is closed; that needs push notifications (see Backlog).
 
 - **Framework:** Flutter (Dart), Web-first (Android/iOS to follow)
 - **Backend:** Firebase Auth, Cloud Firestore
-- **Notifications:** `flutter_local_notifications` (on-device scheduling)
+- **Notifications:** `flutter_local_notifications` (browser notifications on web, shown
+  by an in-app scheduler while a tab is open)
 - **State management:** Riverpod
 
 ## Roadmap
 
-1. **Phase 1 — Reminders foundation:** CRUD for reminders, local notification scheduling, Firestore sync, auth.
+1. **Phase 1 — Reminders foundation:** CRUD for reminders, browser reminders, Firestore sync, auth.
 2. **Phase 2 — Habit tracking:** recurring habits, daily check-ins, streaks, history.
 3. **Phase 3 — Anime philosophy theming:** philosophy selection, themed framing of habits/reminders.
 4. **Phase 4 — Polish:** UI/UX pass, additional philosophies, settings, notifications refinement.
@@ -39,7 +47,8 @@ tab is closed; that needs push notifications (see Backlog).
 - Flutter SDK (stable channel) — verify with `flutter doctor`
 - A Google account added as a collaborator on the `shukan-loop` Firebase project
   (ask a maintainer)
-- Node.js (for the Firebase CLI, if you'll be deploying rules/indexes)
+- Node.js (for the Firebase CLI and the rules tests)
+- Java (for the Firestore emulator, if you'll be running the rules tests)
 
 ### Setup
 
@@ -65,6 +74,9 @@ flutter analyze
 flutter test
 TZ=America/New_York flutter test test/features/tasks/domain   # date logic under DST
 ```
+
+Only run `test/features/tasks/domain` under that timezone. The full suite has 11 known
+failures there, because some notification test fixtures use UTC dates.
 
 `fake_cloud_firestore` doesn't enforce `firestore.rules`, so rules have their own
 emulator tests:
@@ -102,7 +114,11 @@ enforced `Content-Security-Policy` in `firebase.json`. See
   `streamRecentlyDeletedTasks` reads every task. Move to one shared listener before growth.
 - Clearing the local cache on sign-out (shared computers), App Check, a crash reporting
   service, reminders for recurring tasks left uncompleted
-- Splitting `task_list_screen.dart`, which is over 1,600 lines
+- Splitting `task_list_screen.dart`, which is over 1,700 lines
+- Catch-up across devices: the missed-reminder summary runs on the first cached task
+  list, so a task that only arrives from the server afterwards isn't counted
+- Test and tooling cleanup: the UTC fixtures above, a reporting address for the Content
+  Security Policy, and the `npm audit` findings in the `test_rules/` dev dependencies
 
 ## Contributing
 
